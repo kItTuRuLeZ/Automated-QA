@@ -26,6 +26,8 @@ export interface RunReport {
     elements: string[];
     moreElements: number;
     steps: string[];
+    screenshotId?: string;
+    screenshotKind?: 'element' | 'screen';
     technical: { ruleId: string; observed: string };
   }>;
 }

@@ -282,11 +282,20 @@ Requested after the first review: reports were too hard to read. Audience chosen
 | Real export from the two supplied courses | Opened with exceljs: 5 sheets, 36 issue rows across both courses (13 Fix, 18 Check by hand, 5 Not checked), screens and reasons filled in |
 | `npx vitest run` (full) | **128 passed / 128** in 9 files (about 14 minutes) |
 
+### Update: one workbook per course, with screenshots
+
+- **One workbook per course**: `GET /api/projects/:id/export.xlsx?course=<course address>` exports a single course (all its finished scans, merged by stable ID); without `course` all courses share one workbook. An unknown course returns 404. The project page lists a download button per course plus an all-courses button.
+- **Screenshots at scan time** (`engines/annotate.ts`): after each reached screen is checked, findings whose element can be located in the page get a cropped screenshot (at least 420×260 px, around the element) with the element outlined in red, saved as `annotated_screenshot` evidence. At most 10 per screen and 80 per scan; elements in iframes, or selectors that match nothing, fall back to the whole screen. The highlight overlay is removed and the scroll position restored afterwards.
+- **In the workbook**: a **Screenshot** column on *Issues* (outlined crop where there is one, otherwise the issue's own screenshot or the whole screen; each row labelled "Affected element outlined" or "Whole screen") and a **Screenshot** column on *Screens* with the full screen. Each picture is embedded once even when shown in several places (a Rise workbook with 34 issues and 6 screens is about 6 MB). The same screenshot appears next to each issue on the scan page.
+- **Tests** (132 in 9 files; all pass: one full run had two index-order assertions fail after the screenshot change, fixed and re-run): `tests/report-export.test.ts` (11) covers screenshot choice, embedding once, empty and missing images, per-course export and 404; `tests/accessibility.integration.test.ts` covers a real outlined crop (PNG, readable size, evidence data, no overlay left behind).
+
 ### Known limitations
 
 - Tracking is one-way: Status, Owner, and Notes edited in Excel are not read back into the app (a new export starts again from the app's status, which is "Open" until the Phase 5 workflow exists). Keep working copies safe, or copy the columns across.
 - IDs come from the finding fingerprint. If a page URL or the affected element changes, the issue gets a new ID.
 - Wording for axe rules not on the list falls back to axe's own description.
+- Screenshots exist only for scans run after this change; older scans show whole-screen or no images. Link findings (checked after all screens are visited) use the screenshot of the screen where the link appears, not an outline.
+- The outline is a snapshot of the screen size used for the scan (1440×900 by default); responsive layouts at other sizes are Phase 4.
 - The "Where" column shows a shortened HTML snippet for accessibility issues; the full selector is in the technical view.
 
 ## Phase 4 — plan (next)

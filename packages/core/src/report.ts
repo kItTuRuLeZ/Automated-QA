@@ -21,6 +21,9 @@ export interface ReportIssue {
   moreElements: number;
   steps: string[];
   url: string;
+  /** Artifact id of the best screenshot: a crop with the element outlined if there is one, else the whole screen. */
+  screenshotId?: string;
+  screenshotKind?: 'element' | 'screen';
   status: ReviewerStatus;
   technical: { ruleId: string; observed: string; remediation: string; standards: string[]; confidence: string; type: string };
   foundAt: string;
@@ -32,6 +35,7 @@ export interface ReportScreen {
   url: string;
   depth: number;
   reachedBy: string;
+  screenshotId?: string;
 }
 
 export interface RunReport {
@@ -82,6 +86,9 @@ export function buildRunReport(store: Store, runId: string): RunReport {
   const summary = store.summarizeRun(runId);
 
   const screenIndex = new Map(states.map((s, i) => [s.id as string, i + 1]));
+  // First screenshot of each screen, used when a finding has no screenshot of its own.
+  const stateShots = new Map<string, string>();
+  for (const e of store.listEvidenceByKind(runId, 'screenshot')) if (e.artifactId && e.stateId && !stateShots.has(e.stateId as string)) stateShots.set(e.stateId as string, e.artifactId as string);
   const screens: ReportScreen[] = states.map((s, i) => ({
     label: `S${i + 1}`,
     // Some courses set machine-made page titles (long strings with no spaces); describe the screen by how it was reached instead.
@@ -89,9 +96,10 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     url: s.url,
     depth: s.depth,
     reachedBy: reachedBy(s, actions),
+    screenshotId: stateShots.get(s.id as string),
   }));
 
-  const issues: ReportIssue[] = findings.map((f) => toIssue(f, screenIndex, run.config.target.url ?? ''));
+  const issues: ReportIssue[] = findings.map((f) => toIssue(f, screenIndex, run.config.target.url ?? '', store, stateShots));
   issues.sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action] || SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority] || a.issue.localeCompare(b.issue));
 
   const bySeverity = Object.fromEntries((Object.keys(SEVERITY_ORDER) as Severity[]).map((s) => [s, 0])) as Record<Severity, number>;
@@ -131,10 +139,25 @@ export function buildRunReport(store: Store, runId: string): RunReport {
   };
 }
 
-function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: string): ReportIssue {
+function pickScreenshot(f: Finding, stateIds: string[], store: Store, stateShots: Map<string, string>): { id?: string; kind?: 'element' | 'screen' } {
+  const ids = [...new Set([...f.evidenceIds, ...f.occurrences.flatMap((o) => o.evidenceIds)])];
+  const evidence = store.getEvidence(ids).filter((e) => e.artifactId);
+  const element = evidence.find((e) => e.kind === 'annotated_screenshot');
+  if (element?.artifactId) return { id: element.artifactId, kind: 'element' };
+  const own = evidence.find((e) => e.kind === 'screenshot');
+  if (own?.artifactId) return { id: own.artifactId, kind: 'screen' };
+  for (const sid of stateIds) {
+    const shot = stateShots.get(sid);
+    if (shot) return { id: shot, kind: 'screen' };
+  }
+  return {};
+}
+
+function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: string, store: Store, stateShots: Map<string, string>): ReportIssue {
   const plain = plainFinding(f);
   const stateIds = [f.location.stateId, ...f.occurrences.map((o) => o.location.stateId)].filter((x): x is NonNullable<typeof x> => Boolean(x));
   const screens = [...new Set(stateIds.map((id) => screenIndex.get(id as string)).filter((n): n is number => n !== undefined))].sort((a, b) => a - b).map((n) => `S${n}`);
+  const shot = pickScreenshot(f, stateIds as string[], store, stateShots);
   const described = [...new Set(f.occurrences.map((o) => o.location.elementDescription ?? o.location.selector).filter((x): x is string => Boolean(x)))];
   return {
     id: stableIssueId(f.fingerprint),
@@ -149,6 +172,8 @@ function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: stri
     moreElements: Math.max(0, described.length - 3),
     steps: shortSteps(f.reproductionSteps),
     url: f.location.url ?? fallbackUrl,
+    screenshotId: shot.id,
+    screenshotKind: shot.kind,
     status: f.reviewer.status,
     technical: {
       ruleId: f.ruleId,
@@ -248,4 +273,11 @@ export function runReportAsProject(rep: RunReport, projectName: string, projectI
   const seenAt = rep.run.finishedAt ?? rep.run.queuedAt;
   const issues: ConsolidatedIssue[] = rep.issues.map((i) => ({ ...i, course: rep.run.targetUrl, firstFound: seenAt, lastSeen: seenAt, scansSeen: 1, inLatestScan: true }));
   return { project: { id: projectId, name: projectName, description: '' }, generatedAt: new Date().toISOString(), courses: [{ targetUrl: rep.run.targetUrl, scans: 1, latest: rep }], issues };
+}
+
+/** One course's slice of a project report (its latest scan, issues, and screens). */
+export function reportForCourse(report: ProjectReport, course: string): ProjectReport | undefined {
+  const courses = report.courses.filter((c) => c.targetUrl === course);
+  if (courses.length === 0) return undefined;
+  return { ...report, courses, issues: report.issues.filter((i) => i.course === course) };
 }

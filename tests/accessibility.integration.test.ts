@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { CheckResult, Finding } from '@cqa/shared';
+import { buildRunReport } from '@cqa/core';
 import { type FixtureServer, startFixtureServer } from './support/fixture-server.js';
 import { type Harness, createHarness } from './support/harness.js';
 
@@ -72,9 +74,10 @@ describe('automated accessibility rules (axe-core)', () => {
 
   it('every failed axe check carries node evidence and findings say how to reproduce', () => {
     const [f] = of(r.findings, 'A11Y-AXE-button-name');
-    const ev = h.store.getEvidence(f!.evidenceIds);
-    expect(ev[0]?.kind).toBe('axe_node');
-    expect((ev[0]?.data as { nodes: unknown[] }).nodes.length).toBeGreaterThan(0);
+    // The outlined screenshot may come first; look for the axe evidence by kind.
+    const axe = h.store.getEvidence(f!.evidenceIds).find((e) => e.kind === 'axe_node');
+    expect(axe).toBeTruthy();
+    expect((axe?.data as { nodes: unknown[] }).nodes.length).toBeGreaterThan(0);
     expect(f?.reproductionSteps.some((s) => s.includes('button-name'))).toBe(true);
   });
 
@@ -106,8 +109,7 @@ describe('keyboard journeys', () => {
     expect(f).toMatchObject({ type: 'automated_defect', severity: 'high' });
     expect(f?.title).toContain('2 elements');
     expect(outcomes(checks, 'KBD-001')).toEqual(['failed']);
-    const ev = h.store.getEvidence(f!.evidenceIds);
-    expect(ev[0]?.kind).toBe('focus_sequence');
+    expect(h.store.getEvidence(f!.evidenceIds).some((e) => e.kind === 'focus_sequence')).toBe(true);
   });
 
   it('does not report a trap on a normal page, and treats an open dialog as expected containment', async () => {
@@ -139,8 +141,8 @@ describe('keyboard journeys', () => {
       'Dialog opened by dialog opener "Open notice" does not move focus into the dialog',
       'Dialog opened by dialog opener "Open notice" does not return focus to the opener when closed',
     ]);
-    const ev = h.store.getEvidence(of(findings, 'KBD-003')[0]!.evidenceIds);
-    expect((ev[0]?.data as { log: string[] }).log.some((l) => l.includes('outside dialog'))).toBe(true);
+    const log = h.store.getEvidence(of(findings, 'KBD-003')[0]!.evidenceIds).find((e) => e.kind === 'focus_sequence');
+    expect((log?.data as { log: string[] }).log.some((l) => l.includes('outside dialog'))).toBe(true);
   });
 
   it('flags mouse-only and click-only controls but not native buttons (KBD-004)', async () => {
@@ -159,5 +161,35 @@ describe('disclosure', () => {
     expect(of(findings, 'COV-003')).toHaveLength(1);
     expect(outcomes(checks, 'COV-003')).toEqual(['needs_review']);
     expect(outcomes(checks, 'A11Y-ENG')).toEqual(['passed']);
+  });
+});
+
+describe('screenshots with the affected element outlined', () => {
+  const pngSize = (bytes: Buffer) => ({ width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) });
+
+  it('captures a cropped screenshot for findings whose element can be located, and keeps whole-screen fallbacks', async () => {
+    const { run, findings } = await scan('a11y-known/', { explore: false });
+    const img = of(findings, 'A11Y-AXE-image-alt')[0]!;
+    const ev = h.store.getEvidence(img.evidenceIds).find((e) => e.kind === 'annotated_screenshot');
+    expect(ev?.artifactId).toBeTruthy();
+    expect(ev?.data).toMatchObject({ selector: expect.any(String), bounds: { width: expect.any(Number) } });
+    const rec = h.store.getArtifact(ev!.artifactId!)!;
+    const bytes = readFileSync(h.artifacts.absolutePath(rec));
+    expect(bytes.subarray(1, 4).toString()).toBe('PNG');
+    const { width, height } = pngSize(bytes);
+    // A readable crop around the element, not the whole 1440×900 viewport.
+    expect(width).toBeGreaterThanOrEqual(400);
+    expect(width).toBeLessThan(1440);
+    expect(height).toBeLessThan(900);
+
+    const rep = buildRunReport(h.store, run.id);
+    const issue = rep.issues.find((i) => i.technical.ruleId === 'A11Y-AXE-image-alt')!;
+    expect(issue).toMatchObject({ screenshotKind: 'element', screenshotId: ev!.artifactId });
+    // Findings with no element to point at still get the screenshot of the screen.
+    const screenLevel = rep.issues.filter((i) => i.screenshotKind === 'screen');
+    expect(rep.issues.every((i) => i.screenshotId)).toBe(true);
+    expect(screenLevel.length + rep.issues.filter((i) => i.screenshotKind === 'element').length).toBe(rep.issues.length);
+    // The page is left clean: no highlight overlay remains for later checks.
+    expect(JSON.stringify(h.store.listStates(run.id))).not.toContain('__cqa_highlight');
   });
 });

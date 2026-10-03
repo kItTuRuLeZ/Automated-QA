@@ -158,3 +158,8 @@ a.btn { text-decoration: none; display: inline-block; }
 .issue-top { display: flex; gap: 0.5rem; align-items: baseline; flex-wrap: wrap; }
 .issue-change, .issue-where { margin: 0.3rem 0 0; }
 .label { color: var(--muted); font-weight: 600; }
+
+.issue-shot { margin: 0.5rem 0; }
+.issue-shot img { max-width: min(100%, 460px); border: 1px solid var(--border); border-radius: 4px; display: block; }
+.issue-shot figcaption { color: var(--muted); font-size: 0.8rem; }
+.downloads { gap: 0.6rem; margin-top: 0.5rem; }

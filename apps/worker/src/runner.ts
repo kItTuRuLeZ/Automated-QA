@@ -9,6 +9,7 @@ import { ContentChecks, type LinkAppearance } from './engines/content.js';
 import { LinkChecker } from './engines/links.js';
 import { AccessibilityChecks } from './engines/accessibility.js';
 import { KeyboardChecks } from './engines/keyboard.js';
+import { Annotator } from './engines/annotate.js';
 import { InitialCapture } from './engines/capture.js';
 import { type BlockedConnection, EgressProxy } from './net/egress-proxy.js';
 
@@ -165,6 +166,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     const contentErrors: string[] = [];
     const a11yEngine = new AccessibilityChecks();
     const keyboardEngine = new KeyboardChecks();
+    const annotator = new Annotator();
     const onStateReady = async (state: CourseState, repro: string[]) => {
       const guarded = async (fn: () => Promise<void>) => {
         try {
@@ -174,15 +176,19 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
           contentErrors.push(truncateLine((err as Error).message));
         }
       };
+      // Run every engine first, then outline the affected elements while the page still shows this state, then save.
+      const batches: Array<Parameters<typeof persistResults>[0]> = [];
       if (contentOn) {
         await guarded(async () => {
           const r = await contentEngine.checkState({ ...ctx, state }, state, repro);
-          persistResults(r);
+          batches.push(r);
           linkAppearances.push(...r.links);
         });
       }
-      if (run.config.engines.accessibility) await guarded(async () => persistResults(await a11yEngine.checkState({ ...ctx, state }, state, repro)));
-      if (run.config.engines.keyboard) await guarded(async () => persistResults(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
+      if (run.config.engines.accessibility) await guarded(async () => void batches.push(await a11yEngine.checkState({ ...ctx, state }, state, repro)));
+      if (run.config.engines.keyboard) await guarded(async () => void batches.push(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
+      await guarded(async () => annotator.annotateFindings({ ...ctx, state }, state.id, batches.flatMap((b) => b.findings)));
+      for (const b of batches) persistResults(b);
     };
     const pageUsable = Boolean(out.state) && !out.navigationFailed && !out.outOfScope;
 

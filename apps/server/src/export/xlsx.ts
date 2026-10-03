@@ -69,18 +69,41 @@ function dateOnly(iso: string): string {
   return iso.slice(0, 10);
 }
 
-/** Builds the tracking workbook for one scan or a whole project. */
-export async function buildWorkbook(report: ProjectReport): Promise<Buffer> {
+export interface WorkbookOptions {
+  /** Returns the PNG bytes for an artifact id, or undefined if it is missing. */
+  loadImage?: (artifactId: string) => Buffer | undefined;
+}
+
+/** Embeds each screenshot once and reuses it wherever it appears. */
+class ImageBook {
+  private readonly ids = new Map<string, number | null>();
+  constructor(
+    private readonly wb: ExcelJS.Workbook,
+    private readonly load?: (id: string) => Buffer | undefined,
+  ) {}
+  get(artifactId?: string): number | undefined {
+    if (!artifactId || !this.load) return undefined;
+    if (!this.ids.has(artifactId)) {
+      const buf = this.load(artifactId);
+      this.ids.set(artifactId, buf ? this.wb.addImage({ buffer: buf as never, extension: 'png' }) : null);
+    }
+    return this.ids.get(artifactId) ?? undefined;
+  }
+}
+
+/** Builds the tracking workbook for one scan, one course, or a whole project. */
+export async function buildWorkbook(report: ProjectReport, options: WorkbookOptions = {}): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Course QA Automation';
   wb.created = new Date();
   wb.title = `Course QA: ${report.project.name}`;
 
+  const images = new ImageBook(wb, options.loadImage);
   addSummary(wb, report);
-  addIssues(wb, report);
+  addIssues(wb, report, images);
   addNotChecked(wb, report);
   addManualChecks(wb);
-  addScreens(wb, report);
+  addScreens(wb, report, images);
 
   const out = await wb.xlsx.writeBuffer();
   return Buffer.from(out as ArrayBuffer);
@@ -119,6 +142,7 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
     ['• Issues sheet: one row per problem. Filter the Action column to "Fix" to see what needs changing.', false],
     ['• Update the Status, Owner, and Notes columns as work progresses. IDs (QA-xxxxxx) stay the same when the same problem is found in a later scan.', false],
     ['• "Not found (confirm fixed)" in the Latest scan column means the newest scan did not see the problem. That is not proof it was fixed: check it, then set Status to Verified.', false],
+    ['• Screenshot column: the affected element is outlined in red where the scanner could locate it; otherwise the whole screen is shown. Full screens are on the Screens sheet.', false],
     ['• Check by hand: the scanner could not decide. A person needs to look.', false],
     ['• Not checked sheet: what the scanner could not inspect (frames, canvas, skipped controls, scan limits). These are not passes.', false],
     ['• Manual checks sheet: accessibility reviews that always need a person.', false],
@@ -138,7 +162,7 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
   }
 }
 
-function addIssues(wb: ExcelJS.Workbook, report: ProjectReport): void {
+function addIssues(wb: ExcelJS.Workbook, report: ProjectReport, images: ImageBook): void {
   const ws = wb.addWorksheet('Issues', { views: [{ state: 'frozen', xSplit: 1, ySplit: 1 }], properties: { tabColor: { argb: 'FFB42318' } } });
   const cols: Array<[string, number]> = [
     ['ID', 11],
@@ -146,6 +170,7 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport): void {
     ['Action', 14],
     ['Course', 28],
     ['Screens', 10],
+    ['Screenshot', 44],
     ['Issue', 46],
     ['What to change', 52],
     ['Where', 36],
@@ -170,6 +195,7 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport): void {
       ACTION_LABEL[i.action],
       safeCell(i.course),
       safeCell(i.screens.join(', ')),
+      '',
       safeCell(i.issue),
       safeCell(i.change),
       safeCell([...i.elements, ...(i.moreElements ? [`(+${i.moreElements} more)`] : [])].join('\n')),
@@ -187,20 +213,28 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport): void {
     row.alignment = { vertical: 'top', wrapText: true };
     row.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIORITY_FILL[i.priority] } };
     row.getCell(1).font = { bold: true };
+    const imageId = images.get(i.screenshotId);
+    if (imageId !== undefined) {
+      row.height = 132;
+      ws.addImage(imageId, { tl: { col: 5.04, row: row.number - 1 + 0.04 }, ext: { width: 300, height: 172 }, editAs: 'oneCell' });
+      row.getCell(6).value = i.screenshotKind === 'element' ? 'Affected element outlined' : 'Whole screen';
+      row.getCell(6).alignment = { vertical: 'bottom', horizontal: 'left', wrapText: true };
+      row.getCell(6).font = { size: 8, color: { argb: 'FF566176' } };
+    }
     void idx;
   });
 
   const last = Math.max(report.issues.length + 1, 2);
   // Dropdown for Status on every data row plus room for rows added by hand.
   for (let r = 2; r <= last + 100; r++) {
-    ws.getCell(`J${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [`"${STATUS_CHOICES.join(',')}"`], showErrorMessage: false };
+    ws.getCell(`K${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [`"${STATUS_CHOICES.join(',')}"`], showErrorMessage: false };
   }
-  ws.autoFilter = { from: 'A1', to: `R${last}` };
+  ws.autoFilter = { from: 'A1', to: `S${last}` };
   ws.addConditionalFormatting({
-    ref: `A2:R${last + 100}`,
+    ref: `A2:S${last + 100}`,
     rules: [
-      { type: 'expression', formulae: ['OR($J2="Verified",$J2="Fixed")'], style: { font: { color: { argb: 'FF1B7A3D' } } }, priority: 1 },
-      { type: 'expression', formulae: ['OR($J2="Accepted risk",$J2="False positive")'], style: { font: { color: { argb: 'FF6B7280' } } }, priority: 2 },
+      { type: 'expression', formulae: ['OR($K2="Verified",$K2="Fixed")'], style: { font: { color: { argb: 'FF1B7A3D' } } }, priority: 1 },
+      { type: 'expression', formulae: ['OR($K2="Accepted risk",$K2="False positive")'], style: { font: { color: { argb: 'FF6B7280' } } }, priority: 2 },
     ],
   });
 }
@@ -242,16 +276,21 @@ function addManualChecks(wb: ExcelJS.Workbook): void {
   });
 }
 
-function addScreens(wb: ExcelJS.Workbook, report: ProjectReport): void {
+function addScreens(wb: ExcelJS.Workbook, report: ProjectReport, images: ImageBook): void {
   const ws = wb.addWorksheet('Screens', { properties: { tabColor: { argb: 'FF1B7A3D' } } });
-  ws.columns = [{ width: 28 }, { width: 8 }, { width: 38 }, { width: 56 }, { width: 50 }, { width: 14 }];
-  ws.getRow(1).values = ['Course', 'Screen', 'Title', 'How the scanner got here', 'Address', 'Issues here'];
+  ws.columns = [{ width: 28 }, { width: 8 }, { width: 38 }, { width: 56 }, { width: 50 }, { width: 14 }, { width: 50 }];
+  ws.getRow(1).values = ['Course', 'Screen', 'Title', 'How the scanner got here', 'Address', 'Issues here', 'Screenshot'];
   styleHeader(ws.getRow(1));
   for (const c of report.courses) {
     for (const s of c.latest.screens) {
       const here = c.latest.issues.filter((i) => i.screens.includes(s.label)).length;
-      const row = ws.addRow([safeCell(c.targetUrl), s.label, safeCell(s.title), safeCell(s.reachedBy), safeCell(s.url), here]);
+      const row = ws.addRow([safeCell(c.targetUrl), s.label, safeCell(s.title), safeCell(s.reachedBy), safeCell(s.url), here, '']);
       row.alignment = { vertical: 'top', wrapText: true };
+      const imageId = images.get(s.screenshotId);
+      if (imageId !== undefined) {
+        row.height = 170;
+        ws.addImage(imageId, { tl: { col: 6.04, row: row.number - 1 + 0.04 }, ext: { width: 340, height: 212 }, editAs: 'oneCell' });
+      }
     }
   }
 }

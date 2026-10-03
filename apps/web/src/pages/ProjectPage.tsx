@@ -31,12 +31,28 @@ export function ProjectPage({ id }: { id: string }) {
 
       <NewScanForm projectId={id} defaultUrl={p.courseUrl ?? ''} onQueued={(runId) => (window.location.hash = `/runs/${runId}`)} />
 
-      <div className="page-header">
-        <h2>Scan history</h2>
-        <a className="btn" href={`/api/projects/${id}/export.xlsx`} download>
-          Download Excel tracker (all scans)
-        </a>
+      <div className="card">
+        <h2>Excel trackers</h2>
+        <p className="muted">One workbook per course, with issues, screenshots, and status, owner, and notes columns. Each includes every finished scan of that course.</p>
+        <ul className="plain downloads">
+          {(runs.data ? [...new Set(runs.data.filter((r) => ['completed', 'partial', 'failed'].includes(r.status)).map((r) => r.config.target.url ?? ''))].filter(Boolean) : []).map((course) => (
+            <li key={course}>
+              <a className="btn" href={`/api/projects/${id}/export.xlsx?course=${encodeURIComponent(course)}`} download>
+                Download Excel for this course
+              </a>{' '}
+              <span className="mono">{course}</span>
+            </li>
+          ))}
+          <li>
+            <a className="btn" href={`/api/projects/${id}/export.xlsx`} download>
+              Download one workbook with all courses
+            </a>
+          </li>
+        </ul>
+        {runs.data && runs.data.every((r) => !['completed', 'partial', 'failed'].includes(r.status)) && <p className="help">Available once a scan has finished.</p>}
       </div>
+
+      <h2>Scan history</h2>
       {runs.error ? <ErrorBox error={runs.error} onRetry={runs.reload} /> : !runs.data ? <Loading /> : runs.data.length === 0 ? (
         <Empty title="No scans yet">
           <p>Configure and start a scan above.</p>

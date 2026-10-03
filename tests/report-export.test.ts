@@ -2,6 +2,8 @@ import ExcelJS from 'exceljs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CheckResultId, CourseState, Finding, FindingId, ProjectId, RuleCategory, ScanRun, Severity, StateId, FindingType } from '@cqa/shared';
 import { buildProjectReport, buildRunReport, buildScanConfig, newId, nowIso, plainFinding } from '@cqa/core';
+import { readFileSync } from 'node:fs';
+import type { EvidenceId } from '@cqa/shared';
 import { buildApp } from '../apps/server/src/app.js';
 import { buildWorkbook, safeCell } from '../apps/server/src/export/xlsx.js';
 import { type Harness, createHarness } from './support/harness.js';
@@ -22,12 +24,13 @@ afterEach(async () => {
 
 const pause = () => new Promise((r) => setTimeout(r, 8));
 
-function seedRun(opts: { findings: Array<Partial<Finding> & { ruleId: string; title: string; fingerprint: string }>; untested?: string[] }): ScanRun {
-  const run = h.store.createRun(buildScanConfig({ projectId, url: new URL(COURSE) }), COURSE);
+function seedRun(opts: { findings: Array<Partial<Finding> & { ruleId: string; title: string; fingerprint: string }>; untested?: string[]; url?: string }): ScanRun {
+  const courseUrl = opts.url ?? COURSE;
+  const run = h.store.createRun(buildScanConfig({ projectId, url: new URL(courseUrl) }), courseUrl);
   const state: CourseState = {
     id: newId<StateId>(),
     runId: run.id,
-    url: COURSE as never,
+    url: courseUrl as never,
     title: 'Welcome',
     signature: 's1',
     openDialogs: [],
@@ -47,7 +50,7 @@ function seedRun(opts: { findings: Array<Partial<Finding> & { ruleId: string; ti
       type: 'automated_defect' as FindingType,
       severity: 'high' as Severity,
       confidence: 'high',
-      location: { stateId: state.id, url: COURSE as never, selector: '#el', elementDescription: 'button "Go"' },
+      location: { stateId: state.id, url: courseUrl as never, selector: '#el', elementDescription: 'button "Go"' },
       occurrences: [{ location: { stateId: state.id, selector: '#el', elementDescription: 'button "Go"' }, checkResultIds: [], evidenceIds: [], observed: 'seen' }],
       observed: 'Technical observation.',
       expected: 'Expected.',
@@ -131,8 +134,8 @@ describe('Excel tracker', () => {
     const ws = wb.getWorksheet('Issues')!;
     const header = (ws.getRow(1).values as unknown[]).slice(1);
     expect(header).toEqual(expect.arrayContaining(['ID', 'Status', 'Owner', 'Notes', 'First found', 'Last seen', 'Latest scan']));
-    expect(ws.getCell('J2').dataValidation?.formulae?.[0]).toContain('Verified');
-    expect(ws.getCell('J20').dataValidation?.type).toBe('list'); // room for rows added by hand
+    expect(ws.getCell('K2').dataValidation?.formulae?.[0]).toContain('Verified');
+    expect(ws.getCell('K20').dataValidation?.type).toBe('list'); // room for rows added by hand
     expect(ws.autoFilter).toBeTruthy();
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const manual = rows(wb.getWorksheet('Manual checks')!);
@@ -267,5 +270,88 @@ describe('readability details', () => {
     expect(rep.issues[0]!.steps.some((s) => s.startsWith('Affected element'))).toBe(false);
     expect(rep.issues[0]!.issue).toBe('Text is hard to read (low contrast) (2 places)');
     expect(rep.screens.map((s) => s.title)).not.toContain('R2QXJAl4kVfzG8vlnL8yfIF-45qEXu8x');
+  });
+});
+
+// A valid 1x1 PNG.
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082', 'hex');
+
+describe('screenshots in the workbook', () => {
+  function seedWithShots(url: string, shots: { element: boolean; screen: boolean }) {
+    const run = seedRun({ url, findings: [{ ruleId: 'RUN-005', category: 'runtime', type: 'standards_warning', severity: 'low', title: 'Page has no title', fingerprint: 'a1'.repeat(32) }, { ruleId: 'RUN-003', category: 'runtime', type: 'heuristic_warning', severity: 'low', title: 'Console error: x', fingerprint: 'b2'.repeat(32) }] });
+    const state = h.store.listStates(run.id)[0]!;
+    const all = h.store.listFindings(run.id);
+    const first = all.find((f) => f.ruleId === 'RUN-005')!;
+    const second = all.find((f) => f.ruleId === 'RUN-003')!;
+    if (shots.screen) {
+      const a = h.artifacts.write(run.id, { kind: 'screenshot', mime: 'image/png', bytes: PNG });
+      h.store.insertEvidence({ id: newId<EvidenceId>(), runId: run.id, kind: 'screenshot', artifactId: a.id, caption: 'Initial state', stateId: state.id, capturedAt: nowIso(), redacted: false });
+    }
+    if (shots.element) {
+      const a = h.artifacts.write(run.id, { kind: 'annotated_screenshot', mime: 'image/png', bytes: PNG });
+      const ev = { id: newId<EvidenceId>(), runId: run.id, kind: 'annotated_screenshot' as const, artifactId: a.id, caption: 'Outlined', stateId: state.id, capturedAt: nowIso(), redacted: false };
+      h.store.insertEvidence(ev);
+      h.store.db.prepare('UPDATE findings SET data_json = ? WHERE id = ?').run(JSON.stringify({ ...first!, evidenceIds: [ev.id] }), first!.id);
+    }
+    return { run, first: first!, second: second! };
+  }
+  const loadImage = (id: string) => {
+    const rec = h.store.getArtifact(id);
+    return rec ? readFileSync(h.artifacts.absolutePath(rec)) : undefined;
+  };
+
+  it('prefers the outlined element, falls back to the whole screen, and embeds each picture once', async () => {
+    seedWithShots(COURSE, { element: true, screen: true });
+    const report = buildProjectReport(h.store, projectId);
+    const kinds = Object.fromEntries(report.issues.map((i) => [i.technical.ruleId, i.screenshotKind]));
+    expect(kinds).toEqual({ 'RUN-005': 'element', 'RUN-003': 'screen' });
+    const wb = await load(await buildWorkbook(report, { loadImage }));
+    const issues = wb.getWorksheet('Issues')!;
+    expect(issues.getImages()).toHaveLength(2);
+    expect(wb.getWorksheet('Screens')!.getImages()).toHaveLength(1);
+    // Two artifacts in total (outlined crop and screen), however many places show them.
+    expect((wb.model as { media?: unknown[] }).media).toHaveLength(2);
+    expect(rows(issues).map((r) => r.Screenshot)).toEqual(['Affected element outlined', 'Whole screen']);
+  });
+
+  it('leaves the cell empty when there is no screenshot, and survives a missing file', async () => {
+    seedWithShots(COURSE, { element: false, screen: false });
+    const report = buildProjectReport(h.store, projectId);
+    const wb = await load(await buildWorkbook(report, { loadImage }));
+    expect(wb.getWorksheet('Issues')!.getImages()).toHaveLength(0);
+    const withGhost = { ...report, issues: report.issues.map((i) => ({ ...i, screenshotId: '00000000-0000-0000-0000-000000000000', screenshotKind: 'screen' as const })) };
+    const wb2 = await load(await buildWorkbook(withGhost, { loadImage }));
+    expect(wb2.getWorksheet('Issues')!.getImages()).toHaveLength(0);
+  });
+});
+
+describe('one workbook per course', () => {
+  const A = 'https://course-a.example.com/';
+  const B = 'https://course-b.example.com/start';
+
+  it('exports each course separately, keeps the all-courses workbook, and rejects unknown courses', async () => {
+    seedRun({ url: A, findings: [{ ruleId: 'RUN-005', category: 'runtime', type: 'standards_warning', severity: 'low', title: 'Page has no title', fingerprint: 'c3'.repeat(32) }] });
+    seedRun({ url: B, findings: [{ ruleId: 'RUN-002', category: 'runtime', type: 'automated_defect', severity: 'high', title: 'Uncaught JavaScript exception: boom', fingerprint: 'd4'.repeat(32) }, { ruleId: 'RUN-003', category: 'runtime', type: 'heuristic_warning', severity: 'low', title: 'Console error: y', fingerprint: 'e5'.repeat(32) }] });
+    const app = buildApp({ store: h.store, artifacts: h.artifacts, policy: h.policy, allowedHosts: [HOST], allowedOrigins: [`http://${HOST}`] });
+    try {
+      const get = (q: string) => app.inject({ method: 'GET', url: `/api/projects/${projectId}/export.xlsx${q}`, headers: { host: HOST } });
+      const a = await get(`?course=${encodeURIComponent(A)}`);
+      expect(a.statusCode).toBe(200);
+      expect(a.headers['content-disposition']).toContain('course-a-example-com');
+      const wbA = await load(a.rawPayload);
+      expect(rows(wbA.getWorksheet('Issues')!).map((r) => r.Course)).toEqual([A]);
+      expect(rows(wbA.getWorksheet('Screens')!)).toHaveLength(1);
+
+      const b = await load((await get(`?course=${encodeURIComponent(B)}`)).rawPayload);
+      expect(rows(b.getWorksheet('Issues')!)).toHaveLength(2);
+      expect(rows(b.getWorksheet('Issues')!).every((r) => r.Course === B)).toBe(true);
+      expect(b.getWorksheet('Summary')!.getRow(5).getCell(1).value).toBe(B);
+
+      const all = await load((await get('')).rawPayload);
+      expect(rows(all.getWorksheet('Issues')!)).toHaveLength(3);
+      expect((await get(`?course=${encodeURIComponent('https://nope.example.com/')}`)).statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
   });
 });

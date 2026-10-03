@@ -2,7 +2,8 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProjectId } from '@cqa/shared';
-import { buildProjectReport, buildRunReport, runReportAsProject } from '@cqa/core';
+import { buildProjectReport, buildRunReport, reportForCourse, runReportAsProject } from '@cqa/core';
+import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
@@ -157,6 +158,24 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   });
 
   const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  // Screenshots are read from the artifact store by opaque id; a missing file is simply left out.
+  const loadImage = (artifactId: string): Buffer | undefined => {
+    const rec = store.getArtifact(artifactId);
+    if (!rec || rec.mime !== 'image/png') return undefined;
+    try {
+      return readFileSync(artifacts.absolutePath(rec));
+    } catch {
+      return undefined;
+    }
+  };
+  const hostSlug = (url: string) => {
+    try {
+      const u = new URL(url);
+      return fileSlug(`${u.hostname}${u.pathname}`).slice(0, 40);
+    } catch {
+      return 'course';
+    }
+  };
   const fileSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'report';
 
   // Plain-language report model for one scan (the run page summary and the Excel export share it).
@@ -169,7 +188,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
     if (!run) return notFound(reply, 'Scan not found.');
     const project = store.getProject(run.projectId);
-    const buf = await buildWorkbook(runReportAsProject(buildRunReport(store, run.id), project?.name ?? 'Course QA', run.projectId));
+    const buf = await buildWorkbook(runReportAsProject(buildRunReport(store, run.id), project?.name ?? 'Course QA', run.projectId), { loadImage });
     reply.header('Content-Type', XLSX_TYPE);
     reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project?.name ?? 'scan')}-scan-${run.queuedAt.slice(0, 10)}.xlsx"`);
     reply.header('Cache-Control', 'no-store');
@@ -177,12 +196,21 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   });
 
   // Consolidated, trackable workbook across every finished scan in a project.
-  app.get<{ Params: { id: string } }>('/api/projects/:id/export.xlsx', async (req, reply) => {
+  // Optional ?course=<exact course address> exports one course; without it, all courses in the project share one workbook.
+  app.get<{ Params: { id: string }; Querystring: { course?: string } }>('/api/projects/:id/export.xlsx', async (req, reply) => {
     const project = isOpaqueId(req.params.id) ? store.getProject(req.params.id) : undefined;
     if (!project) return notFound(reply, 'Project not found.');
-    const buf = await buildWorkbook(buildProjectReport(store, project.id));
+    let report = buildProjectReport(store, project.id);
+    let suffix = '';
+    if (typeof req.query.course === 'string' && req.query.course) {
+      const one = reportForCourse(report, req.query.course);
+      if (!one) return notFound(reply, 'That course has no finished scans in this project.');
+      report = one;
+      suffix = `-${hostSlug(req.query.course)}`;
+    }
+    const buf = await buildWorkbook(report, { loadImage });
     reply.header('Content-Type', XLSX_TYPE);
-    reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project.name)}-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project.name)}${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     reply.header('Cache-Control', 'no-store');
     return reply.send(buf);
   });

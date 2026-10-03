@@ -72,6 +72,16 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
                     <strong>{i.issue}</strong>
                     <span className="muted mono">{i.id}</span>
                   </div>
+                  {i.screenshotId && (
+                    <figure className="issue-shot">
+                      <img
+                        src={api.artifactUrl(i.screenshotId)}
+                        alt={i.screenshotKind === 'element' ? `Screenshot with the affected element outlined in red: ${i.issue}` : `Screenshot of screen ${i.screens[0] ?? ''} where this was found`}
+                        loading="lazy"
+                      />
+                      <figcaption>{i.screenshotKind === 'element' ? 'Affected element outlined' : 'Whole screen'}</figcaption>
+                    </figure>
+                  )}
                   <p className="issue-change">
                     <span className="label">What to change:</span> {i.change}
                   </p>
