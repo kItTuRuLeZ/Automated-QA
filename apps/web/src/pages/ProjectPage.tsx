@@ -104,6 +104,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [sizes, setSizes] = useState<string[]>(['desktop']);
   const [layout, setLayout] = useState(true);
   const [compareBaseline, setCompareBaseline] = useState(false);
+  const [testNonResponsive, setTestNonResponsive] = useState(false);
   const [explore, setExplore] = useState(true);
   const [accessibility, setAccessibility] = useState(true);
   const [maxStates, setMaxStates] = useState(25);
@@ -132,6 +133,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         viewports: VIEWPORTS.map((v) => v.name).filter((n) => sizes.includes(n)) as Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>,
         layout,
         compareBaseline: layout && compareBaseline,
+        testNonResponsive: layout && testNonResponsive,
         explore,
         accessibility,
         maxStates,
@@ -210,6 +212,10 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         <label className="checkbox">
           <input type="checkbox" checked={layout} onChange={(e) => setLayout(e.target.checked)} /> Check layout, screen sizes, and page load
         </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={testNonResponsive} disabled={!layout} onChange={(e) => setTestNonResponsive(e.target.checked)} /> Test other screen sizes even for Storyline courses (not recommended)
+        </label>
+        <p className="help">Storyline courses are a fixed-size stage that is not designed to be responsive. They are recognized automatically and tested at the first size only.</p>
         <label className="checkbox">
           <input type="checkbox" checked={compareBaseline} disabled={!layout} onChange={(e) => setCompareBaseline(e.target.checked)} /> Compare screenshots with the saved baseline (use on stable pages only)
         </label>

@@ -59,9 +59,17 @@ export function ScreenSizes({ run, isActive }: { run: ScanRun; isActive: boolean
                     {v.isMobile ? ', mobile emulation' : ''}
                     {v.hasTouch ? ', touch' : ''}
                   </td>
-                  <td>{v.screensChecked}</td>
-                  <td>{v.screensNotReached > 0 ? <strong>{v.screensNotReached}</strong> : 0}</td>
-                  <td>{v.layoutIssues}</td>
+                  {v.skipped ? (
+                    <td colSpan={3}>
+                      <strong>Not tested.</strong> {v.skipped}
+                    </td>
+                  ) : (
+                    <>
+                      <td>{v.screensChecked}</td>
+                      <td>{v.screensNotReached > 0 ? <strong>{v.screensNotReached}</strong> : 0}</td>
+                      <td>{v.layoutIssues}</td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>

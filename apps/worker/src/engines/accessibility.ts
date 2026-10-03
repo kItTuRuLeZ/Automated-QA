@@ -22,7 +22,7 @@ export class AccessibilityChecks {
   readonly id = 'accessibility';
   readonly version = '1.0.0';
 
-  async checkState(ctx: ProviderContext, state: CourseState, repro: string[]): Promise<StateA11yResult> {
+  async checkState(ctx: ProviderContext, state: CourseState, repro: string[], opts: { skipReflow?: string } = {}): Promise<StateA11yResult> {
     const page = ctx.page as Page;
     const viewportName = ctx.viewport.name;
     const redaction = ctx.config.redaction;
@@ -61,6 +61,10 @@ export class AccessibilityChecks {
     }
 
     // ---- reflow at 320 CSS px (heuristic) ----
+    if (opts.skipReflow) {
+      checks.push(check('A11Y-008', 'not_applicable', 0, [], { ...base, reasonDetail: opts.skipReflow }));
+      return { checks, findings };
+    }
     const original = page.viewportSize();
     try {
       await page.setViewportSize({ width: 320, height: 568 });

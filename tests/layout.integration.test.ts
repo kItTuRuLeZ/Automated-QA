@@ -249,3 +249,54 @@ describe('reports and API for screen sizes', () => {
     }
   });
 });
+
+describe('non-responsive Storyline output', () => {
+  const SIZE_SKIP = /fixed-size stage that is not designed to be responsive/;
+
+  it('is recognized and tested at the first size only; other sizes are "not applicable", never passed or flagged', async () => {
+    const { run, checks, findings } = await scan('storyline-like/', { accessibility: true });
+    expect(run.coverage?.platform).toBe('storyline');
+    // Desktop still gets the full layout checks.
+    expect(at(checks, 'LAY-001', 'desktop')).toEqual(['passed']);
+    // The 900 px stage would overflow a phone, but Storyline is not responsive, so mobile and tablet are skipped with the reason.
+    for (const vp of ['tablet', 'mobile']) {
+      for (const rule of ['LAY-001', 'LAY-002', 'LAY-003', 'LAY-004', 'LAY-005']) expect(at(checks, rule, vp), `${rule}@${vp}`).toEqual(['not_applicable']);
+      expect(checks.find((c) => c.ruleId === 'LAY-001' && c.viewportName === vp)?.reasonDetail).toMatch(SIZE_SKIP);
+    }
+    expect(layoutFindings(findings).filter((f) => /tablet|mobile/.test(f.title))).toEqual([]);
+    // The 320 px reflow check does not apply either.
+    const reflow = checks.filter((c) => c.ruleId === 'A11Y-008');
+    expect(reflow.map((c) => c.outcome)).toEqual(['not_applicable']);
+    expect(reflow[0]?.reasonDetail).toContain('fixed-size stage');
+    // No screenshots were taken at the skipped sizes.
+    const shots = h.store.listEvidenceByKind(run.id, 'screenshot').filter((e) => e.data?.layoutCapture);
+    expect(shots.map((s) => s.viewportName)).toEqual(['desktop']);
+  });
+
+  it('shows the skip in the report and the workbook instead of looking like a pass', async () => {
+    const { run } = await scan('storyline-like/');
+    const rep = buildRunReport(h.store, run.id);
+    expect(rep.viewports?.map((v) => [v.name, v.screensChecked, !!v.skipped])).toEqual([
+      ['desktop', 1, false],
+      ['tablet', 0, true],
+      ['mobile', 0, true],
+    ]);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await buildWorkbook(buildProjectReport(h.store, run.projectId))) as never);
+    const summary = JSON.stringify(wb.getWorksheet('Summary')!.getSheetValues());
+    expect(summary).toContain('Not tested: Storyline output is a fixed-size stage');
+  });
+
+  it('can be overridden to test the other sizes anyway', async () => {
+    const { run, checks, findings } = await scan('storyline-like/', { testNonResponsive: true });
+    expect(at(checks, 'LAY-001', 'mobile')).toEqual(['needs_review']);
+    expect(of(findings, 'LAY-001').some((f) => f.title.includes('mobile'))).toBe(true);
+    expect(buildRunReport(h.store, run.id).viewports!.every((v) => !v.skipped)).toBe(true);
+  });
+
+  it('does not skip sizes for ordinary responsive pages', async () => {
+    const { run, checks } = await scan('layout-overflow/');
+    expect(run.coverage?.platform).toBe('unknown');
+    expect(at(checks, 'LAY-001', 'mobile')).toEqual(['needs_review']);
+  });
+});

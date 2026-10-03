@@ -109,6 +109,11 @@ export interface LayoutSettings {
   perf: PerfThresholds;
   /** Fraction of pixels that may differ from the baseline before a diff is raised. */
   baselineDiffRatio: number;
+  /**
+   * Storyline output is a fixed-size stage and is not designed to be responsive, so by default
+   * the extra screen sizes and the 320 px reflow check are skipped for it. Set true to test anyway.
+   */
+  testNonResponsive?: boolean;
 }
 
 export interface ScanTarget {
@@ -163,6 +168,8 @@ export interface CoverageSummary {
   failedTransitions: number;
   budgetsReached: ReasonCode[];
   blockedRequests: number;
+  /** Authoring platform recognized on the first page, when known. */
+  platform?: 'storyline' | 'unknown';
 }
 
 export interface ScanRun {

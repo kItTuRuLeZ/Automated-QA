@@ -149,7 +149,7 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
     for (const c of sized) {
       for (const v of c.latest.viewports ?? []) {
         const row = ws.getRow(r++);
-        row.values = [safeCell(c.targetUrl), `${v.name} ${v.width}×${v.height}`, v.screensChecked, v.screensNotReached, v.layoutIssues, `device scale ${v.deviceScaleFactor}${v.isMobile ? ', mobile emulation' : ''}${v.hasTouch ? ', touch' : ''}${c.latest.run.browser ? `; ${c.latest.run.browser}` : ''}`];
+        row.values = [safeCell(c.targetUrl), `${v.name} ${v.width}×${v.height}`, v.screensChecked, v.screensNotReached, v.layoutIssues, v.skipped ? safeCell(`Not tested: ${v.skipped}`) : `device scale ${v.deviceScaleFactor}${v.isMobile ? ', mobile emulation' : ''}${v.hasTouch ? ', touch' : ''}${c.latest.run.browser ? `; ${c.latest.run.browser}` : ''}`];
         row.alignment = { vertical: 'top', wrapText: true };
       }
     }

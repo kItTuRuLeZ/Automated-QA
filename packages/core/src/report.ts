@@ -51,6 +51,8 @@ export interface ReportViewport {
   screensChecked: number;
   screensNotReached: number;
   layoutIssues: number;
+  /** Why this size was not tested at all (for example a non-responsive Storyline course). */
+  skipped?: string;
 }
 
 export interface ReportPerformance {
@@ -152,6 +154,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
         screensChecked: layoutChecks.filter((c) => c.viewportName === v.name && (c.outcome === 'passed' || c.outcome === 'needs_review')).length,
         screensNotReached: layoutChecks.filter((c) => c.viewportName === v.name && c.outcome === 'not_tested').length,
         layoutIssues: issues.filter((i) => i.viewports.includes(v.name) && /^LAY-/.test(i.technical.ruleId)).length,
+        skipped: layoutChecks.find((c) => c.viewportName === v.name && c.outcome === 'not_applicable')?.reasonDetail,
       }))
     : undefined;
   const timing = run.config.engines.performance ? store.listEvidenceByKind(runId, 'timing').find((e) => e.data && 'thresholds' in e.data) : undefined;

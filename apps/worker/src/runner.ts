@@ -186,6 +186,9 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
             },
           })
         : undefined;
+    // Storyline is a fixed-size stage that scales instead of reflowing: other screen sizes and the 320 px reflow check do not apply.
+    const nonResponsive = out.platform === 'storyline' && !run.config.layout?.testNonResponsive;
+    const SKIP_SIZE_TEXT = 'Storyline output is a fixed-size stage that is not designed to be responsive, so this screen size was not tested. Use "test other screen sizes anyway" to override.';
     const a11yEngine = new AccessibilityChecks();
     const keyboardEngine = new KeyboardChecks();
     const annotator = new Annotator();
@@ -207,7 +210,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
           linkAppearances.push(...r.links);
         });
       }
-      if (run.config.engines.accessibility) await guarded(async () => void batches.push(await a11yEngine.checkState({ ...ctx, state }, state, repro)));
+      if (run.config.engines.accessibility) await guarded(async () => void batches.push(await a11yEngine.checkState({ ...ctx, state }, state, repro, { skipReflow: nonResponsive ? 'Storyline output is a fixed-size stage that is not designed to reflow at narrow widths, so the 320 px reflow check does not apply.' : undefined })));
       if (run.config.engines.keyboard) await guarded(async () => void batches.push(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
       if (layoutEngine && run.config.engines.layout) await guarded(async () => void batches.push(await layoutEngine.checkState({ ...ctx, state }, state, repro, pathKey)));
       await guarded(async () => annotator.annotateFindings({ ...ctx, state }, state.id, batches.flatMap((b) => b.findings)));
@@ -252,7 +255,14 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     if (!run.config.engines.traversal && pageUsable && out.state) await onStateReady(out.state, [`Open ${targetUrl} in Chromium.`], '');
 
     // ---- the same screens at the other viewports (separate contexts with their own device settings) ----
-    if (layoutEngine && run.config.engines.layout && pageUsable && out.state && run.config.viewports.length > 1) {
+    if (layoutEngine && run.config.engines.layout && pageUsable && out.state && run.config.viewports.length > 1 && nonResponsive) {
+      for (const v of run.config.viewports.slice(1)) {
+        persistResults({
+          checks: (['LAY-001', 'LAY-002', 'LAY-003', 'LAY-004', 'LAY-005'] as const).map((id) => ({ ruleId: id, stateId: out.state!.id, viewportName: v.name, outcome: 'not_applicable' as const, reasonDetail: SKIP_SIZE_TEXT, durationMs: 0, evidenceIds: [], executedAt: nowIso() })),
+          findings: [],
+        });
+      }
+    } else if (layoutEngine && run.config.engines.layout && pageUsable && out.state && run.config.viewports.length > 1) {
       try {
         await runViewportPasses({
           browser,
@@ -299,6 +309,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
       failedTransitions: traversal?.failedTransitions ?? 0,
       budgetsReached,
       blockedRequests: new Set(blocked.filter((b) => b.host).map((b) => b.url)).size,
+      platform: out.platform,
     };
 
     // Screens that could not be reached again at another viewport leave that viewport only partly checked.

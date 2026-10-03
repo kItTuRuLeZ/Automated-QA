@@ -14,7 +14,7 @@ export interface Harness {
   tmpRoot: string;
   worker?: WorkerLoop;
   startWorker(): WorkerLoop;
-  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; accessibility?: boolean; layout?: boolean; viewports?: string[]; compareBaseline?: boolean; perf?: { loadMs?: number; totalBytes?: number; requestCount?: number }; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number }): ScanRun;
+  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; accessibility?: boolean; layout?: boolean; viewports?: string[]; compareBaseline?: boolean; testNonResponsive?: boolean; perf?: { loadMs?: number; totalBytes?: number; requestCount?: number }; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number }): ScanRun;
   waitForTerminal(runId: string, timeoutMs?: number): Promise<ScanRun>;
   close(): Promise<void>;
 }
@@ -55,6 +55,7 @@ export function createHarness(policyOptions: PolicyOptions = {}): Harness {
         layout: opts.layout ?? false,
         viewports: opts.viewports ? viewportsByName(opts.viewports) : undefined,
         compareBaseline: opts.compareBaseline,
+        testNonResponsive: opts.testNonResponsive,
         perf: opts.perf,
         maxStates: opts.maxStates,
         maxDepth: opts.maxDepth,

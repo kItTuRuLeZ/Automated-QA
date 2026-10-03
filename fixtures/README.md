@@ -16,6 +16,7 @@ Local course fixtures served by `tests/support/fixture-server.ts` on `127.0.0.1`
 | `dialog-good/`, `dialog-broken/`, `keyboard-trap/`, `focus-style/`, `keyboard-controls/` | Working and broken modal dialog keyboard behavior; a Tab trap; four focus styles; native, mouse-only, and click-only controls (KBD-001..004). |
 | `late-controls/` | Tabs rendered 3 s after the page looks stable; discovery must look again. |
 | `layout-overflow/`, `layout-clipped/`, `layout-intentional/`, `layout-obscured/`, `layout-dialog/`, `layout-fonts/`, `responsive-hidden/` | Screen-size checks: a 900 px block, clipped text (with ellipsis, line clamp, scroller, hidden helper text that must not be flagged), intentional overlaps that must not be flagged, a covered button, an off-screen dialog, a missing web font, a control that only exists on wide screens (LAY-001..005). |
+| `storyline-like/` | Defines Storyline's loader global and a fixed 900 px stage; screen sizes beyond the first must be skipped, with an override. |
 | `perf-heavy/` | Two large images for page-load thresholds (PERF-001). |
 | `inconsistent-control/` | A control that works in one state and not another (review item, not a defect). |
 | `authoring-patterns/`, `slow-first-tab/` | Storyline-style script links, inline placeholder video, player controls, Back to top, Start Course; a control slow only the first time (must not be reported). |

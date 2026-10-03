@@ -341,6 +341,16 @@ Requested after the first review: reports were too hard to read. Audience chosen
 - Two fixes came from scanning the supplied Storyline course after the full run: page overflow that the page hides with overflow-x hidden is no longer reported as sideways scrolling (learners cannot scroll to it; fixture case added), and the opening page is always treated as restorable, because Storyline's changing text made the scanner think it could not return to it and stop after one screen. The layout and traversal test files were re-run after both (14 and 14 passed); the full suite had passed (146) just before.
 - Mobile is a viewport and device-settings simulation in Chromium; it is not an iOS or Android browser test.
 
+### Update: Storyline is not tested at other screen sizes (2026-10-03)
+
+Requested: Storyline courses are a fixed-size stage and not responsive, so they need not be tested on mobile screens.
+
+- **Detection** (`detectPlatform` in `adapters/layout-scripts.ts`): Storyline output is recognized on the first page from its loader and player globals (`globalProvideData`, `DS`) and its `story_content`, `bootstrapper.min.js`, `slides.min.js`, and `output.min.css` assets. The result is stored as `coverage.platform` (`storyline` or `unknown`). Confirmed on the supplied Storyline course; the supplied Rise course is not matched.
+- **Behavior**: for Storyline, the first size (desktop by default) gets the full layout checks. Every other requested size gets LAY-001..005 results of **not applicable** with the reason "Storyline output is a fixed-size stage that is not designed to be responsive, so this screen size was not tested", no screenshots, and no findings. The 320 px reflow check (A11Y-008) is also not applicable. Skipped is shown, never passed: the scan page card and the Excel Summary say "Not tested" with the reason.
+- **Override**: the scan form has "Test other screen sizes even for Storyline courses (not recommended)"; the API field is `testNonResponsive`.
+- **Tests** (4 new in `tests/layout.integration.test.ts`, fixture `storyline-like/`): recognized and tested at the first size only; skip visible in the report and workbook; override works; ordinary pages are unaffected.
+- **Limitation**: detection relies on Storyline's own markers; output from other tools that is also fixed-size (for example some Captivate output) is not recognized and will still be tested at every size.
+
 ## Phase 5 — plan (next)
 
 1. Canonical report model exports: JSON, self-contained HTML, and PDF (Excel exists); counts with defined denominators; evidence embedded; untrusted text escaped.

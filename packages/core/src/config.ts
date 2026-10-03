@@ -169,6 +169,8 @@ export function buildScanConfig(input: {
   /** Compare screenshots with the course's stored baseline (only identical settings are compared). */
   compareBaseline?: boolean;
   perf?: Partial<LayoutSettings['perf']>;
+  /** Test other screen sizes even on non-responsive platforms (Storyline). */
+  testNonResponsive?: boolean;
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -204,7 +206,7 @@ export function buildScanConfig(input: {
     redaction: DEFAULT_REDACTION,
     textRules: { placeholderPatterns: DEFAULT_PLACEHOLDER_PATTERNS, terminology: input.terminology ?? [], exclusions: input.textExclusions ?? [] },
     mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
-    layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf } },
+    layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf }, testNonResponsive: input.testNonResponsive ?? false },
     configVersion: 1,
   };
 }

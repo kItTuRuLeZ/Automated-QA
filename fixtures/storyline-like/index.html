@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Storyline-like Fixture</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+  // Storyline's loader defines this global; it is how the scanner recognizes Storyline output.
+  window.globalProvideData = function () {};
+</script>
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  /* A fixed 900 px wide stage, as Storyline produces: it scales instead of reflowing. */
+  #stage { width: 900px; height: 300px; background: #123; color: #fff; padding: 12px; box-sizing: border-box; }
+</style></head>
+<body>
+  <main>
+    <h1 style="margin:8px 12px">Fixed-size stage</h1>
+    <div id="stage">Slide content on a fixed-size stage.</div>
+  </main>
+</body>
+</html>

@@ -16,7 +16,7 @@ import type {
 import { type NetworkPolicy, PHASE1_RULES, fingerprint, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type NewCheck, type NewFinding, capitalize, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
-import { type PerfSample, collectPerf } from '../adapters/layout-scripts.js';
+import { type PerfSample, collectPerf, detectPlatform } from '../adapters/layout-scripts.js';
 
 
 export interface CaptureOutput extends EngineResult {
@@ -26,6 +26,7 @@ export interface CaptureOutput extends EngineResult {
   navigationReason?: ReasonCode;
   /** Page-load sample from the first (cold-cache) navigation, for PERF-001. */
   perf?: PerfSample;
+  platform?: 'storyline' | 'unknown';
   outOfScope: boolean;
 }
 
@@ -211,6 +212,7 @@ export class InitialCapture implements CaptureProvider {
     }
 
     let perf: PerfSample | undefined;
+    let platform: 'storyline' | 'unknown' | undefined;
     const pageUsable = !navigationFailed && !outOfScopeHop;
     const skipReason: ReasonCode = outOfScopeHop ? 'out_of_scope' : (navigationReason ?? 'state_unreachable');
 
@@ -250,6 +252,7 @@ export class InitialCapture implements CaptureProvider {
         })
         .catch(() => null);
       perf = await page.evaluate(collectPerf).catch(() => undefined);
+      platform = await page.evaluate(detectPlatform).catch(() => 'unknown' as const);
       if (timing) {
         const ev = await ctx.evidence.addEvidence({
           kind: 'timing',
@@ -387,6 +390,7 @@ export class InitialCapture implements CaptureProvider {
       navigationFailed,
       navigationReason,
       perf,
+      platform,
       outOfScope: outOfScopeHop !== undefined,
     };
   }

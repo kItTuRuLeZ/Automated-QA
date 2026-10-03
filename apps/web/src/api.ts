@@ -15,7 +15,7 @@ export interface RunReport {
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
-  viewports?: Array<{ name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean; screensChecked: number; screensNotReached: number; layoutIssues: number }>;
+  viewports?: Array<{ name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean; screensChecked: number; screensNotReached: number; layoutIssues: number; skipped?: string }>;
   performance?: {
     loadMs: number | null;
     transferredBytes: number;
@@ -83,6 +83,7 @@ export const api = {
       accessibility?: boolean;
       layout?: boolean;
       compareBaseline?: boolean;
+      testNonResponsive?: boolean;
       viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>;
       maxStates?: number;
       maxDepth?: number;

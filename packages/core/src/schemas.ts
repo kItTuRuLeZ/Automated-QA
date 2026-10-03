@@ -34,6 +34,7 @@ export const CreateScanInput = z.object({
   accessibility: z.boolean().optional(),
   layout: z.boolean().optional(),
   compareBaseline: z.boolean().optional(),
+  testNonResponsive: z.boolean().optional(),
   /** Viewport preset names: desktop, laptop, tablet, mobile. The first is the primary viewport. */
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),

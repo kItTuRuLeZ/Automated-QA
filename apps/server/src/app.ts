@@ -119,6 +119,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       accessibility: input.accessibility,
       layout: input.layout,
       compareBaseline: input.compareBaseline,
+      testNonResponsive: input.testNonResponsive,
       viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
       maxStates: input.maxStates,
       maxDepth: input.maxDepth,
