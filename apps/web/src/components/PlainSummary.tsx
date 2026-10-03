@@ -71,6 +71,7 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
                     <SeverityBadge severity={i.priority} />
                     <strong>{i.issue}</strong>
                     <span className="muted mono">{i.id}</span>
+                    {i.viewports.length > 0 && <span className="muted">at {i.viewports.join(', ')}</span>}
                   </div>
                   {i.screenshotId && (
                     <figure className="issue-shot">

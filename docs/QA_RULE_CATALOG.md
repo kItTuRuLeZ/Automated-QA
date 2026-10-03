@@ -115,13 +115,13 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LAY-001 | Unintended horizontal page overflow | scrollWidth vs viewport, offending element bounds, annotated screenshot | Each viewport | heuristic_warning | Medium/medium | 4 | heuristic | Intentional scroll containers excluded. |
-| LAY-002 | Likely clipped text | scroll vs client dimensions, overflow style, crop | Text elements | heuristic_warning | Medium/low | 4 | heuristic | Ellipsis/intentional truncation possible. |
-| LAY-003 | Control obscured by another element | Hit-test at control center, bounds | Interactive elements | heuristic_warning | Medium/low | 4 | heuristic | Overlays, tooltips, badges excluded. |
-| LAY-004 | Dialog off-screen | Dialog bounds vs viewport | Open dialogs | heuristic_warning | Medium/medium | 4 | heuristic | — |
-| LAY-005 | Font failed to load | FontFace status, failed request | Every state | automated_defect | Low/high | 4 | planned | — |
-| VIS-001 | Baseline screenshot differs | Diff image, ratio, matching config key | Controlled baselines only | manual_review | Informational/medium | 4 | planned | Diff is a review signal, not a defect. Incompatible configs never compared. |
-| PERF-001 | Threshold exceeded (load timing, transfer, largest asset) | Metric, threshold + provenance, conditions | Top document | heuristic_warning | Low/medium | 4 | planned | Not a performance audit; cache, network, machine affect results. |
+| LAY-001 | Unintended horizontal page overflow | scrollWidth vs viewport, offending element bounds, annotated screenshot | Each viewport | heuristic_warning | Medium/medium | 4 | implemented (heuristic) | Intentional scroll containers excluded. |
+| LAY-002 | Likely clipped text | scroll vs client dimensions, overflow style, crop | Text elements | heuristic_warning | Medium/low | 4 | implemented (heuristic) | Ellipsis/intentional truncation possible. |
+| LAY-003 | Control obscured by another element | Hit-test at control center, bounds | Interactive elements | heuristic_warning | Medium/low | 4 | implemented (heuristic) | Overlays, tooltips, badges excluded. |
+| LAY-004 | Dialog off-screen | Dialog bounds vs viewport | Open dialogs | heuristic_warning | Medium/medium | 4 | implemented (heuristic) | — |
+| LAY-005 | Font failed to load | FontFace status, failed request | Every state | automated_defect | Low/high | 4 | implemented | — |
+| VIS-001 | Baseline screenshot differs | Diff image, ratio, matching config key | Controlled baselines only | manual_review | Informational/medium | 4 | implemented | Diff is a review signal, not a defect. Incompatible configs never compared. |
+| PERF-001 | Threshold exceeded (load timing, transfer, largest asset) | Metric, threshold + provenance, conditions | Top document | heuristic_warning | Low/medium | 4 | implemented | Not a performance audit; cache, network, machine affect results. |
 
 ### Client profile / brand (BRD)
 
@@ -174,7 +174,7 @@ Always listed in reports; never auto-passed.
 | Media | MED-001..003, MED-005 (Phase 2b) | — | MED-004 (Phase 2b) | MAN-004 |
 | Text | TXT-001 (Phase 2b) | — | TXT-002 (Phase 2b) | — |
 | Accessibility | A11Y-ENG, A11Y-AXE-* (Phase 3), A11Y-001..007 via axe, KBD-001, KBD-003, KBD-004 | — | A11Y-008, KBD-002 | MAN-001..003, MAN-007, MAN-009, MAN-010 |
-| Layout / visual / perf | — | LAY-005, VIS-001 | LAY-001..004, PERF-001 | — |
+| Layout / visual / perf | LAY-005, VIS-001 (Phase 4) | — | LAY-001..004, PERF-001 (Phase 4) | — |
 | Brand | — | — | BRD-001..003 | — |
 | Package / SCORM / fidelity | — | PKG-*, SCO-*, FID-* | — | MAN-008 |
 

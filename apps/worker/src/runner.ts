@@ -2,14 +2,16 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
-import type { CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
-import { type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
+import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
+import { DEFAULT_LAYOUT_SETTINGS, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
 import { LinkChecker } from './engines/links.js';
 import { AccessibilityChecks } from './engines/accessibility.js';
 import { KeyboardChecks } from './engines/keyboard.js';
 import { Annotator } from './engines/annotate.js';
+import { LayoutChecks } from './engines/layout.js';
+import { runViewportPasses } from './engines/viewport-pass.js';
 import { InitialCapture } from './engines/capture.js';
 import { type BlockedConnection, EgressProxy } from './net/egress-proxy.js';
 
@@ -131,7 +133,8 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     if (run.config.engines.accessibility) await context.addInitScript({ content: axeSource() });
     const page = await context.newPage();
     const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => '');
-    store.setRunEnvironment(run.id, { engine: 'chromium', version: browser.version(), userAgent, headless: true }, [
+    const browserInfo: BrowserInfo = { engine: 'chromium', version: browser.version(), userAgent, headless: true };
+    store.setRunEnvironment(run.id, browserInfo, [
       { name: 'course-qa-automation', version: '0.1.0' },
       { name: 'playwright', version: PLAYWRIGHT_VERSION },
       { name: 'chromium', version: browser.version() },
@@ -146,7 +149,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
       writeArtifact: async (a) => deps.artifacts.write(run.id, a).id,
     };
     // Images and media failures are reported with element context by MED-001/MED-002 instead of RUN-004.
-    const excludeResourceTypes = run.config.engines.media ? ['image', 'media'] : [];
+    const excludeResourceTypes = [...(run.config.engines.media ? ['image', 'media'] : []), ...(run.config.engines.layout ? ['font'] : [])];
     const ctx: ProviderContext = { runId: run.id, config: run.config, budgets: run.config.budgets, viewport, signal: controller.signal, evidence: sink, page };
     const capture = new InitialCapture({ policy: deps.policy, targetUrl, blocked: () => blocked, excludeResourceTypes });
     const out = await capture.capture(ctx);
@@ -164,10 +167,29 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     const contentOn = run.config.engines.links || run.config.engines.media || run.config.engines.content;
     const linkAppearances: LinkAppearance[] = [];
     const contentErrors: string[] = [];
+    const layoutEngine =
+      run.config.engines.layout || run.config.engines.performance
+        ? new LayoutChecks({
+            courseUrl: targetUrl,
+            browser: () => browserInfo,
+            settings: run.config.layout ?? DEFAULT_LAYOUT_SETTINGS,
+            baselines: {
+              lookup: (key) => store.getBaseline(run.projectId, targetUrl, key)?.artifactId,
+              read: (id) => {
+                const rec = store.getArtifact(id);
+                try {
+                  return rec ? readFileSync(deps.artifacts.absolutePath(rec)) : undefined;
+                } catch {
+                  return undefined;
+                }
+              },
+            },
+          })
+        : undefined;
     const a11yEngine = new AccessibilityChecks();
     const keyboardEngine = new KeyboardChecks();
     const annotator = new Annotator();
-    const onStateReady = async (state: CourseState, repro: string[]) => {
+    const onStateReady = async (state: CourseState, repro: string[], pathKey = '') => {
       const guarded = async (fn: () => Promise<void>) => {
         try {
           await fn();
@@ -187,10 +209,13 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
       }
       if (run.config.engines.accessibility) await guarded(async () => void batches.push(await a11yEngine.checkState({ ...ctx, state }, state, repro)));
       if (run.config.engines.keyboard) await guarded(async () => void batches.push(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
+      if (layoutEngine && run.config.engines.layout) await guarded(async () => void batches.push(await layoutEngine.checkState({ ...ctx, state }, state, repro, pathKey)));
       await guarded(async () => annotator.annotateFindings({ ...ctx, state }, state.id, batches.flatMap((b) => b.findings)));
       for (const b of batches) persistResults(b);
     };
     const pageUsable = Boolean(out.state) && !out.navigationFailed && !out.outOfScope;
+    // Page-load evidence comes from the first, cold-cache navigation.
+    if (layoutEngine && run.config.engines.performance && pageUsable && out.state) persistResults(await layoutEngine.perf(ctx, out.state, out.perf, [`Open ${targetUrl}`]));
 
     // ---- bounded traversal ----
     let traversal: TraversalOutput | undefined;
@@ -224,7 +249,28 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     }
 
     // Without traversal, content checks run once on the captured page.
-    if (!run.config.engines.traversal && pageUsable && out.state) await onStateReady(out.state, [`Open ${targetUrl} in Chromium.`]);
+    if (!run.config.engines.traversal && pageUsable && out.state) await onStateReady(out.state, [`Open ${targetUrl} in Chromium.`], '');
+
+    // ---- the same screens at the other viewports (separate contexts with their own device settings) ----
+    if (layoutEngine && run.config.engines.layout && pageUsable && out.state && run.config.viewports.length > 1) {
+      try {
+        await runViewportPasses({
+          browser,
+          run,
+          targetUrl,
+          replay: traversal?.replay ?? [{ stateId: out.state.id, steps: [] }],
+          states: traversal?.states ?? [out.state],
+          ctx,
+          layout: layoutEngine,
+          annotator,
+          persist: persistResults,
+          deadline: runStartedAt + run.config.budgets.maxRuntimeMs,
+        });
+      } catch (err) {
+        if (controller.signal.aborted) throw err;
+        contentErrors.push(`Viewport checks failed: ${truncateLine((err as Error).message)}`);
+      }
+    }
 
     // ---- link destinations (once per run, from every reached state) ----
     let linkCoverage: EngineResult['coverage'] = [];
@@ -255,6 +301,9 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
       blockedRequests: new Set(blocked.filter((b) => b.host).map((b) => b.url)).size,
     };
 
+    // Screens that could not be reached again at another viewport leave that viewport only partly checked.
+    const viewportGaps = run.config.engines.layout ? store.listCheckResults(run.id).filter((c) => c.ruleId === 'LAY-001' && c.reason === 'state_unreachable').length : 0;
+
     let status: RunStatus = 'completed';
     let reason: ReasonCode | undefined;
     let detail: string | undefined;
@@ -262,14 +311,15 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
       status = 'failed';
       reason = out.navigationReason;
       detail = 'The initial page could not be loaded, so page checks were not run.';
-    } else if (out.outOfScope || budgetsReached.length || out.errors.length || traversalError || coverage.failedTransitions || contentErrors.length) {
+    } else if (out.outOfScope || budgetsReached.length || out.errors.length || traversalError || coverage.failedTransitions || contentErrors.length || viewportGaps) {
       status = 'partial';
-      reason = out.outOfScope ? 'out_of_scope' : budgetsReached[0] ?? (coverage.failedTransitions ? 'state_unreachable' : 'engine_error');
+      reason = out.outOfScope ? 'out_of_scope' : budgetsReached[0] ?? (coverage.failedTransitions || viewportGaps ? 'state_unreachable' : 'engine_error');
       const parts = [
         out.outOfScope ? 'The target redirected outside the scan scope.' : '',
         budgetsReached.length ? `Exploration stopped at a scan budget (${budgetsReached.join(', ')}).` : '',
         coverage.failedTransitions ? `${coverage.failedTransitions} action(s) or state restorations failed.` : '',
         traversalError ? `Traversal error: ${traversalError}` : '',
+        viewportGaps ? `${viewportGaps} screen(s) could not be reached again at a smaller viewport and were not checked there.` : '',
         contentErrors.length ? `Content checks failed on ${contentErrors.length} state(s): ${contentErrors[0]}` : '',
         ...out.errors.map((e) => e.message),
       ].filter(Boolean);

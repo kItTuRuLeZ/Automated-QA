@@ -134,8 +134,8 @@ describe('Excel tracker', () => {
     const ws = wb.getWorksheet('Issues')!;
     const header = (ws.getRow(1).values as unknown[]).slice(1);
     expect(header).toEqual(expect.arrayContaining(['ID', 'Status', 'Owner', 'Notes', 'First found', 'Last seen', 'Latest scan']));
-    expect(ws.getCell('K2').dataValidation?.formulae?.[0]).toContain('Verified');
-    expect(ws.getCell('K20').dataValidation?.type).toBe('list'); // room for rows added by hand
+    expect(ws.getCell('L2').dataValidation?.formulae?.[0]).toContain('Verified');
+    expect(ws.getCell('L20').dataValidation?.type).toBe('list'); // room for rows added by hand
     expect(ws.autoFilter).toBeTruthy();
     expect(ws.views[0]).toMatchObject({ state: 'frozen', ySplit: 1 });
     const manual = rows(wb.getWorksheet('Manual checks')!);

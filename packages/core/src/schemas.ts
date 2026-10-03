@@ -32,6 +32,10 @@ export const CreateScanInput = z.object({
   navigationTimeoutMs: z.number().int().min(1_000).max(120_000).optional(),
   explore: z.boolean().optional(),
   accessibility: z.boolean().optional(),
+  layout: z.boolean().optional(),
+  compareBaseline: z.boolean().optional(),
+  /** Viewport preset names: desktop, laptop, tablet, mobile. The first is the primary viewport. */
+  viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
   maxDepth: z.number().int().min(0).max(10).optional(),
   terminology: z

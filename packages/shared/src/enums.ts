@@ -150,6 +150,8 @@ export const REASON_CODES = [
   'not_implemented',
   'access_restricted',
   'rate_limited',
+  'no_baseline',
+  'baseline_incompatible',
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 

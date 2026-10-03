@@ -15,6 +15,17 @@ export interface RunReport {
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
+  viewports?: Array<{ name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean; screensChecked: number; screensNotReached: number; layoutIssues: number }>;
+  performance?: {
+    loadMs: number | null;
+    transferredBytes: number;
+    requests: number;
+    largest: Array<{ url: string; bytes: number }>;
+    unavailable: string[];
+    conditions: string[];
+    thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
+  };
+  baselinesStored: number;
   issues: Array<{
     id: string;
     findingId: string;
@@ -23,6 +34,7 @@ export interface RunReport {
     issue: string;
     change: string;
     screens: string[];
+    viewports: string[];
     elements: string[];
     moreElements: number;
     steps: string[];
@@ -69,6 +81,9 @@ export const api = {
       viewport?: { name: string; width: number; height: number };
       explore?: boolean;
       accessibility?: boolean;
+      layout?: boolean;
+      compareBaseline?: boolean;
+      viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>;
       maxStates?: number;
       maxDepth?: number;
       terminology?: Array<{ term: string; preferred?: string }>;
@@ -79,6 +94,7 @@ export const api = {
   cancelRun: (id: string) => request<{ status: ScanRun['status'] }>('POST', `/api/runs/${encodeURIComponent(id)}/cancel`, {}),
   deleteRun: (id: string) => request<void>('DELETE', `/api/runs/${encodeURIComponent(id)}`),
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
+  setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
   runReport: (runId: string) => request<RunReport>('GET', `/api/runs/${encodeURIComponent(runId)}/report`),
   listActions: (runId: string) => request<TraversalAction[]>('GET', `/api/runs/${encodeURIComponent(runId)}/actions`),
   listChecks: (runId: string) => request<CheckResult[]>('GET', `/api/runs/${encodeURIComponent(runId)}/checks`),

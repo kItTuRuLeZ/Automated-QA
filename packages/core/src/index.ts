@@ -10,3 +10,4 @@ export * from './logger.js';
 export * from './manual-checklist.js';
 export * from './plain-language.js';
 export * from './report.js';
+export * from './baseline.js';

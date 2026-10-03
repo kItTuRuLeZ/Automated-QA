@@ -3,6 +3,7 @@ import type { CheckResult, Finding } from '@cqa/shared';
 import { api } from '../api';
 import { Accessibility } from '../components/Accessibility';
 import { PlainSummary } from '../components/PlainSummary';
+import { ScreenSizes } from '../components/ScreenSizes';
 import { Coverage } from '../components/Coverage';
 import {
   Empty,
@@ -30,6 +31,7 @@ export function RunPage({ id }: { id: string }) {
   const findings = useLoader(() => api.listFindings(id), [id, run.data?.status]);
   const checks = useLoader(() => api.listChecks(id), [id, run.data?.status]);
   const [cancelling, setCancelling] = useState(false);
+  const [showChecks, setShowChecks] = useState(false);
   const [cancelError, setCancelError] = useState<unknown>();
 
   if (run.error) return <ErrorBox error={run.error} onRetry={run.reload} />;
@@ -84,6 +86,8 @@ export function RunPage({ id }: { id: string }) {
       </div>
 
       <PlainSummary run={r} isActive={isActive} />
+
+      <ScreenSizes run={r} isActive={isActive} />
 
       <Accessibility run={r} checks={checks.data} findings={findings.data} />
 
@@ -169,11 +173,12 @@ export function RunPage({ id }: { id: string }) {
 
       </details>
 
-      <details className="card">
+      <details className="card" onToggle={(e) => setShowChecks((e.currentTarget as HTMLDetailsElement).open)}>
         <summary>
           <h2 className="inline-heading">All check executions ({checks.data?.length ?? 0})</h2>
         </summary>
-        {checks.data && <ChecksTable checks={checks.data} />}
+        {/* Thousands of rows: only build the table when the section is opened. */}
+        {showChecks && checks.data && <ChecksTable checks={checks.data} />}
       </details>
 
       <details className="card">

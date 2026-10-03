@@ -134,4 +134,20 @@ CREATE TABLE traversal_actions (
 CREATE INDEX idx_actions_run ON traversal_actions(run_id, seq);
 `,
   },
+  {
+    version: 3,
+    name: 'baselines',
+    sql: `
+CREATE TABLE baselines (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  course_url TEXT NOT NULL,
+  key TEXT NOT NULL,
+  artifact_id TEXT NOT NULL REFERENCES artifacts(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL,
+  label TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, course_url, key)
+);
+`,
+  },
 ];

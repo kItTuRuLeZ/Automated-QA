@@ -101,7 +101,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [origins, setOrigins] = useState('');
   const [prefixes, setPrefixes] = useState('');
   const [timeoutSec, setTimeoutSec] = useState(30);
-  const [viewport, setViewport] = useState('desktop');
+  const [sizes, setSizes] = useState<string[]>(['desktop']);
+  const [layout, setLayout] = useState(true);
+  const [compareBaseline, setCompareBaseline] = useState(false);
   const [explore, setExplore] = useState(true);
   const [accessibility, setAccessibility] = useState(true);
   const [maxStates, setMaxStates] = useState(25);
@@ -127,7 +129,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         allowedOrigins: lines(origins),
         allowedPathPrefixes: lines(prefixes),
         navigationTimeoutMs: timeoutSec * 1000,
-        viewport: VIEWPORTS.find((v) => v.name === viewport),
+        viewports: VIEWPORTS.map((v) => v.name).filter((n) => sizes.includes(n)) as Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>,
+        layout,
+        compareBaseline: layout && compareBaseline,
         explore,
         accessibility,
         maxStates,
@@ -186,17 +190,31 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
           <label htmlFor="s-timeout">Navigation timeout (seconds)</label>
           <input id="s-timeout" type="number" min={1} max={120} required value={timeoutSec} onChange={(e) => setTimeoutSec(Number(e.target.value))} />
         </div>
-        <div className="field">
-          <label htmlFor="s-viewport">Viewport (CSS-pixel simulation)</label>
-          <select id="s-viewport" value={viewport} onChange={(e) => setViewport(e.target.value)}>
-            {VIEWPORTS.map((v) => (
-              <option key={v.name} value={v.name}>
-                {v.name} — {v.width}×{v.height}
-              </option>
-            ))}
-          </select>
-        </div>
       </div>
+      <fieldset className="fieldset">
+        <legend>Screen sizes</legend>
+        <p className="help">Simulated in a desktop browser at these CSS pixel sizes, not tested on real devices. The first one ticked is used to explore the course; the others re-check the first screens reached.</p>
+        <div className="checks-row">
+          {VIEWPORTS.map((v) => (
+            <label key={v.name} className="checkbox">
+              <input
+                type="checkbox"
+                checked={sizes.includes(v.name)}
+                disabled={!layout || (sizes.length === 1 && sizes.includes(v.name))}
+                onChange={(e) => setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name)))}
+              />{' '}
+              {v.name} {v.width}×{v.height}
+            </label>
+          ))}
+        </div>
+        <label className="checkbox">
+          <input type="checkbox" checked={layout} onChange={(e) => setLayout(e.target.checked)} /> Check layout, screen sizes, and page load
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={compareBaseline} disabled={!layout} onChange={(e) => setCompareBaseline(e.target.checked)} /> Compare screenshots with the saved baseline (use on stable pages only)
+        </label>
+        <p className="help">A baseline is saved from a finished scan on its page. Only screenshots made with the same course, screen, size, browser version and settings are compared.</p>
+      </fieldset>
       <fieldset className="fieldset">
         <legend>Exploration</legend>
         <label className="checkbox">

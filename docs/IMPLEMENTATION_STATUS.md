@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 3 complete (accessibility and keyboard). **Next phase ready to run: Phase 4.**
+**Current state:** Phase 4 complete (screen sizes, visual heuristics, performance evidence). **Next phase ready to run: Phase 5.**
 
 ## Phase checklist
 
@@ -12,8 +12,8 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 1 | Working local application and URL scan pipeline | ✅ Complete (2026-10-03) |
 | 2 | Bounded traversal, functional checks, links, media | ✅ Complete (2026-10-03) |
 | 3 | Automated accessibility and keyboard review | ✅ Complete (2026-10-03) |
-| 4 | Responsive, visual heuristics, performance evidence | ⏭ Next |
-| 5 | Reports, client profiles, retest, standalone V1 | Not started |
+| 4 | Responsive, visual heuristics, performance evidence | ✅ Complete (2026-10-03) |
+| 5 | Reports, client profiles, retest, standalone V1 | ⏭ Next (Excel export already delivered early) |
 | 6 | HTML5/SCORM package inspection and isolated scans | Not started |
 | 7 | SCORM runtime harness and platform adapters | Not started |
 | 8 | Optional AI-assisted review (only on explicit request) | Not started |
@@ -298,10 +298,52 @@ Requested after the first review: reports were too hard to read. Audience chosen
 - The outline is a snapshot of the screen size used for the scan (1440×900 by default); responsive layouts at other sizes are Phase 4.
 - The "Where" column shows a shortened HTML snippet for accessibility issues; the full selector is in the technical view.
 
-## Phase 4 — plan (next)
+## Phase 4 — delivered (screen sizes, visual heuristics, performance evidence)
 
-1. Run selected reached states at configurable viewports (1440×900, 1366×768, 768×1024, 390×844) and record browser engine and emulation settings; call them simulations.
-2. Capture screenshots after fonts and assets settle (bounded waits); collect overflow, element geometry, computed styles, scroll/clip dimensions, font load errors.
-3. Heuristics with documented exclusions: likely clipped text, unintended horizontal overflow, obscured controls, off-screen dialogs; attach crops and annotated screenshots.
-4. Performance evidence (transfer estimates, largest assets, timings) with unavailable metrics marked; configurable thresholds with provenance.
-5. Baseline screenshot comparison only for matching viewport/browser/state/config; diffs are review signals.
+- **Screen sizes** (`apps/worker/src/engines/viewport-pass.ts`): the first viewport (default desktop 1440×900) explores the course as before. Every further viewport (laptop 1366×768, tablet 768×1024, mobile 390×844) runs in a **fresh browser context with that size's device settings** (device scale factor, mobile emulation, touch) and re-checks the first six reached screens by repeating the same actions. If a layout hides a control, the screen is recorded as **not tested at that size** (`state_unreachable`) and the scan is marked partial; it is never counted as passed. The report and UI call these **simulations in a desktop browser, not real devices**, and show the browser version and each size's device settings.
+- **Settled screenshots**: before measuring, the page waits (bounded: fonts 3 s, images 2 s) for fonts and visible images. One original screenshot per screen and size is kept (evidence data records size, device settings, whether fonts settled, and the baseline key). Findings also get an outlined crop taken at the size where they occurred.
+- **Heuristics** (`adapters/layout-scripts.ts`, `engines/layout.ts`), all reported as "needs review" heuristic warnings with measured numbers:
+  - LAY-001 page scrolls sideways (document width vs screen; elements past the edge listed with bounds; elements inside intentional scrollers, carousels, hidden overflow, and fixed overlays excluded).
+  - LAY-002 clipped text (hidden-overflow elements whose content is larger than their box; ellipsis, line clamps, scrolling boxes, and screen-reader-only text excluded).
+  - LAY-003 control covered by another element (hit test at the control's center for controls inside the viewport; tooltips, modal backdrops, parts of the control itself, click-through overlays, skip links, and visually hidden controls excluded; controls below the fold are not tested).
+  - LAY-004 open dialog extending past the screen edge (a dialog that scrolls inside itself is fine).
+  - LAY-005 web font failed to load (defect). Font requests are no longer double-counted as RUN-004.
+- **Page-load evidence** (PERF-001): taken from the first, cold-cache navigation: load time, transferred bytes (where the browser exposes them), request count, largest files, unavailable metrics (for example cross-origin resources without Timing-Allow-Origin), and the test conditions (empty cache, headless browser version, this machine and network, one sample, not a full audit). Thresholds are configurable per scan, with their provenance stated: application defaults of 5 s, 5 MB, 100 requests, not a published standard. When some sizes are unavailable the total is shown as "at least".
+- **Visual baseline** (VIS-001): a finished scan can be saved as the course's baseline (`POST /api/runs/:id/baseline`; button on the scan page). Later scans with "compare with baseline" turned on compare each screenshot only with a baseline that has the **same key**: course, how the screen was reached, viewport and device settings, browser engine and **major** version, and config version. No matching baseline → "not tested (no baseline)"; different image size → "not tested (incompatible)". A difference above 0.5% of pixels is a manual-review item with a diff image, never a defect.
+- **UI**: the scan form has screen-size checkboxes, a layout/page-load toggle, and the baseline option; the scan page has a "Screen sizes and page load" card (sizes with device settings, screens checked and not reached, layout issues, page-load numbers and conditions, baseline control). The big check table is only built when opened.
+- **Reports**: Issues sheet has a **Screen size** column; the Summary sheet lists the sizes tested (marked as simulations), device settings, screens checked and not reached, and page-load evidence with its conditions.
+
+### Commands run (Phase 4)
+
+| Command | Result |
+| --- | --- |
+| `npm install -w @cqa/worker pixelmatch pngjs` (+ `@types/pngjs`) | pixelmatch 7.2, pngjs 7.0 |
+| `npx vitest run tests/layout.integration.test.ts tests/report-export.test.ts` | 25 passed (layout 14, export 11) |
+| `npx vitest run` (full) | **146 passed / 146** in 10 files (about 17 minutes) |
+| Manual: UI scan of the Rise course at desktop, tablet, and mobile (4 screens) | Each size checked 4 screens; one false positive found (a visually hidden "Skip to module" link reported as covered), fixed with a regression fixture. |
+
+### Acceptance
+
+| Criterion | Result |
+| --- | --- |
+| Intentional overlay and scroll fixtures produce no confirmed defects | Passed (tooltip, badge, scroller, carousel, sticky header, modal backdrop, skip link: no layout findings at any size; heuristics are never "defects"). |
+| Overflow and clipped-text fixtures produce measured warnings at the affected viewport | Passed (900 px block: desktop passes, tablet and mobile flagged with 924 px measured; clipped box shows 200×28 of 200×72 px). |
+| Covered controls, off-screen dialogs, font failures | Passed (banner over a button; dialog 200 px past the edge; missing web font). |
+| Baselines detect a known change and do not compare incompatible configurations | Passed (blue → red block detected with a diff image; a different viewport reports "no baseline"; key changes with viewport, path, browser major version, settings). |
+| Reports show tested viewport/state coverage and performance conditions | Passed (scan page card and Excel Summary). |
+
+### Known limitations (Phase 4)
+
+- Other sizes re-check only the first six reached screens, reached by repeating the same clicks; screens whose controls are hidden at that size are reported as not reached.
+- Geometry checks are heuristics. Content revealed by interaction at a size is not measured, and controls below the fold are not hit-tested.
+- Page-load evidence is one cold-cache sample from this machine; cross-origin resource sizes are often unavailable (so totals can be understated, shown as "at least"). No Core Web Vitals, throttling, or repeated runs.
+- Baselines compare pixels, so animation, carousels, dates, and ads cause differences; use stable pages. A baseline is tied to the scan that created it: deleting that scan deletes the baseline.
+- Mobile is a viewport and device-settings simulation in Chromium; it is not an iOS or Android browser test.
+
+## Phase 5 — plan (next)
+
+1. Canonical report model exports: JSON, self-contained HTML, and PDF (Excel exists); counts with defined denominators; evidence embedded; untrusted text escaped.
+2. Client profiles (brand values only as supplied by the user), terminology and thresholds per profile.
+3. Finding workflow (Open, Assigned, Fixed, Retest, Verified, Accepted Risk, False Positive) with reasons, retest runs linked by fingerprint, and "not reproduced" vs "not retested".
+4. Backup/restore, retention and deletion settings, setup docs, sample fixture pack, and an offline run of fixtures.
+5. Validation on supplied Rise, Storyline, and custom HTML samples; mark anything not covered as pending.

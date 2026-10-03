@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ProjectId, ScanRun } from '@cqa/shared';
 import { TERMINAL_RUN_STATUSES } from '@cqa/shared';
-import { ArtifactStore, NetworkPolicy, type PolicyOptions, Store, buildScanConfig, createLogger, openDatabase, resolveDataPaths } from '@cqa/core';
+import { ArtifactStore, NetworkPolicy, type PolicyOptions, Store, buildScanConfig, createLogger, viewportsByName, openDatabase, resolveDataPaths } from '@cqa/core';
 import { type WorkerLoop, startWorker } from '@cqa/worker';
 
 export interface Harness {
@@ -14,7 +14,7 @@ export interface Harness {
   tmpRoot: string;
   worker?: WorkerLoop;
   startWorker(): WorkerLoop;
-  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; accessibility?: boolean; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number }): ScanRun;
+  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; accessibility?: boolean; layout?: boolean; viewports?: string[]; compareBaseline?: boolean; perf?: { loadMs?: number; totalBytes?: number; requestCount?: number }; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number }): ScanRun;
   waitForTerminal(runId: string, timeoutMs?: number): Promise<ScanRun>;
   close(): Promise<void>;
 }
@@ -52,6 +52,10 @@ export function createHarness(policyOptions: PolicyOptions = {}): Harness {
         navigationTimeoutMs: opts.navigationTimeoutMs ?? 10_000,
         explore: opts.explore,
         accessibility: opts.accessibility ?? false,
+        layout: opts.layout ?? false,
+        viewports: opts.viewports ? viewportsByName(opts.viewports) : undefined,
+        compareBaseline: opts.compareBaseline,
+        perf: opts.perf,
         maxStates: opts.maxStates,
         maxDepth: opts.maxDepth,
         terminology: opts.terminology,

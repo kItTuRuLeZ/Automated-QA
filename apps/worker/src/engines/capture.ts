@@ -16,6 +16,7 @@ import type {
 import { type NetworkPolicy, PHASE1_RULES, fingerprint, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type NewCheck, type NewFinding, capitalize, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
+import { type PerfSample, collectPerf } from '../adapters/layout-scripts.js';
 
 
 export interface CaptureOutput extends EngineResult {
@@ -23,6 +24,8 @@ export interface CaptureOutput extends EngineResult {
   /** True when the initial navigation produced no usable page (timeout, network error, blocked). */
   navigationFailed: boolean;
   navigationReason?: ReasonCode;
+  /** Page-load sample from the first (cold-cache) navigation, for PERF-001. */
+  perf?: PerfSample;
   outOfScope: boolean;
 }
 
@@ -207,6 +210,7 @@ export class InitialCapture implements CaptureProvider {
       checks.push(check('NET-003', 'passed', 0, [navEvidence.id], { stateId, viewportName }));
     }
 
+    let perf: PerfSample | undefined;
     const pageUsable = !navigationFailed && !outOfScopeHop;
     const skipReason: ReasonCode = outOfScopeHop ? 'out_of_scope' : (navigationReason ?? 'state_unreachable');
 
@@ -245,6 +249,7 @@ export class InitialCapture implements CaptureProvider {
           };
         })
         .catch(() => null);
+      perf = await page.evaluate(collectPerf).catch(() => undefined);
       if (timing) {
         const ev = await ctx.evidence.addEvidence({
           kind: 'timing',
@@ -381,6 +386,7 @@ export class InitialCapture implements CaptureProvider {
       state,
       navigationFailed,
       navigationReason,
+      perf,
       outOfScope: outOfScopeHop !== undefined,
     };
   }

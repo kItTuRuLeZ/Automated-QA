@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Dialog Position Fixture</title><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { margin: 0; font-family: sans-serif; }
+  .dlg { position: fixed; background: #fff; border: 2px solid #333; padding: 12px; box-sizing: border-box; }
+  #off { left: -200px; top: 60px; width: 500px; }
+  #fits { left: 20px; top: 260px; width: 300px; }
+</style></head>
+<body>
+  <h1 style="margin:8px 20px">Open dialogs</h1>
+  <div id="off" class="dlg" role="dialog" aria-label="Misplaced dialog"><p>Starts 200 px off the left edge.</p></div>
+  <div id="fits" class="dlg" role="dialog" aria-label="Well placed dialog"><p>Fits inside the screen.</p></div>
+</body>
+</html>

@@ -16,6 +16,8 @@ export interface ReportIssue {
   change: string;
   /** Screens (S1, S2, …) the problem appears on. */
   screens: string[];
+  /** Screen sizes (viewport names) at which it was observed. */
+  viewports: string[];
   /** Up to three affected elements, plus a count of the rest. */
   elements: string[];
   moreElements: number;
@@ -38,11 +40,38 @@ export interface ReportScreen {
   screenshotId?: string;
 }
 
+export interface ReportViewport {
+  name: string;
+  width: number;
+  height: number;
+  deviceScaleFactor: number;
+  isMobile: boolean;
+  hasTouch: boolean;
+  /** Screens checked at this size, and screens that could not be reached again at it. */
+  screensChecked: number;
+  screensNotReached: number;
+  layoutIssues: number;
+}
+
+export interface ReportPerformance {
+  loadMs: number | null;
+  transferredBytes: number;
+  requests: number;
+  largest: Array<{ url: string; bytes: number }>;
+  unavailable: string[];
+  conditions: string[];
+  thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
+}
+
 export interface RunReport {
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   screens: ReportScreen[];
   issues: ReportIssue[];
+  /** Present when screen-size checks were on. These are viewport simulations, not real devices. */
+  viewports?: ReportViewport[];
+  performance?: ReportPerformance;
+  baselinesStored: number;
   /** Checks that did not run, grouped by reason (never counted as passed). */
   untested: Array<{ reason: string; count: number }>;
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
@@ -110,6 +139,34 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     if ((c.outcome === 'not_tested' || c.outcome === 'error') && c.reason) reasons.set(c.reason, (reasons.get(c.reason) ?? 0) + 1);
   }
 
+  const layoutOn = run.config.engines.layout;
+  const layoutChecks = layoutOn ? store.listCheckResults(runId).filter((c) => c.ruleId === 'LAY-001') : [];
+  const viewports: ReportViewport[] | undefined = layoutOn
+    ? run.config.viewports.map((v) => ({
+        name: v.name,
+        width: v.width,
+        height: v.height,
+        deviceScaleFactor: v.deviceScaleFactor,
+        isMobile: v.isMobile,
+        hasTouch: v.hasTouch,
+        screensChecked: layoutChecks.filter((c) => c.viewportName === v.name && (c.outcome === 'passed' || c.outcome === 'needs_review')).length,
+        screensNotReached: layoutChecks.filter((c) => c.viewportName === v.name && c.outcome === 'not_tested').length,
+        layoutIssues: issues.filter((i) => i.viewports.includes(v.name) && /^LAY-/.test(i.technical.ruleId)).length,
+      }))
+    : undefined;
+  const timing = run.config.engines.performance ? store.listEvidenceByKind(runId, 'timing').find((e) => e.data && 'thresholds' in e.data) : undefined;
+  const performance: ReportPerformance | undefined = timing?.data
+    ? {
+        loadMs: (timing.data.loadMs as number | null) ?? null,
+        transferredBytes: Number(timing.data.transferredBytes ?? 0),
+        requests: Number(timing.data.requests ?? 0),
+        largest: ((timing.data.largest as Array<{ url: string; bytes: number }>) ?? []).slice(0, 3),
+        unavailable: (timing.data.unavailable as string[]) ?? [],
+        conditions: (timing.data.conditions as string[]) ?? [],
+        thresholds: timing.data.thresholds as ReportPerformance['thresholds'],
+      }
+    : undefined;
+
   return {
     run: {
       id: run.id,
@@ -124,6 +181,9 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     counts: { fix: issues.filter((i) => i.action === 'fix').length, check: issues.filter((i) => i.action === 'check').length, notChecked: issues.filter((i) => i.action === 'not_checked').length, bySeverity },
     screens,
     issues,
+    viewports,
+    performance,
+    baselinesStored: store.countBaselines(run.projectId, run.config.target.url ?? ''),
     untested: [...reasons.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
     coverage: { screensScanned: states.length, budgetsReached: run.coverage?.budgetsReached ?? [], blockedRequests: run.coverage?.blockedRequests ?? 0 },
     checkTotals: {
@@ -167,6 +227,7 @@ function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: stri
     issue: plain.issue,
     change: plain.change,
     screens,
+    viewports: [...new Set([f.location.viewportName, ...f.occurrences.map((o) => o.location.viewportName)].filter((v): v is string => Boolean(v)))],
     // Raw HTML snippets are long; show enough to find the element. Full detail stays in the technical view.
     elements: described.slice(0, 3).map((d) => (d.length > 90 ? `${d.slice(0, 89)}…` : d)),
     moreElements: Math.max(0, described.length - 3),

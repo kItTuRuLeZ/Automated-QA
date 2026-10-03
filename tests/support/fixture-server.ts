@@ -7,6 +7,8 @@ const FIXTURES = path.resolve(import.meta.dirname, '../../fixtures');
 const TYPES: Record<string, string> = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 export interface FixtureServer {
+  /** Chooses which visual variant /baseline/ serves (v1 blue, v2 red). */
+  setBaselineVariant(v: 'v1' | 'v2'): void;
   origin: string;
   port: number;
   /** Second origin (different port) used as an out-of-scope redirect destination. */
@@ -23,6 +25,7 @@ function listen(handler: http.RequestListener): Promise<http.Server> {
 /** Test-only static server for fixtures. Never used in production code paths. */
 export async function startFixtureServer(): Promise<FixtureServer> {
   const pending = new Set<http.ServerResponse>();
+  let baselineVariant: 'v1' | 'v2' = 'v1';
   let otherOrigin = '';
   const other = await listen((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>Other origin</title><p>Outside scope</p>');
@@ -117,6 +120,15 @@ export async function startFixtureServer(): Promise<FixtureServer> {
       const body = Buffer.concat([png, Buffer.alloc(1_200_000)]);
       return void res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': body.length }).end(body);
     }
+    if (url.pathname === '/baseline/') {
+      const color = baselineVariant === 'v1' ? '#1f4fbf' : '#b42318';
+      return void res
+        .writeHead(200, { 'Content-Type': 'text/html' })
+        .end(
+          `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Baseline Fixture</title></head><body style="margin:0"><main><h1 style="margin:16px">Controlled page</h1>` +
+            `<div style="width:400px;height:200px;margin:16px;background:${color}"></div></main></body></html>`,
+        );
+    }
     if (url.pathname === '/iframe/') {
       return void res
         .writeHead(200, { 'Content-Type': 'text/html' })
@@ -147,6 +159,9 @@ export async function startFixtureServer(): Promise<FixtureServer> {
   const port = (main.address() as AddressInfo).port;
 
   return {
+    setBaselineVariant(v) {
+      baselineVariant = v;
+    },
     origin: `http://127.0.0.1:${port}`,
     port,
     otherOrigin,

@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProjectId } from '@cqa/shared';
-import { buildProjectReport, buildRunReport, reportForCourse, runReportAsProject } from '@cqa/core';
+import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
@@ -117,6 +117,9 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       viewport,
       explore: input.explore,
       accessibility: input.accessibility,
+      layout: input.layout,
+      compareBaseline: input.compareBaseline,
+      viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
       maxStates: input.maxStates,
       maxDepth: input.maxDepth,
     });
@@ -213,6 +216,16 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project.name)}${suffix}-${new Date().toISOString().slice(0, 10)}.xlsx"`);
     reply.header('Cache-Control', 'no-store');
     return reply.send(buf);
+  });
+
+  // Makes a finished scan the visual baseline for its course. Later scans compare only against identical settings.
+  app.post<{ Params: { id: string } }>('/api/runs/:id/baseline', async (req, reply) => {
+    const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!run) return notFound(reply, 'Scan not found.');
+    if (run.status === 'queued' || run.status === 'running') return reply.code(409).send({ error: 'Wait for the scan to finish first.' });
+    const result = recordBaselineFromRun(store, run.id);
+    if (!result || result.recorded === 0) return reply.code(422).send({ error: 'This scan has no layout screenshots. Run it with screen-size checks turned on.' });
+    return result;
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/actions', async (req, reply) => {

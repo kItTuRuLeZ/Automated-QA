@@ -31,8 +31,15 @@ interface Node {
   path: Candidate[];
 }
 
+/** How to reach a screen again, for re-checking it at another viewport. */
+export interface ReplayPath {
+  stateId: StateId;
+  steps: Array<{ kind: TraversalAction['kind']; locator?: string; rawHref?: string; description: string }>;
+}
+
 export interface TraversalOutput extends EngineResult {
   states: CourseState[];
+  replay: ReplayPath[];
   actions: TraversalAction[];
   failedTransitions: number;
   inaccessibleFrames: number;
@@ -90,7 +97,7 @@ export class Traversal {
       blocked: () => readonly BlockedConnection[];
       excludeResourceTypes?: readonly string[];
       /** Called once per reached state while the page shows it (per-state content checks). */
-      onStateReady?: (state: CourseState, reproductionSteps: string[]) => Promise<void>;
+      onStateReady?: (state: CourseState, reproductionSteps: string[], pathKey: string) => Promise<void>;
       /** Keyboard activation of recognized controls (Phase 3); optional. */
       keyboardPass?: (input: KeyboardPassInput) => Promise<{ checks: NewCheck[]; findings: NewFinding[] }>;
     },
@@ -195,7 +202,7 @@ export class Traversal {
     const states: CourseState[] = [root.state];
     const pages = new Set([pageKey(rootSnap.url)]);
     onState(root.state);
-    await this.deps.onStateReady?.(root.state, describePath([]));
+    await this.deps.onStateReady?.(root.state, describePath([]), pathKeyOf([]));
     const queue: Node[] = [root];
     let stop = false;
     let emptyRetries = 0;
@@ -399,7 +406,7 @@ export class Traversal {
           const shot = await screenshot(`State reached by ${stepText(cand)}`, target.state.id);
           void shot;
           onState(target.state);
-          await this.deps.onStateReady?.(target.state, describePath(target.path));
+          await this.deps.onStateReady?.(target.state, describePath(target.path), pathKeyOf(target.path));
           queue.push(target);
         }
 
@@ -559,6 +566,10 @@ export class Traversal {
       errors,
       durationMs: Date.now() - started,
       states,
+      replay: states.map((st) => {
+        const n = [...nodes.values()].find((x) => x.state.id === st.id);
+        return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription })) };
+      }),
       actions: actions.map(stripInternal),
       failedTransitions,
       inaccessibleFrames,
@@ -687,4 +698,9 @@ function capitalizeFirst(s: string): string {
 
 function controlKeyOf(a: { targetDescription: string; locator?: string }): string {
   return `${a.targetDescription}|${a.locator ?? ''}`;
+}
+
+/** Stable identity of how a screen was reached (descriptions of the actions, in order). */
+export function pathKeyOf(path: Array<{ targetDescription: string }>): string {
+  return path.map((p) => p.targetDescription).join(' > ');
 }

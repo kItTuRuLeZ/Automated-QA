@@ -2,7 +2,7 @@
 
 Local, evidence-backed QA scanning for published eLearning courses (Rise, Storyline, custom HTML). Core scanning needs no AI service, cloud account, or telemetry.
 
-Status: Phase 3 complete, with a developer-friendly report and Excel tracker (URL scan, bounded click-through with coverage, links, images and media, placeholder text, automated accessibility and keyboard checks). See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+Status: Phase 4 complete, with a developer-friendly report and Excel tracker (URL scan, bounded click-through with coverage, links, images and media, placeholder text, automated accessibility and keyboard checks). See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Requirements
 

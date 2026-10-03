@@ -94,6 +94,23 @@ export interface RedactionPolicy {
   stripFragments: boolean;
 }
 
+/** Warning thresholds for page-load evidence (PERF-001). Defaults are not a standard; see `provenance`. */
+export interface PerfThresholds {
+  loadMs: number;
+  totalBytes: number;
+  requestCount: number;
+  provenance: string;
+}
+
+/** Settings for the responsive layout, performance, and baseline checks (Phase 4). */
+export interface LayoutSettings {
+  /** Reached screens re-checked at each additional viewport. */
+  maxStatesPerViewport: number;
+  perf: PerfThresholds;
+  /** Fraction of pixels that may differ from the baseline before a diff is raised. */
+  baselineDiffRatio: number;
+}
+
 export interface ScanTarget {
   kind: TargetKind;
   /** For `url` targets: user-supplied URL (validated, never contains credentials). */
@@ -130,6 +147,8 @@ export interface ScanConfig {
   redaction: RedactionPolicy;
   textRules: TextRules;
   mediaThresholds: MediaThresholds;
+  /** Absent on scans made before Phase 4. */
+  layout?: LayoutSettings;
   profileId?: ProfileId;
   /** Configuration schema version for migrations and baseline compatibility. */
   configVersion: number;

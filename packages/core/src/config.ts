@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { EngineSelection, ProjectId, ScanBudgets, ScanConfig, ScanScope, TerminologyRule, Viewport } from '@cqa/shared';
+import type { EngineSelection, LayoutSettings, ProjectId, ScanBudgets, ScanConfig, ScanScope, TerminologyRule, Viewport } from '@cqa/shared';
 import { DEFAULT_REDACTION } from './redaction.js';
 
 export interface DataPaths {
@@ -61,8 +61,8 @@ export const DEFAULT_ENGINES: EngineSelection = {
   content: true,
   accessibility: true,
   keyboard: true,
-  layout: false,
-  performance: false,
+  layout: true,
+  performance: true,
   visualBaseline: false,
   advisory: false,
 };
@@ -127,6 +127,28 @@ export const DEFAULT_MEDIA_THRESHOLDS = {
   provenance: 'Application default (1 MB per image, 50 MB per audio/video file); not a published standard.',
 };
 
+/** Page-load warning thresholds. Application defaults, not a published standard. */
+export const DEFAULT_LAYOUT_SETTINGS: LayoutSettings = {
+  maxStatesPerViewport: 6,
+  perf: {
+    loadMs: 5_000,
+    totalBytes: 5_000_000,
+    requestCount: 100,
+    provenance: 'Application default (5 s load, 5 MB transferred, 100 requests); not a published standard. Cold cache, headless Chromium, this machine and network.',
+  },
+  baselineDiffRatio: 0.005,
+};
+
+/** Looks up viewport presets by name (case-insensitive). */
+export function viewportsByName(names: readonly string[]): Viewport[] {
+  const out: Viewport[] = [];
+  for (const n of names) {
+    const v = VIEWPORT_PRESETS.find((p) => p.name === n.toLowerCase());
+    if (v && !out.some((o) => o.name === v.name)) out.push(v);
+  }
+  return out;
+}
+
 export function defaultScopeFor(url: URL): ScanScope {
   const port = url.port ? [Number(url.port)] : [];
   return { allowedOrigins: [url.origin], allowedPathPrefixes: [], subrequestPolicy: 'public_allowed', allowedPorts: port };
@@ -138,8 +160,15 @@ export function buildScanConfig(input: {
   scope?: Partial<ScanScope>;
   navigationTimeoutMs?: number;
   viewport?: Viewport;
+  /** All viewports to test; the first is the primary one used for exploration. Overrides `viewport`. */
+  viewports?: Viewport[];
   explore?: boolean;
   accessibility?: boolean;
+  /** Responsive layout, visual heuristics, and performance evidence. */
+  layout?: boolean;
+  /** Compare screenshots with the course's stored baseline (only identical settings are compared). */
+  compareBaseline?: boolean;
+  perf?: Partial<LayoutSettings['perf']>;
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -156,8 +185,16 @@ export function buildScanConfig(input: {
       maxStates: input.maxStates ?? DEFAULT_BUDGETS.maxStates,
       maxDepth: input.maxDepth ?? DEFAULT_BUDGETS.maxDepth,
     },
-    viewports: [input.viewport ?? DEFAULT_VIEWPORT],
-    engines: { ...DEFAULT_ENGINES, traversal: input.explore ?? true, accessibility: input.accessibility ?? true, keyboard: input.accessibility ?? true },
+    viewports: input.viewports?.length ? input.viewports : [input.viewport ?? DEFAULT_VIEWPORT],
+    engines: {
+      ...DEFAULT_ENGINES,
+      traversal: input.explore ?? true,
+      accessibility: input.accessibility ?? true,
+      keyboard: input.accessibility ?? true,
+      layout: input.layout ?? true,
+      performance: input.layout ?? true,
+      visualBaseline: input.compareBaseline ?? false,
+    },
     actionPolicy: {
       allowedKinds: ['navigate', 'select_tab', 'expand', 'open_dialog', 'close_dialog', 'next', 'back'],
       deniedNamePatterns: DEFAULT_DENIED_NAME_PATTERNS,
@@ -167,6 +204,7 @@ export function buildScanConfig(input: {
     redaction: DEFAULT_REDACTION,
     textRules: { placeholderPatterns: DEFAULT_PLACEHOLDER_PATTERNS, terminology: input.terminology ?? [], exclusions: input.textExclusions ?? [] },
     mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
+    layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf } },
     configVersion: 1,
   };
 }

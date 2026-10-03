@@ -274,6 +274,29 @@ export class Store {
     })();
   }
 
+  // ---- baselines (reference screenshots for visual comparison) ----
+
+  /** Replaces the stored baselines for a course with the given screenshots. */
+  setBaselines(projectId: string, courseUrl: string, runId: string, entries: Array<{ key: string; artifactId: string; label: string }>): number {
+    return this.db.transaction(() => {
+      this.db.prepare('DELETE FROM baselines WHERE project_id = ? AND course_url = ?').run(projectId, courseUrl);
+      const stmt = this.db.prepare('INSERT OR REPLACE INTO baselines (project_id, course_url, key, artifact_id, run_id, label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      for (const e of entries) stmt.run(projectId, courseUrl, e.key, e.artifactId, runId, e.label, nowIso());
+      return entries.length;
+    })();
+  }
+
+  getBaseline(projectId: string, courseUrl: string, key: string): { artifactId: ArtifactId; runId: string; createdAt: string } | undefined {
+    const r = this.db.prepare('SELECT artifact_id, run_id, created_at FROM baselines WHERE project_id = ? AND course_url = ? AND key = ?').get(projectId, courseUrl, key) as
+      | { artifact_id: string; run_id: string; created_at: string }
+      | undefined;
+    return r ? { artifactId: r.artifact_id as ArtifactId, runId: r.run_id, createdAt: r.created_at } : undefined;
+  }
+
+  countBaselines(projectId: string, courseUrl: string): number {
+    return (this.db.prepare('SELECT COUNT(*) AS n FROM baselines WHERE project_id = ? AND course_url = ?').get(projectId, courseUrl) as { n: number }).n;
+  }
+
   deleteRun(runId: string): boolean {
     return this.db.prepare('DELETE FROM scan_runs WHERE id = ?').run(runId).changes > 0;
   }

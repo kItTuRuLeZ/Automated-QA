@@ -136,7 +136,45 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
     row.alignment = { vertical: 'top', wrapText: true };
   }
 
+  // Screen sizes and page-load conditions for each course's latest scan.
   r += 1;
+  const sized = report.courses.filter((c) => c.latest.viewports?.length);
+  if (sized.length) {
+    ws.getCell(`A${r}`).value = 'Screen sizes tested (simulations in a desktop browser, not real devices)';
+    ws.getCell(`A${r}`).font = { bold: true };
+    r++;
+    const h2 = ws.getRow(r++);
+    h2.values = ['Course address', 'Screen size', 'Screens checked', 'Screens not reached', 'Layout issues', 'Settings'];
+    styleHeader(h2);
+    for (const c of sized) {
+      for (const v of c.latest.viewports ?? []) {
+        const row = ws.getRow(r++);
+        row.values = [safeCell(c.targetUrl), `${v.name} ${v.width}×${v.height}`, v.screensChecked, v.screensNotReached, v.layoutIssues, `device scale ${v.deviceScaleFactor}${v.isMobile ? ', mobile emulation' : ''}${v.hasTouch ? ', touch' : ''}${c.latest.run.browser ? `; ${c.latest.run.browser}` : ''}`];
+        row.alignment = { vertical: 'top', wrapText: true };
+      }
+    }
+    r++;
+  }
+  const timed = report.courses.filter((c) => c.latest.performance);
+  if (timed.length) {
+    ws.getCell(`A${r}`).value = 'Page-load evidence (first page, one sample; not a performance audit)';
+    ws.getCell(`A${r}`).font = { bold: true };
+    r++;
+    const h3 = ws.getRow(r++);
+    h3.values = ['Course address', 'Load time', 'Transferred', 'Requests', 'Largest asset', 'Not available'];
+    styleHeader(h3);
+    for (const c of timed) {
+      const p = c.latest.performance!;
+      const row = ws.getRow(r++);
+      row.values = [safeCell(c.targetUrl), p.loadMs === null ? 'n/a' : `${(p.loadMs / 1000).toFixed(1)} s`, `${(p.transferredBytes / 1_000_000).toFixed(1)} MB`, p.requests, safeCell(p.largest[0] ? `${p.largest[0].url.split('/').pop()} (${Math.round(p.largest[0].bytes / 1000)} kB)` : 'n/a'), safeCell(p.unavailable.join(', ') || 'nothing')];
+      row.alignment = { vertical: 'top', wrapText: true };
+    }
+    ws.getCell(`A${r}`).value = safeCell(`Conditions: ${timed[0]!.latest.performance!.conditions.join(' ')}`);
+    ws.getCell(`A${r}`).alignment = { wrapText: true, vertical: 'top' };
+    ws.mergeCells(`A${r}:H${r}`);
+    ws.getRow(r).height = 48;
+    r += 2;
+  }
   const lines: Array<[string, boolean]> = [
     ['How to use this workbook', true],
     ['• Issues sheet: one row per problem. Filter the Action column to "Fix" to see what needs changing.', false],
@@ -171,6 +209,7 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport, images: ImageBoo
     ['Course', 28],
     ['Screens', 10],
     ['Screenshot', 44],
+    ['Screen size', 14],
     ['Issue', 46],
     ['What to change', 52],
     ['Where', 36],
@@ -196,6 +235,7 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport, images: ImageBoo
       safeCell(i.course),
       safeCell(i.screens.join(', ')),
       '',
+      safeCell(i.viewports.join(', ')),
       safeCell(i.issue),
       safeCell(i.change),
       safeCell([...i.elements, ...(i.moreElements ? [`(+${i.moreElements} more)`] : [])].join('\n')),
@@ -227,14 +267,14 @@ function addIssues(wb: ExcelJS.Workbook, report: ProjectReport, images: ImageBoo
   const last = Math.max(report.issues.length + 1, 2);
   // Dropdown for Status on every data row plus room for rows added by hand.
   for (let r = 2; r <= last + 100; r++) {
-    ws.getCell(`K${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [`"${STATUS_CHOICES.join(',')}"`], showErrorMessage: false };
+    ws.getCell(`L${r}`).dataValidation = { type: 'list', allowBlank: true, formulae: [`"${STATUS_CHOICES.join(',')}"`], showErrorMessage: false };
   }
-  ws.autoFilter = { from: 'A1', to: `S${last}` };
+  ws.autoFilter = { from: 'A1', to: `T${last}` };
   ws.addConditionalFormatting({
-    ref: `A2:S${last + 100}`,
+    ref: `A2:T${last + 100}`,
     rules: [
-      { type: 'expression', formulae: ['OR($K2="Verified",$K2="Fixed")'], style: { font: { color: { argb: 'FF1B7A3D' } } }, priority: 1 },
-      { type: 'expression', formulae: ['OR($K2="Accepted risk",$K2="False positive")'], style: { font: { color: { argb: 'FF6B7280' } } }, priority: 2 },
+      { type: 'expression', formulae: ['OR($L2="Verified",$L2="Fixed")'], style: { font: { color: { argb: 'FF1B7A3D' } } }, priority: 1 },
+      { type: 'expression', formulae: ['OR($L2="Accepted risk",$L2="False positive")'], style: { font: { color: { argb: 'FF6B7280' } } }, priority: 2 },
     ],
   });
 }
