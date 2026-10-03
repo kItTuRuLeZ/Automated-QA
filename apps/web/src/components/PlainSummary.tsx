@@ -4,6 +4,69 @@ import { api } from '../api';
 import { ErrorBox, Loading, SEVERITY_LABEL, SeverityBadge, useLoader } from './ui';
 import type { ScanRun } from '@cqa/shared';
 
+export const STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  assigned: 'Assigned',
+  fixed: 'Marked fixed',
+  retest: 'Ready to retest',
+  verified: 'Verified',
+  accepted_risk: 'Accepted risk',
+  false_positive: 'False positive',
+  not_reproduced: 'Not reproduced',
+  not_retested: 'Not retested',
+};
+const MANUAL = ['open', 'assigned', 'fixed', 'retest', 'accepted_risk', 'false_positive'];
+
+/** Status, owner, and reason for one issue. Verified, Not reproduced and Not retested are only ever set by a retest. */
+function IssueStatus({ issue, onSaved }: { issue: { findingId: string; id: string; status: string; statusReason?: string; assignee?: string }; onSaved: () => void }) {
+  const [status, setStatus] = useState(issue.status);
+  const [assignee, setAssignee] = useState(issue.assignee ?? '');
+  const [reason, setReason] = useState(issue.statusReason ?? '');
+  const [error, setError] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const needsReason = status === 'accepted_risk' || status === 'false_positive';
+  const systemSet = !MANUAL.includes(issue.status);
+  const save = async () => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.setWorkflow(issue.findingId, { status, assignee, reason: needsReason ? reason : null });
+      onSaved();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="issue-status">
+      <label>
+        Status{' '}
+        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label={`Status of ${issue.id}`}>
+          {systemSet && <option value={issue.status}>{STATUS_LABEL[issue.status]} (from retest)</option>}
+          {MANUAL.map((s) => (
+            <option key={s} value={s}>
+              {STATUS_LABEL[s]}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Owner <input value={assignee} maxLength={80} onChange={(e) => setAssignee(e.target.value)} aria-label={`Owner of ${issue.id}`} />
+      </label>
+      {needsReason && (
+        <label>
+          {' '}Reason (required) <input value={reason} maxLength={1000} onChange={(e) => setReason(e.target.value)} aria-label={`Reason for ${issue.id}`} />
+        </label>
+      )}{' '}
+      <button type="button" className="btn btn-small" onClick={save} disabled={busy || (needsReason && !reason.trim())}>
+        Save
+      </button>
+      {error && <span role="alert" className="error-text"> {error}</span>}
+    </div>
+  );
+}
+
 type Group = 'fix' | 'check' | 'not_checked';
 
 const GROUPS: Array<{ id: Group; title: string; help: string }> = [
@@ -18,6 +81,22 @@ const VISIBLE = 8;
 export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolean }) {
   const { data, error, reload } = useLoader(() => api.runReport(run.id), [run.id, run.status], undefined);
   const [open, setOpen] = useState<Record<Group, boolean>>({ fix: false, check: false, not_checked: false });
+
+  const [retesting, setRetesting] = useState(false);
+  const [retestError, setRetestError] = useState<string>();
+  const finishedRun = run.status === 'completed' || run.status === 'partial';
+  const retest = async () => {
+    setRetesting(true);
+    setRetestError(undefined);
+    try {
+      const next = await api.retestRun(run.id);
+      window.location.hash = `#/runs/${next.id}`;
+    } catch (e) {
+      setRetestError((e as Error).message);
+    } finally {
+      setRetesting(false);
+    }
+  };
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading />;
@@ -34,6 +113,11 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
             {r.coverage.budgetsReached.length > 0 && ', and the scan stopped at a limit, so other screens were not looked at'}.
           </p>
         </div>
+        {finishedRun && (
+          <button type="button" className="btn" disabled={retesting} onClick={retest} title="Scans the same course again with the same settings and compares it with this scan. This scan stays unchanged.">
+            {retesting ? 'Starting…' : 'Retest this course'}
+          </button>
+        )}
         <div className="download-group" role="group" aria-label="Download this report">
           <a className="btn btn-primary" href={`/api/runs/${run.id}/export.xlsx`} download>
             Excel tracker
@@ -50,6 +134,12 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
         </div>
       </div>
 
+      {retestError && <p role="alert" className="error-text">{retestError}</p>}
+      {run.retestOfRunId && (
+        <p className="help">
+          This is a retest of <a href={`#/runs/${run.retestOfRunId}`}>an earlier scan</a>. Issue statuses were updated from it: Verified means it was marked fixed, was not found, and its check passed on the same screen at the same screen size. Not retested means that could not be confirmed.
+        </p>
+      )}
       <div className="big-counts" role="list">
         <Count label="To fix" value={r.counts.fix} tone="fix" />
         <Count label="Check by hand" value={r.counts.check} tone="check" />
@@ -101,6 +191,7 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
                     <span className="label">Where:</span> {i.screens.length ? `screen${i.screens.length > 1 ? 's' : ''} ${i.screens.join(', ')}` : 'this scan'}
                     {i.elements.length > 0 && ` · ${i.elements.join('; ')}${i.moreElements ? ` (+${i.moreElements} more)` : ''}`}
                   </p>
+                  <IssueStatus key={`${i.id}-${i.status}`} issue={i} onSaved={reload} />
                   <details>
                     <summary>How to see it</summary>
                     <ol>

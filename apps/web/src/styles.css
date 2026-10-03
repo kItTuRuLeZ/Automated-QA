@@ -167,3 +167,5 @@ a.btn { text-decoration: none; display: inline-block; }
 .checks-row { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; }
 
 .download-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.issue-status { margin: 0.5rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.issue-status input { max-width: 14rem; }

@@ -24,10 +24,34 @@ import type {
   TraversalAction,
 } from '@cqa/shared';
 import { CHECK_OUTCOMES, FINDING_TYPES, SEVERITIES } from '@cqa/shared';
+import type { ReviewerStatus } from '@cqa/shared';
 import { newId, nowIso } from '../fingerprint.js';
 import { MIGRATIONS } from './migrations.js';
 
 export type Db = Database.Database;
+
+export interface WorkflowRow {
+  status: ReviewerStatus;
+  assignee?: string;
+  reason?: string;
+  updatedAt: string;
+}
+export interface HistoryRow {
+  at: string;
+  actor: string;
+  from: ReviewerStatus;
+  to: ReviewerStatus;
+  assignee?: string;
+  reason?: string;
+  runId?: string;
+}
+
+function withWorkflow(map: Map<string, WorkflowRow>) {
+  return (f: Finding): Finding => {
+    const w = map.get(f.fingerprint);
+    return w ? { ...f, reviewer: { status: w.status, assignee: w.assignee, reason: w.reason, updatedAt: w.updatedAt } } : f;
+  };
+}
 
 export function openDatabase(file: string): Db {
   const db = new Database(file);
@@ -162,13 +186,13 @@ export class Store {
 
   // ---- runs and jobs ----
 
-  createRun(config: ScanConfig, targetUrl: string): ScanRun {
+  createRun(config: ScanConfig, targetUrl: string, retestOfRunId?: string): ScanRun {
     const id = newId<ScanRunId>();
     const queuedAt = nowIso();
     this.db.transaction(() => {
       this.db
-        .prepare('INSERT INTO scan_runs (id, project_id, status, target_url, config_json, queued_at) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(id, config.projectId, 'queued', targetUrl, JSON.stringify(config), queuedAt);
+        .prepare('INSERT INTO scan_runs (id, project_id, status, target_url, config_json, queued_at, retest_of_run_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run(id, config.projectId, 'queued', targetUrl, JSON.stringify(config), queuedAt, retestOfRunId ?? null);
       this.db.prepare("INSERT INTO jobs (run_id, state, enqueued_at) VALUES (?, 'queued', ?)").run(id, Date.now());
     })();
     return this.getRun(id)!;
@@ -421,14 +445,52 @@ export class Store {
 
   listFindings(runId: string): Finding[] {
     const order = "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END";
-    return (this.db.prepare(`SELECT data_json FROM findings WHERE run_id = ? ORDER BY ${order}, rule_id`).all(runId) as Array<{ data_json: string }>).map(
-      (r) => JSON.parse(r.data_json) as Finding,
-    );
+    return (this.db.prepare(`SELECT data_json FROM findings WHERE run_id = ? ORDER BY ${order}, rule_id`).all(runId) as Array<{ data_json: string }>).map((r) => JSON.parse(r.data_json) as Finding).map(withWorkflow(this.workflowFor(runId)))
   }
 
   getFinding(id: string): Finding | undefined {
-    const r = this.db.prepare('SELECT data_json FROM findings WHERE id = ?').get(id) as { data_json: string } | undefined;
-    return r ? (JSON.parse(r.data_json) as Finding) : undefined;
+    const r = this.db.prepare('SELECT data_json, run_id FROM findings WHERE id = ?').get(id) as { data_json: string; run_id: string } | undefined;
+    return r ? withWorkflow(this.workflowFor(r.run_id))(JSON.parse(r.data_json) as Finding) : undefined;
+  }
+
+  // ---- finding workflow (status follows the issue across scans) ----
+
+  private workflowFor(runId: string): Map<string, WorkflowRow> {
+    const rows = this.db
+      .prepare('SELECT w.fingerprint, w.status, w.assignee, w.reason, w.updated_at FROM finding_workflow w JOIN scan_runs r ON r.project_id = w.project_id WHERE r.id = ?')
+      .all(runId) as Array<{ fingerprint: string; status: string; assignee: string | null; reason: string | null; updated_at: string }>;
+    return new Map(rows.map((x) => [x.fingerprint, { status: x.status as ReviewerStatus, assignee: x.assignee ?? undefined, reason: x.reason ?? undefined, updatedAt: x.updated_at }]));
+  }
+
+  getWorkflow(projectId: string, fingerprint: string): WorkflowRow | undefined {
+    const x = this.db.prepare('SELECT status, assignee, reason, updated_at FROM finding_workflow WHERE project_id = ? AND fingerprint = ?').get(projectId, fingerprint) as
+      | { status: string; assignee: string | null; reason: string | null; updated_at: string }
+      | undefined;
+    return x ? { status: x.status as ReviewerStatus, assignee: x.assignee ?? undefined, reason: x.reason ?? undefined, updatedAt: x.updated_at } : undefined;
+  }
+
+  /** Sets the status, owner, and reason for an issue and records who changed what. Validation is the caller's job (see workflow.ts). */
+  setWorkflow(projectId: string, fingerprint: string, next: { status: ReviewerStatus; assignee?: string; reason?: string }, meta: { actor: string; runId?: string }): void {
+    this.db.transaction(() => {
+      const prev = this.getWorkflow(projectId, fingerprint);
+      const at = nowIso();
+      this.db
+        .prepare(
+          'INSERT INTO finding_workflow (project_id, fingerprint, status, assignee, reason, updated_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (project_id, fingerprint) DO UPDATE SET status = excluded.status, assignee = excluded.assignee, reason = excluded.reason, updated_at = excluded.updated_at',
+        )
+        .run(projectId, fingerprint, next.status, next.assignee ?? null, next.reason ?? null, at);
+      this.db
+        .prepare('INSERT INTO finding_history (id, project_id, fingerprint, at, actor, from_status, to_status, assignee, reason, run_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(newId(), projectId, fingerprint, at, meta.actor, prev?.status ?? 'open', next.status, next.assignee ?? null, next.reason ?? null, meta.runId ?? null);
+    })();
+  }
+
+  listHistory(projectId: string, fingerprint: string): HistoryRow[] {
+    return (
+      this.db.prepare('SELECT at, actor, from_status, to_status, assignee, reason, run_id FROM finding_history WHERE project_id = ? AND fingerprint = ? ORDER BY at, rowid').all(projectId, fingerprint) as Array<{
+        at: string; actor: string; from_status: string; to_status: string; assignee: string | null; reason: string | null; run_id: string | null;
+      }>
+    ).map((h) => ({ at: h.at, actor: h.actor, from: h.from_status as ReviewerStatus, to: h.to_status as ReviewerStatus, assignee: h.assignee ?? undefined, reason: h.reason ?? undefined, runId: h.run_id ?? undefined }));
   }
 
   summarizeRun(runId: string): RunSummary {

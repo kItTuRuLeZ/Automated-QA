@@ -150,4 +150,32 @@ CREATE TABLE baselines (
 );
 `,
   },
+  {
+    version: 4,
+    name: 'finding_workflow',
+    sql: `
+CREATE TABLE finding_workflow (
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  fingerprint TEXT NOT NULL,
+  status TEXT NOT NULL,
+  assignee TEXT,
+  reason TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (project_id, fingerprint)
+);
+CREATE TABLE finding_history (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  fingerprint TEXT NOT NULL,
+  at TEXT NOT NULL,
+  actor TEXT NOT NULL,
+  from_status TEXT NOT NULL,
+  to_status TEXT NOT NULL,
+  assignee TEXT,
+  reason TEXT,
+  run_id TEXT
+);
+CREATE INDEX idx_finding_history ON finding_history(project_id, fingerprint, at);
+`,
+  },
 ];

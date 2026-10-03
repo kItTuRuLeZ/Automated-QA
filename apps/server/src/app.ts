@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProjectId } from '@cqa/shared';
-import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, viewportsByName } from '@cqa/core';
+import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, validateWorkflowChange, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { buildHtmlReport } from './export/html.js';
@@ -270,6 +270,42 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get<{ Params: { id: string } }>('/api/runs/:id/checks', async (req, reply) => {
     if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply);
     return store.listCheckResults(req.params.id);
+  });
+
+  // ---- finding workflow and retest ----
+  // Status follows the issue (by fingerprint) across scans of the project.
+  app.patch<{ Params: { id: string } }>('/api/findings/:id/workflow', async (req, reply) => {
+    const finding = isOpaqueId(req.params.id) ? store.getFinding(req.params.id) : undefined;
+    const run = finding ? store.getRun(finding.runId) : undefined;
+    if (!finding || !run) return notFound(reply);
+    const body = (req.body ?? {}) as { status?: unknown; assignee?: unknown; reason?: unknown };
+    const input = {
+      status: typeof body.status === 'string' ? body.status : undefined,
+      assignee: typeof body.assignee === 'string' ? body.assignee : body.assignee === null ? null : undefined,
+      reason: typeof body.reason === 'string' ? body.reason : body.reason === null ? null : undefined,
+    };
+    const checked = validateWorkflowChange(store.getWorkflow(run.projectId, finding.fingerprint) ?? { status: finding.reviewer.status }, input);
+    if (!checked.ok) return badRequest(reply, checked.error);
+    store.setWorkflow(run.projectId, finding.fingerprint, checked.value, { actor: 'local user', runId: run.id });
+    return store.getFinding(finding.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/findings/:id/history', async (req, reply) => {
+    const finding = isOpaqueId(req.params.id) ? store.getFinding(req.params.id) : undefined;
+    const run = finding ? store.getRun(finding.runId) : undefined;
+    if (!finding || !run) return notFound(reply);
+    return store.listHistory(run.projectId, finding.fingerprint);
+  });
+
+  // A retest is a new, separate scan of the same course with the same settings; the earlier scan is never changed.
+  app.post<{ Params: { id: string } }>('/api/runs/:id/retest', async (req, reply) => {
+    const prior = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!prior) return notFound(reply, 'Scan not found.');
+    if (prior.status !== 'completed' && prior.status !== 'partial') return reply.code(409).send({ error: 'Only a finished scan can be retested.' });
+    const url = store.getRunTargetUrl(prior.id)!;
+    const decision = await policy.validateTarget(url, prior.config.scope);
+    if (!decision.ok) return reply.code(422).send({ error: decision.detail, reason: decision.reason, ruleId: 'NET-001' });
+    return reply.code(201).send(store.createRun(prior.config, url, prior.id));
   });
 
   app.get<{ Params: { id: string } }>('/api/findings/:id', async (req, reply) => {

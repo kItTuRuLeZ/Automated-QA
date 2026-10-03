@@ -11,3 +11,4 @@ export * from './manual-checklist.js';
 export * from './plain-language.js';
 export * from './report.js';
 export * from './baseline.js';
+export * from './workflow.js';

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
 import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
-import { DEFAULT_LAYOUT_SETTINGS, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
+import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
 import { LinkChecker } from './engines/links.js';
@@ -61,6 +61,18 @@ type AbortReason = 'cancelled' | 'budget_runtime' | 'worker_lost';
  * status and cleans up the browser, proxy, and temp directory.
  */
 export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> {
+  const status = await runScanInner(deps, run);
+  if (run.retestOfRunId) {
+    try {
+      applyRetestOutcome(deps.store, run.id);
+    } catch (err) {
+      console.error("retest outcome could not be applied", err);
+    }
+  }
+  return status;
+}
+
+async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> {
   const { store, log } = deps;
   const leaseMs = deps.leaseMs ?? 30_000;
   const heartbeatMs = deps.heartbeatMs ?? 1_000;

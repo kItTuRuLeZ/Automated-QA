@@ -40,6 +40,9 @@ export interface RunReport {
     steps: string[];
     screenshotId?: string;
     screenshotKind?: 'element' | 'screen';
+    status: string;
+    statusReason?: string;
+    assignee?: string;
     technical: { ruleId: string; observed: string };
   }>;
 }
@@ -96,6 +99,9 @@ export const api = {
   deleteRun: (id: string) => request<void>('DELETE', `/api/runs/${encodeURIComponent(id)}`),
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
   setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
+  setWorkflow: (findingId: string, input: { status?: string; assignee?: string | null; reason?: string | null }) => request<Finding>('PATCH', `/api/findings/${encodeURIComponent(findingId)}/workflow`, input),
+  findingHistory: (findingId: string) => request<Array<{ at: string; actor: string; from: string; to: string; assignee?: string; reason?: string }>>('GET', `/api/findings/${encodeURIComponent(findingId)}/history`),
+  retestRun: (runId: string) => request<ScanRun>('POST', `/api/runs/${encodeURIComponent(runId)}/retest`, {}),
   runReport: (runId: string) => request<RunReport>('GET', `/api/runs/${encodeURIComponent(runId)}/report`),
   listActions: (runId: string) => request<TraversalAction[]>('GET', `/api/runs/${encodeURIComponent(runId)}/actions`),
   listChecks: (runId: string) => request<CheckResult[]>('GET', `/api/runs/${encodeURIComponent(runId)}/checks`),
