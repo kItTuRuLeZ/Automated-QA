@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Authoring Tool Patterns Fixture</title></head>
+<body>
+  <h1>Patterns produced by authoring tools</h1>
+  <p><a id="ds-link" href="#">Watch the documentary</a></p>
+  <p><a id="ds-broken" href="#">Read the article</a></p>
+  <p><a href="#top">Back to top</a></p>
+  <div id="player">
+    <video id="placeholder" src="data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28ybXA0MQ==" muted playsinline width="1" height="1"></video>
+    <audio id="narration" src="/media/tone.wav" preload="auto"></audio>
+    <button type="button" aria-label="Pause (Ctrl+Alt+P)">❚❚</button>
+    <button type="button" aria-label="Mute (Ctrl+Alt+M)">🔊</button>
+  </div>
+  <button type="button" id="start">Start Course</button>
+  <p id="slide">Title slide</p>
+  <script>
+    // Storyline-style hyperlinks: javascript: URLs that open a real destination.
+    document.getElementById('ds-link').href = "javascript:DS.windowOpen.open({ url: '" + location.origin + "/links/ok' })";
+    document.getElementById('ds-broken').href = "javascript:DS.windowOpen.open({ url: '" + location.origin + "/links/missing' })";
+    document.getElementById('start').addEventListener('click', function () { document.getElementById('slide').textContent = 'Slide 1: Welcome'; this.hidden = true; });
+  </script>
+</body>
+</html>

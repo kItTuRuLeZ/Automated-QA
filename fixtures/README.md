@@ -12,6 +12,7 @@ Local course fixtures served by `tests/support/fixture-server.ts` on `127.0.0.1`
 | `late-title/` | Title set 1.5 s after load; must not be RUN-005. |
 | `aborted-fetch/` | Page aborts its own fetch; must not be RUN-004. |
 | `spa-lessons/`, `tabs/`, `accordion/`, `modal/`, `nav-loop/` | Traversal: hash-routed lessons, working and broken tabs/sections/dialogs, a cycling Next. |
+| `authoring-patterns/`, `slow-first-tab/` | Storyline-style script links, inline placeholder video, player controls, Back to top, Start Course; a control slow only the first time (must not be reported). |
 | `canvas/`, `unsafe-actions/` | Canvas disclosure (COV-003); unsafe and ambiguous controls skipped (COV-001). |
 | `lazy-image/`, `broken-media/` | Lazy valid/broken images, oversized image, playable and missing audio/video, uncaptioned video (MED-001..005). |
 | `placeholder-text/`, `hidden-placeholder/` | Placeholders and production notes, exclusions, hidden text, placeholder revealed only by expanding (TXT-001/002). |

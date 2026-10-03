@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Slow First Tab Fixture</title></head>
+<body>
+  <h1>A tab that is slow only the first time</h1>
+  <div role="tablist" aria-label="Topics">
+    <button role="tab" id="t1" aria-selected="true" aria-controls="p1">One</button>
+    <button role="tab" id="t2" aria-selected="false" aria-controls="p2">Two</button>
+  </div>
+  <div role="tabpanel" id="p1">Panel one.</div>
+  <div role="tabpanel" id="p2" hidden>Panel two.</div>
+  <script>
+    // The very first activation in this browser session takes 3 s (for example a first-time asset load); later ones are instant.
+    document.getElementById('t2').addEventListener('click', function () {
+      var first = !sessionStorage.getItem('warmed');
+      sessionStorage.setItem('warmed', '1');
+      setTimeout(function () {
+        document.getElementById('t2').setAttribute('aria-selected', 'true');
+        document.getElementById('t1').setAttribute('aria-selected', 'false');
+        document.getElementById('p2').hidden = false;
+        document.getElementById('p1').hidden = true;
+      }, first ? 3000 : 0);
+    });
+    document.getElementById('t1').addEventListener('click', function () {
+      document.getElementById('t1').setAttribute('aria-selected', 'true');
+      document.getElementById('t2').setAttribute('aria-selected', 'false');
+      document.getElementById('p1').hidden = false;
+      document.getElementById('p2').hidden = true;
+    });
+  </script>
+</body>
+</html>

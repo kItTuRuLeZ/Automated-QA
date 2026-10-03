@@ -147,3 +147,12 @@ describe('scan budgets', () => {
     expect(checks.some((c) => c.ruleId.startsWith('NAV-') || c.ruleId.startsWith('COV-'))).toBe(false);
   });
 });
+
+describe('defects must reproduce', () => {
+  it('a control that is only slow the first time passes on the retry and is not reported', async () => {
+    const { actions, findings, checks } = await scan('slow-first-tab/');
+    expect(ruleFindings(findings, 'NAV-001')).toEqual([]);
+    expect(actionsFor(actions, 'Two')[0]?.outcome).toBe('succeeded');
+    expect(checks.find((c) => c.ruleId === 'NAV-001')?.reasonDetail).toContain('second attempt');
+  });
+});

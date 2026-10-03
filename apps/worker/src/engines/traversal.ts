@@ -112,17 +112,17 @@ export class Traversal {
 
     // Runtime problems observed while exploring, attributed to the action that triggered them.
     let collecting = false;
-    let observed: Array<{ kind: 'exception' | 'request'; text: string; resourceType?: string }> = [];
+    let observed: Array<{ kind: 'exception' | 'request'; text: string; url?: string; resourceType?: string }> = [];
     page.on('pageerror', (e) => collecting && observed.push({ kind: 'exception', text: sanitizeText(e.message, redaction) }));
     page.on('response', (r) => {
       if (!collecting || r.request().isNavigationRequest() || r.status() < 400 || r.headers()['x-cqa-blocked'] === '1') return;
       if (this.deps.excludeResourceTypes?.includes(r.request().resourceType())) return;
-      observed.push({ kind: 'request', text: `${san(r.url())} (HTTP ${r.status()})`, resourceType: r.request().resourceType() });
+      observed.push({ kind: 'request', url: san(r.url()), text: `${san(r.url())} (HTTP ${r.status()})`, resourceType: r.request().resourceType() });
     });
     page.on('requestfailed', (r) => {
       if (!collecting || r.isNavigationRequest() || isAbort(r.failure()?.errorText) || this.deps.blocked().some((b) => b.host === hostOf(r.url()))) return;
       if (this.deps.excludeResourceTypes?.includes(r.resourceType())) return;
-      observed.push({ kind: 'request', text: `${san(r.url())} (${r.failure()?.errorText ?? 'failed'})`, resourceType: r.resourceType() });
+      observed.push({ kind: 'request', url: san(r.url()), text: `${san(r.url())} (${r.failure()?.errorText ?? 'failed'})`, resourceType: r.resourceType() });
     });
 
     const settle = async () => {
@@ -316,13 +316,28 @@ export class Traversal {
         } catch (err) {
           collecting = false;
           failedTransitions++;
-          const detail = truncate((err as Error).message, 200);
+          const raw = (err as Error).message;
+          const detail = raw.includes("Timeout") ? `The control did not become clickable within ${budgets.actionTimeoutMs} ms (it may be disabled until media or an animation finishes, or covered by another element).` : truncate(raw, 200);
           actions.push(toAction(ctx.runId, { ...cand, reason: 'engine_error', reasonDetail: detail, durationMs: Date.now() - t0 }, 'failed'));
           checks.push(check(ruleId, 'error', Date.now() - t0, [], { stateId: node.state.id, viewportName, reason: 'engine_error', reasonDetail: `Could not perform ${cand.targetDescription}: ${detail}` }));
           continue;
         }
-        const after = await snap();
-        const postOk = await this.verify(page, cand.postconditions ?? [], before, after);
+        let after = await snap();
+        let postOk = await this.verify(page, cand.postconditions ?? [], before, after);
+        let retried = false;
+        // A defect must reproduce: before reporting a recognized control as broken, restore the state and try once more.
+        collecting = false; // reloading for the retry must not attribute page-load problems to this action
+        if (!postOk && ruleId !== 'NAV-002' && timeLeft() && (await restore(node))) {
+          collecting = true;
+          retried = true;
+          try {
+            await execute(cand);
+            after = await snap();
+            postOk = await this.verify(page, cand.postconditions ?? [], before, after);
+          } catch {
+            postOk = false;
+          }
+        }
         collecting = false;
         const duration = Date.now() - t0;
         const changed = strictKey(after) !== strictKey(before);
@@ -378,7 +393,7 @@ export class Traversal {
 
         const stateForResult = target ?? node;
         if (postOk) {
-          checks.push(check(ruleId, 'passed', duration, [], { stateId: node.state.id, viewportName }));
+          checks.push(check(ruleId, 'passed', duration, [], { stateId: node.state.id, viewportName, reasonDetail: retried ? 'Passed on the second attempt; the first attempt did not show the expected result in time.' : undefined }));
         } else {
           const shot = await screenshot(`After ${stepText(cand)}`, stateForResult.state.id);
           const ev = shot ? [shot] : [];
@@ -398,7 +413,7 @@ export class Traversal {
             checks.push(check(ruleId, 'failed', duration, ev, { stateId: node.state.id, viewportName }));
             addFinding(ruleId, node, {
               title: ruleId === 'NAV-003' ? `Dialog did not close with ${cand.targetDescription}` : `${capitalizeFirst(cand.targetDescription)} did not work as expected`,
-              observed: `After activating ${cand.targetDescription}, the expected result was not observed within ${POST_TIMEOUT_MS} ms.`,
+              observed: `After activating ${cand.targetDescription}, the expected result was not observed within ${POST_TIMEOUT_MS} ms, on two separate attempts.`,
               expected: cand.expectedPostcondition ?? '',
               evidenceIds: ev,
               reproductionSteps: repro,
@@ -409,7 +424,7 @@ export class Traversal {
         }
 
         // Runtime problems triggered by this action.
-        for (const o of dedupe(observed, (x) => x.text)) {
+        for (const o of dedupe(observed, (x) => x.url ?? x.text)) {
           const where = stateForResult;
           const ev = await ctx.evidence.addEvidence({ kind: o.kind === 'exception' ? 'console_entry' : 'network_entry', caption: o.kind === 'exception' ? 'Uncaught exception during exploration' : 'Failed request during exploration', data: { text: o.text, resourceType: o.resourceType ?? null, afterAction: cand.targetDescription }, stateId: where.state.id, viewportName, capturedAt: nowIso(), redacted: true });
           const repro = [...describePath(node.path), stepText(cand)];
@@ -422,7 +437,7 @@ export class Traversal {
               reproductionSteps: [...repro, 'Open the developer tools console to see the exception.'],
               remediation: 'Fix the script error, or guard the failing code path.',
               targetKey: o.text.split('\n')[0],
-              stateKey: '',
+              stateKey: 'initial', // same key as the initial capture: one problem, several occurrences
             });
           } else {
             addFinding('RUN-004', where, {
@@ -432,8 +447,8 @@ export class Traversal {
               evidenceIds: [ev.id],
               reproductionSteps: [...repro, 'Open the developer tools Network panel.'],
               remediation: 'Restore the missing resource or remove the reference to it.',
-              targetKey: o.text,
-              stateKey: '',
+              targetKey: o.url ?? o.text,
+              stateKey: 'initial',
               severity: o.resourceType && ['document', 'script', 'stylesheet'].includes(o.resourceType) ? 'high' : 'medium',
             });
           }

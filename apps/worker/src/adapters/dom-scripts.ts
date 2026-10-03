@@ -183,11 +183,12 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
       push(el, { category: 'dialog_close', name, dialogLocator: cssPath(dialog) });
       continue;
     }
-    if (/^(next|continue|next page|›|→|»)(\s|$)/i.test(name)) {
+    if (/^(next|continue|next page|start|start course|begin|get started|let's begin|›|→|»)(\s|$)/i.test(name)) {
       push(el, { category: 'next', name });
       continue;
     }
-    if (/^(back|previous|prev|‹|←|«)(\s|$)/i.test(name)) {
+    // "Back to top" scrolls the page; it is not lesson navigation.
+    if (/^(back|previous|prev|‹|←|«)(\s|$)/i.test(name) && !/^back to (top|the top)\b/i.test(name)) {
       push(el, { category: 'back', name });
       continue;
     }

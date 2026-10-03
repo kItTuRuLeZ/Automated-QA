@@ -134,7 +134,9 @@ export class ContentChecks {
         );
       }
 
-      const videos = content.media.filter((m) => m.tag === 'video');
+      // Inline data: media (for example Storyline's silent placeholder video) is not course content for caption/control checks.
+      const realMedia = content.media.filter((m) => !m.src.startsWith('data:'));
+      const videos = realMedia.filter((m) => m.tag === 'video');
       const uncaptioned = videos.filter((v) => !v.tracks.some((t) => t.kind === 'captions' || t.kind === 'subtitles'));
       checks.push(check('MED-003', uncaptioned.length ? 'failed' : videos.length ? 'passed' : 'not_applicable', 0, [], { ...base, itemsEvaluated: videos.length }));
       for (const v of dedupe(uncaptioned, (x) => x.src || x.locator)) {
@@ -153,8 +155,9 @@ export class ContentChecks {
         );
       }
 
-      const noControls = content.media.filter((m) => !m.controls);
-      checks.push(check('MED-004', noControls.length ? 'needs_review' : content.media.length ? 'passed' : 'not_applicable', 0, [], { ...base, itemsEvaluated: content.media.length }));
+      // A visible play/pause/mute button means a custom player (for example Storyline) provides controls.
+      const noControls = content.customMediaControls ? [] : realMedia.filter((m) => !m.controls);
+      checks.push(check('MED-004', noControls.length ? 'needs_review' : realMedia.length ? 'passed' : 'not_applicable', 0, [], { ...base, itemsEvaluated: realMedia.length }));
       for (const m of dedupe(noControls, (x) => x.src || x.locator)) {
         const src = m.src ? san(m.src) : '(no source)';
         findings.push(

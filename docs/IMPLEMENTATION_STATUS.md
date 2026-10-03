@@ -157,7 +157,7 @@ A working local application: create a project, configure and validate a URL scan
 | Storyline HTML5 (`elearning.aptaracorp.com/.../story_html5.html`) | Loaded; only the player's HELP (skipped, not recognized) and EXIT (skipped, unsafe) links were found. The slide area is a 993×624 canvas, disclosed as COV-003. Slide content and player navigation were **not** explored. Needs the Storyline adapter (Phase 7). |
 | Rise 360 (`share.articulate.com/...`) | Lessons reached through the sidebar links (15 states with a 15-state budget). Exposed three problems, all fixed with regression tests: (1) a request the page cancels itself (`net::ERR_ABORTED`) was reported as a failed request; (2) the title, set by script after load, was reported missing; (3) when Rise rendered slowly, discovery ran too early and found no controls. The engine now waits for visible content to stop changing before discovery. Re-scanned twice: consistent, no false findings. A real content issue is visible in the lesson screenshots (a "Note to the GD: Please enhance this screen" reviewer note left in the course); Phase 2b's placeholder check should flag it. |
 
-Product-specific validation status: **Rise — partial** (navigation works; Continue blocks, knowledge checks, and in-lesson interactions not yet exercised). **Storyline — pending** (adapter needed). **Custom HTML — pending** (no sample yet).
+Product-specific validation status: **Rise — partial** (navigation works; Continue blocks, knowledge checks, and in-lesson interactions not yet exercised). **Storyline 360 (modern player) — partial** (see below). **Older canvas-based Storyline HTML5 output — pending** (adapter needed). **Custom HTML — pending** (no sample yet).
 
 ## Phase 2b — delivered (links, media, text)
 
@@ -198,6 +198,20 @@ Product-specific validation status: **Rise — partial** (navigation works; Cont
 - Link checks see the link from outside the learner's session: destinations that need sign-in show as restricted, and sites that block automated requests may time out (unverified).
 - Placeholder patterns are English and rule-based; client-specific patterns and exclusions arrive with client profiles in Phase 5.
 - Scrolling each state for lazy content adds time per state on long pages.
+
+### Validation on a Storyline 360 course (2026-10-03)
+
+Sample: `salesportal.aptaracorp.com/ProtectingOurPlanet/story.html` (Storyline 360 modern player). The player and slide text are in the DOM, so the generic engine reaches real slides once it recognizes "Start Course" and the player's Next/Previous buttons.
+
+Fixed after the first scan, each with a regression fixture and test:
+1. Storyline hyperlinks are `javascript:DS.windowOpen.open({ url: '…' })`; they were flagged as script links (10 × LNK-005). The destination is now extracted and link-checked instead.
+2. Storyline's inline `data:` placeholder video was flagged for captions and controls; inline media is now skipped for MED-003/MED-004.
+3. Player-driven audio/video (visible Pause/Mute buttons) was flagged for missing native controls; MED-004 is skipped when a custom player exposes controls.
+4. "Back to top" was treated as Back navigation; it is now excluded.
+5. "Start Course" / "Start" / "Begin" / "Get started" are recognized as forward navigation.
+6. A recognized control that fails is now retried once from a fresh restore before it is reported (defects must reproduce). Page-load errors during that reload are no longer attributed to the action, and runtime failures seen during exploration merge with the initial-capture finding for the same URL.
+
+Remaining findings on this course: the embedded AI avatar frame (`genx.aptaracorp.com`) fails to load its scripts (404, wrong MIME type) and its HeyGen API call is blocked by CORS; the course video has no caption track; GLOSSARY and RESOURCES did not open on the first slide after Start on two attempts (they did open on later slides; confirm manually). The slide outline menu (`treeitem`s) and player controls such as Settings are not exercised yet; a Storyline adapter (Phase 7) should drive the outline. Scans of this course take about 4 minutes because each state is restored by reloading the player.
 
 ## Phase 3 — plan (next)
 

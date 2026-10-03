@@ -135,3 +135,21 @@ describe('checks run on every explored state', () => {
     expect(explored.checks.filter((c) => c.ruleId === 'TXT-001')).toHaveLength(2); // one per reached state
   }, 180_000);
 });
+
+describe('authoring-tool patterns (found on real Storyline output)', () => {
+  it('checks Storyline-style script link destinations instead of flagging them, and ignores Back to top', async () => {
+    const { findings, checks } = await scan('authoring-patterns/', { explore: true });
+    expect(of(findings, 'LNK-005')).toEqual([]);
+    expect(of(findings, 'LNK-001').map((f) => f.title)).toEqual(['Broken link "Read the article" (HTTP 404)']);
+    expect(checks.filter((c) => c.ruleId === 'LNK-001' && c.outcome === 'passed').length).toBeGreaterThanOrEqual(1);
+    const actions = h.store.listActions(h.store.getRun(checks[0]!.runId)!.id);
+    expect(actions.some((a) => a.targetDescription.includes('Back to top') && a.kind === 'back')).toBe(false);
+    expect(actions.find((a) => a.targetDescription.includes('Start Course'))).toMatchObject({ kind: 'next', outcome: 'succeeded' });
+  });
+
+  it('does not report inline placeholder video or player-controlled media', async () => {
+    const { findings } = await scan('authoring-patterns/');
+    expect(of(findings, 'MED-003')).toEqual([]);
+    expect(of(findings, 'MED-004')).toEqual([]);
+  });
+});

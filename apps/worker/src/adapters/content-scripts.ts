@@ -7,6 +7,8 @@ export interface LinkInfo {
   href: string;
   resolved: string | null;
   kind: 'http' | 'javascript' | 'empty' | 'malformed' | 'mailto' | 'tel' | 'fragment' | 'other';
+  /** True when the destination was read from a script link that opens a URL (for example Storyline's DS.windowOpen.open). */
+  viaScript?: boolean;
   text: string;
   locator: string;
 }
@@ -51,6 +53,8 @@ export interface ResourceSize {
 }
 
 export interface PageContent {
+  /** A visible play/pause/mute control exists, so media may be driven by a custom player. */
+  customMediaControls: boolean;
   links: LinkInfo[];
   images: ImageInfo[];
   media: MediaInfo[];
@@ -105,7 +109,22 @@ export async function collectPageContent(args: { placeholderPatterns: string[]; 
     let resolved: string | null = null;
     const trimmed = href.trim();
     if (!trimmed) kind = 'empty';
-    else if (/^javascript:/i.test(trimmed)) kind = 'javascript';
+    else if (/^javascript:/i.test(trimmed)) {
+      // Authoring tools open real URLs from script links (Storyline: DS.windowOpen.open({ url: '...' })); check that destination instead.
+      const m = trimmed.match(/url\s*:\s*(['"])(https?:\/\/[^'"]+)\1/i);
+      if (m) {
+        try {
+          resolved = new URL(m[2]!).toString();
+        } catch {
+          resolved = null;
+        }
+      }
+      if (resolved) {
+        links.push({ href: href.slice(0, 2048), resolved, kind: 'http', text: t.slice(0, 120), locator: cssPath(a), viaScript: true });
+        continue;
+      }
+      kind = 'javascript';
+    }
     else if (/^mailto:/i.test(trimmed)) kind = 'mailto';
     else if (/^tel:/i.test(trimmed)) kind = 'tel';
     else if (trimmed.startsWith('#')) kind = 'fragment';
@@ -189,5 +208,10 @@ export async function collectPageContent(args: { placeholderPatterns: string[]; 
     .filter((e) => ['img', 'image', 'video', 'audio', 'media'].includes(e.initiatorType) || /\.(png|jpe?g|gif|webp|avif|svg|mp4|webm|mp3|m4a|wav|ogg)(\?|$)/i.test(e.name))
     .map((e) => ({ url: e.name, initiatorType: e.initiatorType, encodedBodySize: e.encodedBodySize }));
 
-  return { links, images, media, text: textMatches, resources };
+  const customMediaControls = [...document.querySelectorAll('button, [role="button"]')].some((b) => {
+    const n = (b.getAttribute('aria-label') ?? b.textContent ?? '').trim();
+    return /^(play|pause|mute|unmute)\b/i.test(n) && visible(b);
+  });
+
+  return { customMediaControls, links, images, media, text: textMatches, resources };
 }
