@@ -1,0 +1,251 @@
+import type { CourseState, Finding, ReviewerStatus, ScanRun, Severity, TraversalAction } from '@cqa/shared';
+import type { Store } from './db/store.js';
+import { ACTION_LABEL, type IssueAction, plainFinding } from './plain-language.js';
+
+/**
+ * One canonical, plain-language model of a scan. The UI summary and the Excel
+ * export are both built from this, so their totals always match.
+ */
+export interface ReportIssue {
+  /** Stable across scans of the same page and problem, so it can be tracked. */
+  id: string;
+  findingId: string;
+  action: IssueAction;
+  priority: Severity;
+  issue: string;
+  change: string;
+  /** Screens (S1, S2, …) the problem appears on. */
+  screens: string[];
+  /** Up to three affected elements, plus a count of the rest. */
+  elements: string[];
+  moreElements: number;
+  steps: string[];
+  url: string;
+  status: ReviewerStatus;
+  technical: { ruleId: string; observed: string; remediation: string; standards: string[]; confidence: string; type: string };
+  foundAt: string;
+}
+
+export interface ReportScreen {
+  label: string;
+  title: string;
+  url: string;
+  depth: number;
+  reachedBy: string;
+}
+
+export interface RunReport {
+  run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
+  counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
+  screens: ReportScreen[];
+  issues: ReportIssue[];
+  /** Checks that did not run, grouped by reason (never counted as passed). */
+  untested: Array<{ reason: string; count: number }>;
+  coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
+  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number };
+}
+
+const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+const ACTION_ORDER: Record<IssueAction, number> = { fix: 0, check: 1, not_checked: 2 };
+
+const STATUS_PLAIN: Record<ScanRun['status'], string> = {
+  queued: 'Waiting to start',
+  running: 'In progress',
+  completed: 'Finished',
+  partial: 'Finished, but not everything could be checked',
+  failed: 'Could not scan the course',
+  cancelled: 'Cancelled',
+};
+
+/** Short ID that stays the same when the same problem is found again. */
+export function stableIssueId(fingerprint: string): string {
+  return `QA-${fingerprint.slice(0, 6).toUpperCase()}`;
+}
+
+function reachedBy(state: CourseState, actions: Map<string, TraversalAction>): string {
+  const steps = state.pathFromRoot.map((id) => actions.get(id)).filter((a): a is TraversalAction => Boolean(a));
+  if (steps.length === 0) return 'Opening page';
+  return steps.map((a) => a.targetDescription.replace(/^(link|tab|expandable section|dialog opener|dialog close control|Next control|Back control|button) /, '')).join(' › ');
+}
+
+function shortSteps(steps: string[]): string[] {
+  // Long element selectors stay in the technical details; the steps stay short enough to follow.
+  return steps.filter((s) => !s.startsWith('Affected element:')).map((s) => s.replace(/^Open (.+?) in Chromium.*$/, 'Open $1'));
+}
+
+export function buildRunReport(store: Store, runId: string): RunReport {
+  const run = store.getRun(runId);
+  if (!run) throw new Error(`Run ${runId} not found`);
+  const states = store.listStates(runId);
+  const actions = new Map(store.listActions(runId).map((a) => [a.id as string, a]));
+  const findings = store.listFindings(runId);
+  const summary = store.summarizeRun(runId);
+
+  const screenIndex = new Map(states.map((s, i) => [s.id as string, i + 1]));
+  const screens: ReportScreen[] = states.map((s, i) => ({
+    label: `S${i + 1}`,
+    // Some courses set machine-made page titles (long strings with no spaces); describe the screen by how it was reached instead.
+    title: s.title && !/^\S{16,}$/.test(s.title) ? s.title : s.lessonId || reachedBy(s, actions) || new URL(s.url).pathname,
+    url: s.url,
+    depth: s.depth,
+    reachedBy: reachedBy(s, actions),
+  }));
+
+  const issues: ReportIssue[] = findings.map((f) => toIssue(f, screenIndex, run.config.target.url ?? ''));
+  issues.sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action] || SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority] || a.issue.localeCompare(b.issue));
+
+  const bySeverity = Object.fromEntries((Object.keys(SEVERITY_ORDER) as Severity[]).map((s) => [s, 0])) as Record<Severity, number>;
+  for (const i of issues) if (i.action === 'fix') bySeverity[i.priority]++;
+
+  const reasons = new Map<string, number>();
+  for (const c of store.listCheckResults(runId)) {
+    if ((c.outcome === 'not_tested' || c.outcome === 'error') && c.reason) reasons.set(c.reason, (reasons.get(c.reason) ?? 0) + 1);
+  }
+
+  return {
+    run: {
+      id: run.id,
+      targetUrl: run.config.target.url ?? '',
+      queuedAt: run.queuedAt,
+      finishedAt: run.finishedAt,
+      status: run.status,
+      statusPlain: STATUS_PLAIN[run.status],
+      statusDetail: run.statusDetail,
+      browser: run.browser ? `${run.browser.engine} ${run.browser.version}` : undefined,
+    },
+    counts: { fix: issues.filter((i) => i.action === 'fix').length, check: issues.filter((i) => i.action === 'check').length, notChecked: issues.filter((i) => i.action === 'not_checked').length, bySeverity },
+    screens,
+    issues,
+    untested: [...reasons.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => b.count - a.count),
+    coverage: { screensScanned: states.length, budgetsReached: run.coverage?.budgetsReached ?? [], blockedRequests: run.coverage?.blockedRequests ?? 0 },
+    checkTotals: {
+      uniqueRules: summary.uniqueRules,
+      executions: summary.executions,
+      passed: summary.byOutcome.passed,
+      failed: summary.byOutcome.failed,
+      needsReview: summary.byOutcome.needs_review,
+      notApplicable: summary.byOutcome.not_applicable,
+      notTested: summary.byOutcome.not_tested,
+      errors: summary.byOutcome.error,
+    },
+  };
+}
+
+function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: string): ReportIssue {
+  const plain = plainFinding(f);
+  const stateIds = [f.location.stateId, ...f.occurrences.map((o) => o.location.stateId)].filter((x): x is NonNullable<typeof x> => Boolean(x));
+  const screens = [...new Set(stateIds.map((id) => screenIndex.get(id as string)).filter((n): n is number => n !== undefined))].sort((a, b) => a - b).map((n) => `S${n}`);
+  const described = [...new Set(f.occurrences.map((o) => o.location.elementDescription ?? o.location.selector).filter((x): x is string => Boolean(x)))];
+  return {
+    id: stableIssueId(f.fingerprint),
+    findingId: f.id,
+    action: plain.action,
+    priority: f.severityOverride?.to ?? f.severity,
+    issue: plain.issue,
+    change: plain.change,
+    screens,
+    // Raw HTML snippets are long; show enough to find the element. Full detail stays in the technical view.
+    elements: described.slice(0, 3).map((d) => (d.length > 90 ? `${d.slice(0, 89)}…` : d)),
+    moreElements: Math.max(0, described.length - 3),
+    steps: shortSteps(f.reproductionSteps),
+    url: f.location.url ?? fallbackUrl,
+    status: f.reviewer.status,
+    technical: {
+      ruleId: f.ruleId,
+      observed: f.observed,
+      remediation: f.remediation,
+      standards: f.standards.map((s) => `${s.standard}${s.criterion ? ` ${s.criterion}` : ''}`),
+      confidence: f.confidence,
+      type: f.type,
+    },
+    foundAt: f.createdAt,
+  };
+}
+
+/** Plain summary sentence for the top of a report. */
+export function summaryLine(r: RunReport): string {
+  const parts = [`${r.counts.fix} to fix`, `${r.counts.check} to check by hand`, `${r.counts.notChecked} areas not checked`];
+  return `${parts.join(', ')}. ${r.coverage.screensScanned} screen${r.coverage.screensScanned === 1 ? '' : 's'} scanned.`;
+}
+
+export { ACTION_LABEL };
+
+// ---- consolidated report across a project's scans ----
+
+export interface ConsolidatedIssue extends ReportIssue {
+  /** The scanned course address the issue belongs to. */
+  course: string;
+  firstFound: string;
+  lastSeen: string;
+  scansSeen: number;
+  /** False means the latest scan of this course did not find it; this is not proof that it was fixed. */
+  inLatestScan: boolean;
+}
+
+export interface ProjectReport {
+  project: { id: string; name: string; description: string };
+  generatedAt: string;
+  courses: Array<{ targetUrl: string; scans: number; latest: RunReport }>;
+  issues: ConsolidatedIssue[];
+}
+
+/**
+ * Merges every finished scan of a project into one list of trackable issues.
+ * Issues are matched by course address and stable ID. An issue missing from
+ * the latest scan is reported as "not found in latest scan", never as fixed.
+ */
+export function buildProjectReport(store: Store, projectId: string): ProjectReport {
+  const project = store.getProject(projectId);
+  if (!project) throw new Error(`Project ${projectId} not found`);
+  const runs = store
+    .listRuns(projectId)
+    .filter((r) => r.status === 'completed' || r.status === 'partial' || r.status === 'failed')
+    .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+
+  const byCourse = new Map<string, ScanRun[]>();
+  for (const r of runs) {
+    const key = r.config.target.url ?? '';
+    byCourse.set(key, [...(byCourse.get(key) ?? []), r]);
+  }
+
+  const courses: ProjectReport['courses'] = [];
+  const merged = new Map<string, ConsolidatedIssue>();
+  for (const [course, courseRuns] of byCourse) {
+    const reports = courseRuns.map((r) => buildRunReport(store, r.id));
+    const latest = reports[reports.length - 1]!;
+    courses.push({ targetUrl: course, scans: reports.length, latest });
+    const latestIds = new Set(latest.issues.map((i) => i.id));
+    for (const rep of reports) {
+      for (const issue of rep.issues) {
+        const key = `${course}|${issue.id}`;
+        const seenAt = rep.run.finishedAt ?? rep.run.queuedAt;
+        const prev = merged.get(key);
+        merged.set(key, {
+          ...issue, // later scans overwrite details so the text reflects the newest evidence
+          course,
+          firstFound: prev?.firstFound ?? seenAt,
+          lastSeen: seenAt,
+          scansSeen: (prev?.scansSeen ?? 0) + 1,
+          inLatestScan: latestIds.has(issue.id),
+        });
+      }
+    }
+  }
+
+  const issues = [...merged.values()].sort(
+    (a, b) =>
+      Number(b.inLatestScan) - Number(a.inLatestScan) ||
+      ACTION_ORDER[a.action] - ACTION_ORDER[b.action] ||
+      SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority] ||
+      a.course.localeCompare(b.course) ||
+      a.issue.localeCompare(b.issue),
+  );
+  return { project: { id: project.id, name: project.name, description: project.description }, generatedAt: new Date().toISOString(), courses, issues };
+}
+
+/** Wraps a single scan in the project report shape so one exporter handles both. */
+export function runReportAsProject(rep: RunReport, projectName: string, projectId = ''): ProjectReport {
+  const seenAt = rep.run.finishedAt ?? rep.run.queuedAt;
+  const issues: ConsolidatedIssue[] = rep.issues.map((i) => ({ ...i, course: rep.run.targetUrl, firstFound: seenAt, lastSeen: seenAt, scansSeen: 1, inLatestScan: true }));
+  return { project: { id: projectId, name: projectName, description: '' }, generatedAt: new Date().toISOString(), courses: [{ targetUrl: rep.run.targetUrl, scans: 1, latest: rep }], issues };
+}

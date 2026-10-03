@@ -8,3 +8,5 @@ export * from './rules.js';
 export * from './schemas.js';
 export * from './logger.js';
 export * from './manual-checklist.js';
+export * from './plain-language.js';
+export * from './report.js';

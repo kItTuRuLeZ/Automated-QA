@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { CheckResult, Finding } from '@cqa/shared';
 import { api } from '../api';
 import { Accessibility } from '../components/Accessibility';
+import { PlainSummary } from '../components/PlainSummary';
 import { Coverage } from '../components/Coverage';
 import {
   Empty,
@@ -82,6 +83,16 @@ export function RunPage({ id }: { id: string }) {
         )}
       </div>
 
+      <PlainSummary run={r} isActive={isActive} />
+
+      <Accessibility run={r} checks={checks.data} findings={findings.data} />
+
+      <Coverage run={r} states={r.states} screenshots={r.screenshots} />
+
+      <details className="card">
+        <summary>
+          <h2 className="inline-heading">Technical details: counts, rules, and the full findings table</h2>
+        </summary>
       <div className="stats">
         <Stat label="Findings" value={s.findingCount} />
         <Stat label="Unique rules" value={s.uniqueRules} hint="Distinct rules evaluated" />
@@ -156,9 +167,7 @@ export function RunPage({ id }: { id: string }) {
         <FindingsTable findings={findings.data} />
       )}
 
-      <Accessibility run={r} checks={checks.data} findings={findings.data} />
-
-      <Coverage run={r} states={r.states} screenshots={r.screenshots} />
+      </details>
 
       <details className="card">
         <summary>

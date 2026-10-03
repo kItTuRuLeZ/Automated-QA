@@ -262,6 +262,33 @@ Remaining findings on this course: the embedded AI avatar frame (`genx.aptaracor
 
 These are real automated signals; they still need the manual checklist (the Storyline stage is largely a canvas).
 
+## Reporting for course developers — delivered early (2026-10-03)
+
+Requested after the first review: reports were too hard to read. Audience chosen: **course developer** ("what to change and where"), plus a trackable Excel sheet. This is the first slice of Phase 5's report work; JSON, self-contained HTML, and PDF exports are still to come.
+
+- **Canonical report model** (`packages/core/src/report.ts`): one plain-language model per scan (`buildRunReport`) and one consolidated model per project (`buildProjectReport`). The scan page summary and the Excel export are both built from it, so totals always match.
+- **Plain language** (`plain-language.ts`): every finding becomes an *issue* ("An image has no alternative text"), a *what to change* sentence, a *where* (screens S1, S2…, elements), and short *steps to see it*. About 30 axe-core rules and every scanner rule have hand-written wording; unknown axe rules fall back to axe's own description. Rule codes, WCAG numbers, and raw observations move to a "Technical details" column. Each finding is grouped as **Fix** (confirmed), **Check by hand** (scanner could not decide, heuristics, inconclusive items), or **Not checked** (frames, canvas, skipped controls, budgets, blocked requests).
+- **Stable issue IDs**: `QA-` plus the first six characters of the finding fingerprint (rule, page, target), so the same problem keeps the same ID across scans.
+- **Excel tracker** (`apps/server/src/export/xlsx.ts`, `exceljs`): *Summary* (counts per course, how to use, disclaimer), *Issues* (one row per problem: ID, Priority, Action, Course, Screens, Issue, What to change, Where, How to see it, **Status** dropdown, **Owner**, **Notes**, First found, Last seen, Latest scan, Rule, Standard, Technical details; filters, frozen header, colored priority, Verified/Fixed rows turn green), *Not checked* (what was not inspected and the checks that did not run, by reason), *Manual checks* (the accessibility checklist with status dropdown, owner, notes), *Screens* (each screen reached, how the scanner got there, issues per screen).
+- **Consolidated across scans**: the project workbook merges every finished scan by course address and issue ID, with first found, last seen, and scans seen. An issue absent from a course's latest scan is shown as **"Not found (confirm fixed)"** and its Status stays Open: absence is not proof of a fix.
+- **Spreadsheet safety**: all course-derived text is stored as text; values that start with `=`, `+`, `-`, `@`, tab, or carriage return get a leading apostrophe, and control characters are removed. Tested by scanning every cell for formulas.
+- **API and UI**: `GET /api/runs/:id/report`, `GET /api/runs/:id/export.xlsx`, `GET /api/projects/:id/export.xlsx`. The scan page now opens with "What to do" (big counts, issues grouped as above, a download button); the old counts, rules, and findings table moved into a "Technical details" fold-out; the project page has "Download Excel tracker (all scans)".
+
+### Commands run
+
+| Command | Result |
+| --- | --- |
+| `npx vitest run tests/report-export.test.ts` | 8 passed (wording, sheets and ordering, tracking features, stable IDs and "not found" semantics, formula safety, endpoints, totals agree with the model, readability details) |
+| Real export from the two supplied courses | Opened with exceljs: 5 sheets, 36 issue rows across both courses (13 Fix, 18 Check by hand, 5 Not checked), screens and reasons filled in |
+| `npx vitest run` (full) | **128 passed / 128** in 9 files (about 14 minutes) |
+
+### Known limitations
+
+- Tracking is one-way: Status, Owner, and Notes edited in Excel are not read back into the app (a new export starts again from the app's status, which is "Open" until the Phase 5 workflow exists). Keep working copies safe, or copy the columns across.
+- IDs come from the finding fingerprint. If a page URL or the affected element changes, the issue gets a new ID.
+- Wording for axe rules not on the list falls back to axe's own description.
+- The "Where" column shows a shortened HTML snippet for accessibility issues; the full selector is in the technical view.
+
 ## Phase 4 — plan (next)
 
 1. Run selected reached states at configurable viewports (1440×900, 1366×768, 768×1024, 390×844) and record browser engine and emulation settings; call them simulations.

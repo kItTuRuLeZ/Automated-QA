@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "exceljs": "^4.4.0",
     "fastify": "^5.12.5"
   }
 }

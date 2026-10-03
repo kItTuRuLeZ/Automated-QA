@@ -2,6 +2,8 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProjectId } from '@cqa/shared';
+import { buildProjectReport, buildRunReport, runReportAsProject } from '@cqa/core';
+import { buildWorkbook } from './export/xlsx.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
 export interface AppOptions {
@@ -152,6 +154,37 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get<{ Params: { id: string } }>('/api/runs/:id/findings', async (req, reply) => {
     if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply);
     return store.listFindings(req.params.id);
+  });
+
+  const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  const fileSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'report';
+
+  // Plain-language report model for one scan (the run page summary and the Excel export share it).
+  app.get<{ Params: { id: string } }>('/api/runs/:id/report', async (req, reply) => {
+    if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply, 'Scan not found.');
+    return buildRunReport(store, req.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/runs/:id/export.xlsx', async (req, reply) => {
+    const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!run) return notFound(reply, 'Scan not found.');
+    const project = store.getProject(run.projectId);
+    const buf = await buildWorkbook(runReportAsProject(buildRunReport(store, run.id), project?.name ?? 'Course QA', run.projectId));
+    reply.header('Content-Type', XLSX_TYPE);
+    reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project?.name ?? 'scan')}-scan-${run.queuedAt.slice(0, 10)}.xlsx"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(buf);
+  });
+
+  // Consolidated, trackable workbook across every finished scan in a project.
+  app.get<{ Params: { id: string } }>('/api/projects/:id/export.xlsx', async (req, reply) => {
+    const project = isOpaqueId(req.params.id) ? store.getProject(req.params.id) : undefined;
+    if (!project) return notFound(reply, 'Project not found.');
+    const buf = await buildWorkbook(buildProjectReport(store, project.id));
+    reply.header('Content-Type', XLSX_TYPE);
+    reply.header('Content-Disposition', `attachment; filename="course-qa-${fileSlug(project.name)}-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(buf);
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/actions', async (req, reply) => {

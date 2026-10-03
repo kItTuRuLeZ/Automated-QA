@@ -31,7 +31,12 @@ export function ProjectPage({ id }: { id: string }) {
 
       <NewScanForm projectId={id} defaultUrl={p.courseUrl ?? ''} onQueued={(runId) => (window.location.hash = `/runs/${runId}`)} />
 
-      <h2>Scan history</h2>
+      <div className="page-header">
+        <h2>Scan history</h2>
+        <a className="btn" href={`/api/projects/${id}/export.xlsx`} download>
+          Download Excel tracker (all scans)
+        </a>
+      </div>
       {runs.error ? <ErrorBox error={runs.error} onRetry={runs.reload} /> : !runs.data ? <Loading /> : runs.data.length === 0 ? (
         <Empty title="No scans yet">
           <p>Configure and start a scan above.</p>
