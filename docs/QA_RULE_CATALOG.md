@@ -12,7 +12,7 @@ Every check the application runs has a stable rule ID listed here. Rule IDs neve
 
 **Severity:** Critical / High / Medium / Low / Informational. **Confidence:** `high` / `medium` / `low`.
 
-**Capability status:** `implemented`, `planned`, `heuristic` (implemented or planned as a heuristic), `manual` (review task, not automated). At Phase 0 nothing is implemented; the status column shows the planned capability kind.
+**Capability status:** `implemented`, `planned`, `heuristic` (implemented or planned as a heuristic), `manual` (review task, not automated). The status column shows `implemented` once a rule ships; otherwise the planned capability kind.
 
 ## Severity mapping
 
@@ -42,20 +42,20 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| RUN-001 | Initial page loads (navigation succeeds, non-error final status) | Final sanitized URL, status, screenshot, timing | Every URL target | automated_defect | Critical/high | 1 | planned | Cannot tell a "correct" page from a wrong-but-200 page. |
-| RUN-002 | Uncaught JavaScript exceptions | Message, stack (sanitized), state, timestamp | Every state | automated_defect | High/high | 1 | planned | Third-party exceptions are flagged with origin; impact on learner unknown. |
-| RUN-003 | Console errors (`console.error`) | Text (sanitized), source location | Every state | heuristic_warning | Low/medium | 1 | planned | Many console errors are benign. |
-| RUN-004 | Failed subrequests (network error or HTTP ≥ 400) | URL (sanitized), resource type, status/error | Every state | automated_defect | High (script/style/doc) · Medium (other)/high | 1 | planned | Requests blocked by our policy are reported separately (NET-002), not as course defects. |
-| RUN-005 | Page title present | Title text | Top document | standards_warning | Low/high | 1 | planned | Title adequacy is manual. WCAG 2.4.2. |
-| RUN-006 | Navigation timing captured | Navigation Timing entries | Top document | (metric, no finding) | —/— | 1 | planned | Single sample; machine and network dependent. |
+| RUN-001 | Initial page loads (navigation succeeds, non-error final status) | Final sanitized URL, status, screenshot, timing | Every URL target | automated_defect | Critical/high | 1 | implemented | Cannot tell a "correct" page from a wrong-but-200 page. |
+| RUN-002 | Uncaught JavaScript exceptions | Message, stack (sanitized), state, timestamp | Every state | automated_defect | High/high | 1 | implemented | Third-party exceptions are flagged with origin; impact on learner unknown. |
+| RUN-003 | Console errors (`console.error`) | Text (sanitized), source location | Every state | heuristic_warning | Low/medium | 1 | implemented | Many console errors are benign. |
+| RUN-004 | Failed subrequests (network error or HTTP ≥ 400) | URL (sanitized), resource type, status/error | Every state | automated_defect | High (script/style/doc) · Medium (other)/high | 1 | implemented | Requests blocked by our policy are reported separately (NET-002), not as course defects. |
+| RUN-005 | Page title present | Title text | Top document | standards_warning | Low/high | 1 | implemented | Title adequacy is manual. WCAG 2.4.2. |
+| RUN-006 | Navigation timing captured | Navigation Timing entries | Top document | (metric, no finding) | —/— | 1 | implemented | Single sample; machine and network dependent. |
 
 ### Network policy and scope (NET)
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| NET-001 | Target rejected by outbound policy | Reason (scheme, credentials, reserved IP, out of scope) | Scan submission | (submission error, no run) | —/— | 1 | planned | — |
-| NET-002 | Subrequest blocked by policy | Sanitized URL, reason | Every state | manual_review | Informational/high | 1 | planned | Blocked content may hide course behavior; disclosed as coverage gap. |
-| NET-003 | Redirect leaves allowed scope | Redirect chain | Navigation | manual_review | Informational/high | 1 | planned | — |
+| NET-001 | Target rejected by outbound policy | Reason (scheme, credentials, reserved IP, out of scope) | Scan submission | (submission error, no run) | —/— | 1 | implemented | — |
+| NET-002 | Subrequest blocked by policy | Sanitized URL, reason | Every state | manual_review | Informational/high | 1 | implemented | Blocked content may hide course behavior; disclosed as coverage gap. |
+| NET-003 | Redirect leaves allowed scope | Redirect chain | Navigation | manual_review | Informational/high | 1 | implemented | — |
 
 ### Navigation, traversal, functional (NAV, COV)
 
@@ -169,7 +169,7 @@ Always listed in reports; never auto-passed.
 
 | Area | Implemented | Planned (deterministic) | Heuristic | Manual |
 | --- | --- | --- | --- | --- |
-| Load / runtime / network | — | RUN-001..006, NET-001..003 | RUN-003 | — |
+| Load / runtime / network | RUN-001..006, NET-001..003 (Phase 1) | — | RUN-003 | — |
 | Traversal & coverage | — | NAV-001, NAV-003, COV-001..004 | NAV-002 (inconclusive) | MAN-006 |
 | Links | — | LNK-001..003, LNK-005 | — | LNK-004, MAN-005 |
 | Media | — | MED-001..003, MED-005 | MED-004 | MAN-004 |

@@ -33,6 +33,7 @@ This document defines component boundaries, data flow, the job lifecycle, artifa
 | Server | `apps/server` | REST API, input validation (zod), target pre-validation, enqueue/cancel jobs, serve artifacts by opaque ID with ownership checks, report export. | Launch browsers; fetch course URLs; proxy arbitrary URLs. |
 | Worker | `apps/worker` | Claim jobs, run browser contexts, enforce outbound policy via its own egress proxy, run engines, persist check results/findings/evidence. | Serve HTTP to the UI; run package scripts through Node; install dependencies from uploads. |
 | Shared | `packages/shared` | Types, enums, provider interfaces, constants. No runtime I/O. | Depend on server/worker/web. |
+| Core | `packages/core` | Node-side runtime shared by server and worker: SQLite store and migrations, network policy, redaction, fingerprints, artifact store, API schemas, rule definitions, logger. | Launch browsers or serve HTTP. |
 
 The UI is a control panel only. The application cannot run as a static site (GitHub Pages or static IIS hosting): scans require the server and worker processes.
 
@@ -65,6 +66,8 @@ apps/
   worker/     job runner, egress proxy, engines     (Phase 1)
 packages/
   shared/     types, enums, provider interfaces     (Phase 0)
+  core/       DB store, migrations, network policy,  (Phase 1)
+              redaction, fingerprints, artifacts, zod schemas
 fixtures/     local course fixtures served in tests (Phase 1+)
 docs/         rule catalog, security, tests, status
 data/         runtime DB + artifacts (gitignored)
@@ -120,7 +123,7 @@ Only interfaces exist in Phase 0. Advisory providers run outside the critical sc
 
 ## Deployment model
 
-- **V1: local single user.** `npm run dev` / `npm start` launches server (127.0.0.1), worker, and web. Data in `./data`.
+- **V1: local single user.** `npm start` builds the UI and runs server (serving the UI at http://127.0.0.1:4317) and worker; `npm run dev` adds the Vite dev server on 5317. Data in `<repo>/data` (override with `CQA_DATA_DIR`). Use `127.0.0.1`, not `localhost`, because the server binds IPv4 loopback only.
 - Server rejects requests whose `Host`/`Origin` is not the configured local origin; state-changing requests require JSON content type and a custom header (CSRF defence).
 - Worker Mode B (Docker) runs the worker in a container with read-only root filesystem, mounted `data/` subpaths only, dropped capabilities, and egress restricted to the proxy policy.
 - **IIS or shared hosting** would require: a separately running server and worker (e.g. Windows services), IIS as reverse proxy (ARR/URL Rewrite) to the server only, authentication and authorization added first, and the worker never exposed. Static hosting alone is insufficient. Not part of V1.

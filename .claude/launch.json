@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "course-qa",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["start"],
+      "port": 4317,
+      "url": "http://127.0.0.1:4317"
+    }
+  ]
+}

@@ -1,20 +1,52 @@
 # Course QA Automation
 
-Local, evidence-backed QA scanning for published eLearning courses (Rise, Storyline, custom HTML). Core scanning needs no AI service.
+Local, evidence-backed QA scanning for published eLearning courses (Rise, Storyline, custom HTML). Core scanning needs no AI service, cloud account, or telemetry.
 
-Status: Phase 0 (architecture and contracts) complete. See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+Status: Phase 1 complete (local app + initial-page URL scan). See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+
+## Requirements
+
+- Node.js 24 LTS (see `.nvmrc`)
+- Windows, macOS, or Linux. Network access is needed only for installation and for scanning public URLs.
+
+## Setup
+
+```bash
+npm install
+npm run browsers:install
+```
+
+`browsers:install` downloads the Playwright Chromium build that matches the pinned Playwright version. Do this before working offline.
+
+## Run
+
+```bash
+npm start
+```
+
+Open http://127.0.0.1:4317 (use `127.0.0.1`, not `localhost`). This builds the UI and starts two processes: the API server (bound to loopback only) and the scan worker. Data is stored in `./data` (SQLite + screenshots); set `CQA_DATA_DIR` to change it.
+
+For UI development, `npm run dev` runs the server, worker, and Vite dev server at http://127.0.0.1:5317.
+
+## Check
+
+```bash
+npm run typecheck
+npm test
+```
+
+Tests run real Chromium scans against local fixtures in `fixtures/`; no public website is required.
+
+## What a scan does today
+
+Loads the course URL in an isolated Chromium context and records the screenshot, title, sanitized final URL, uncaught exceptions, console errors, failed requests, requests blocked by policy, redirect scope, and navigation timing. Private, loopback, link-local, and other reserved addresses are blocked at submission and again for every connection the browser makes.
+
+A completed scan means the configured scan finished, not that the course passed QA.
+
+## Documentation
 
 - [PROJECT.md](PROJECT.md): scope and non-claims
 - [ARCHITECTURE.md](ARCHITECTURE.md): components, lifecycle, decisions
 - [docs/QA_RULE_CATALOG.md](docs/QA_RULE_CATALOG.md): rules and capability matrix
 - [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md): network policy and isolation
 - [docs/TEST_STRATEGY.md](docs/TEST_STRATEGY.md): fixtures and tests
-
-## Requirements
-
-Node.js 24 LTS (see `.nvmrc`).
-
-```bash
-npm install
-npm run typecheck
-```

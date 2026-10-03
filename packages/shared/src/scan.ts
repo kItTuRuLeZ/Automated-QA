@@ -12,8 +12,11 @@ import type {
 } from './common.js';
 import type {
   ActionOutcome,
+  CheckOutcome,
+  FindingType,
   ReasonCode,
   RunStatus,
+  Severity,
   SurfaceKind,
   TargetKind,
   TraversalActionKind,
@@ -188,4 +191,27 @@ export interface TraversalAction {
   reason?: ReasonCode;
   durationMs?: number;
   adapter: string;
+}
+
+export interface Project {
+  id: ProjectId;
+  name: string;
+  description: string;
+  /** Published course URL the project is about; scans may target it or other in-scope URLs. */
+  courseUrl?: string;
+  isDemo: boolean;
+  createdAt: IsoTimestamp;
+}
+
+/**
+ * Totals for one run. Unique rules and executions are separate denominators;
+ * `not_tested` and `error` are never folded into passes.
+ */
+export interface RunSummary {
+  uniqueRules: number;
+  executions: number;
+  byOutcome: Record<CheckOutcome, number>;
+  findingsBySeverity: Record<Severity, number>;
+  findingsByType: Record<FindingType, number>;
+  findingCount: number;
 }

@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>JS Exception Fixture</title></head>
+<body>
+  <h1>Throws on load</h1>
+  <script>
+    console.error('Fixture console error');
+    window.addEventListener('load', function () { throw new Error('Fixture exception on load'); });
+  </script>
+</body>
+</html>
