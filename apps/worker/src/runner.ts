@@ -6,6 +6,7 @@ import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSumm
 import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
+import { BrandChecks } from './engines/brand.js';
 import { LinkChecker } from './engines/links.js';
 import { AccessibilityChecks } from './engines/accessibility.js';
 import { KeyboardChecks } from './engines/keyboard.js';
@@ -104,7 +105,15 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
   const runStartedAt = Date.now();
   // Traversal stops itself at the runtime budget; this hard stop is a backstop.
   const runtimeTimer = setTimeout(() => abort('budget_runtime'), run.config.budgets.maxRuntimeMs + 30_000);
-  const ownedRules = rulesForEngines(run.config.engines);
+  const profile = run.config.profile;
+  const excludedRules = new Map((profile?.ruleExclusions ?? []).map((x) => [x.ruleId, x.reason]));
+  const severityOverrides = new Map((profile?.severityOverrides ?? []).map((x) => [x.ruleId, x]));
+  const ownedRules = rulesForEngines(run.config.engines).filter((r) => !excludedRules.has(r.id));
+  // Rules a client profile switches off are shown as not applicable with the reason, never as passed.
+  for (const rule of rulesForEngines(run.config.engines)) {
+    const why = excludedRules.get(rule.id);
+    if (why) store.insertCheckResult({ id: newId<CheckResultId>(), runId: run.id, ruleId: rule.id, outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `Switched off by client profile "${profile?.name}": ${why}`, durationMs: 0, evidenceIds: [], executedAt: nowIso() });
+  }
 
   const persistCheckNotTested = (reason: ReasonCode, detail?: string) => {
     for (const rule of ownedRules) {
@@ -172,8 +181,13 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
 
     // ---- per-state content checks (links collected, media, text) ----
     const persistResults = (r: { checkResults?: Array<Omit<CheckResult, 'id' | 'runId'>>; checks?: Array<Omit<CheckResult, 'id' | 'runId'>>; findings: Array<Omit<Finding, 'id' | 'runId' | 'reviewer' | 'createdAt'>> }) => {
-      for (const c of r.checkResults ?? r.checks ?? []) store.insertCheckResult({ ...c, id: newId<CheckResultId>(), runId: run.id });
-      for (const f of r.findings) store.upsertFinding({ ...f, id: newId<FindingId>(), runId: run.id, reviewer: { status: 'open', updatedAt: nowIso() }, createdAt: nowIso() });
+      for (const c of r.checkResults ?? r.checks ?? []) if (!excludedRules.has(c.ruleId)) store.insertCheckResult({ ...c, id: newId<CheckResultId>(), runId: run.id });
+      for (const f of r.findings) {
+        if (excludedRules.has(f.ruleId)) continue;
+        const ov = severityOverrides.get(f.ruleId);
+        const withOverride = ov && ov.severity !== f.severity ? { ...f, severityOverride: { from: f.severity, to: ov.severity, reviewer: `client profile "${profile?.name}"`, reason: ov.reason, at: nowIso() } } : f;
+        store.upsertFinding({ ...withOverride, id: newId<FindingId>(), runId: run.id, reviewer: { status: 'open', updatedAt: nowIso() }, createdAt: nowIso() });
+      }
     };
     const contentEngine = new ContentChecks();
     const contentOn = run.config.engines.links || run.config.engines.media || run.config.engines.content;
@@ -204,6 +218,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     const a11yEngine = new AccessibilityChecks();
     const keyboardEngine = new KeyboardChecks();
     const annotator = new Annotator();
+    const brandEngine = run.config.engines.brand && profile ? new BrandChecks(profile) : undefined;
     const onStateReady = async (state: CourseState, repro: string[], pathKey = '') => {
       const guarded = async (fn: () => Promise<void>) => {
         try {
@@ -225,6 +240,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
       if (run.config.engines.accessibility) await guarded(async () => void batches.push(await a11yEngine.checkState({ ...ctx, state }, state, repro, { skipReflow: nonResponsive ? 'Storyline output is a fixed-size stage that is not designed to reflow at narrow widths, so the 320 px reflow check does not apply.' : undefined })));
       if (run.config.engines.keyboard) await guarded(async () => void batches.push(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
       if (layoutEngine && run.config.engines.layout) await guarded(async () => void batches.push(await layoutEngine.checkState({ ...ctx, state }, state, repro, pathKey)));
+      if (brandEngine) await guarded(async () => void batches.push(await brandEngine.checkState({ ...ctx, state }, state, repro)));
       await guarded(async () => annotator.annotateFindings({ ...ctx, state }, state.id, batches.flatMap((b) => b.findings)));
       for (const b of batches) persistResults(b);
     };
@@ -298,7 +314,9 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     let linkCoverage: EngineResult['coverage'] = [];
     if (run.config.engines.links && pageUsable) {
       const checker = new LinkChecker(deps.policy, run.config);
-      const lr = await checker.checkAll(linkAppearances, sink, run.id);
+      const policyLinks = applyLinkPolicy(linkAppearances, profile?.linkPolicy, targetUrl);
+      const lr = await checker.checkAll(policyLinks.kept, sink, run.id);
+      if (policyLinks.skipped) lr.checkResults?.push?.({ ruleId: 'LNK-001', outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `${policyLinks.skipped} link(s) were not checked because of the link policy in client profile "${profile?.name}".`, durationMs: 0, evidenceIds: [], executedAt: nowIso() } as never);
       persistResults(lr);
       linkCoverage = lr.coverage;
     }
@@ -384,8 +402,9 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
 function recordUnfinished(store: Store, runId: ScanRun['id'], reason: ReasonCode, detail?: string): void {
   const run = store.getRun(runId)!;
   const done = new Set(store.listCheckResults(runId).map((c) => c.ruleId));
+  const excluded = new Set((run.config.profile?.ruleExclusions ?? []).map((x) => x.ruleId));
   for (const rule of rulesForEngines(run.config.engines)) {
-    if (done.has(rule.id)) continue;
+    if (done.has(rule.id) || excluded.has(rule.id)) continue;
     store.insertCheckResult({
       id: newId<CheckResultId>(),
       runId,
@@ -403,4 +422,29 @@ function recordUnfinished(store: Store, runId: ScanRun['id'], reason: ReasonCode
 function truncateLine(s: string): string {
   const line = s.split('\n')[0] ?? '';
   return line.length > 300 ? `${line.slice(0, 299)}…` : line;
+}
+
+/** Applies a client profile's link policy; skipped links are counted so the report can say so. */
+function applyLinkPolicy(links: LinkAppearance[], policy: { checkExternalLinks: boolean; excludedUrlPatterns: string[] } | undefined, courseUrl: string): { kept: LinkAppearance[]; skipped: number } {
+  if (!policy || (policy.checkExternalLinks && policy.excludedUrlPatterns.length === 0)) return { kept: links, skipped: 0 };
+  let origin = '';
+  try {
+    origin = new URL(courseUrl).origin;
+  } catch {
+    /* keep empty */
+  }
+  const patterns = policy.excludedUrlPatterns.map((p) => p.toLowerCase());
+  const kept = links.filter((l) => {
+    const href = String((l.link as { href?: string }).href ?? '');
+    if (patterns.some((p) => href.toLowerCase().includes(p))) return false;
+    if (!policy.checkExternalLinks) {
+      try {
+        if (new URL(href).origin !== origin) return false;
+      } catch {
+        return true;
+      }
+    }
+    return true;
+  });
+  return { kept, skipped: links.length - kept.length };
 }

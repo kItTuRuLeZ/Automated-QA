@@ -24,7 +24,7 @@ import type {
   TraversalAction,
 } from '@cqa/shared';
 import { CHECK_OUTCOMES, FINDING_TYPES, SEVERITIES } from '@cqa/shared';
-import type { ReviewerStatus } from '@cqa/shared';
+import type { ClientProfile, ReviewerStatus } from '@cqa/shared';
 import { newId, nowIso } from '../fingerprint.js';
 import { MIGRATIONS } from './migrations.js';
 
@@ -451,6 +451,27 @@ export class Store {
   getFinding(id: string): Finding | undefined {
     const r = this.db.prepare('SELECT data_json, run_id FROM findings WHERE id = ?').get(id) as { data_json: string; run_id: string } | undefined;
     return r ? withWorkflow(this.workflowFor(r.run_id))(JSON.parse(r.data_json) as Finding) : undefined;
+  }
+
+  // ---- client profiles ----
+
+  saveProfile(p: ClientProfile): void {
+    this.db
+      .prepare('INSERT INTO client_profiles (id, name, data_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET name = excluded.name, data_json = excluded.data_json, updated_at = excluded.updated_at')
+      .run(p.id, p.name, JSON.stringify(p), p.createdAt, p.updatedAt);
+  }
+
+  getProfile(id: string): ClientProfile | undefined {
+    const r = this.db.prepare('SELECT data_json FROM client_profiles WHERE id = ?').get(id) as { data_json: string } | undefined;
+    return r ? (JSON.parse(r.data_json) as ClientProfile) : undefined;
+  }
+
+  listProfiles(): ClientProfile[] {
+    return (this.db.prepare('SELECT data_json FROM client_profiles ORDER BY name COLLATE NOCASE').all() as Array<{ data_json: string }>).map((r) => JSON.parse(r.data_json) as ClientProfile);
+  }
+
+  deleteProfile(id: string): boolean {
+    return this.db.prepare('DELETE FROM client_profiles WHERE id = ?').run(id).changes > 0;
   }
 
   // ---- finding workflow (status follows the issue across scans) ----

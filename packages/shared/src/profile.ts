@@ -62,6 +62,22 @@ export interface ClientProfile {
   /** Rules disabled for this profile, with reasons. */
   ruleExclusions: Array<{ ruleId: RuleId; reason: string }>;
   severityOverrides: Array<{ ruleId: RuleId; severity: Severity; reason: string }>;
+  /** Screen-size presets and performance thresholds a person chose for this client. */
+  presets?: {
+    viewports: string[];
+    thresholds: { loadMs?: number; totalBytes?: number; requestCount?: number };
+  };
   createdAt: IsoTimestamp;
+  updatedAt: IsoTimestamp;
+}
+
+/** The parts of a profile that travel with a scan. */
+export interface ProfileSnapshot {
+  id: ProfileId;
+  name: string;
+  brand: ClientProfile['brand'];
+  linkPolicy: ClientProfile['linkPolicy'];
+  ruleExclusions: ClientProfile['ruleExclusions'];
+  severityOverrides: ClientProfile['severityOverrides'];
   updatedAt: IsoTimestamp;
 }

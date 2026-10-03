@@ -111,6 +111,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [maxDepth, setMaxDepth] = useState(4);
   const [terms, setTerms] = useState('');
   const [exclusions, setExclusions] = useState('');
+  const [profileId, setProfileId] = useState('');
+  const [sizesTouched, setSizesTouched] = useState(false);
+  const { data: profiles } = useLoader(() => api.listProfiles(), [], undefined);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -130,7 +133,8 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         allowedOrigins: lines(origins),
         allowedPathPrefixes: lines(prefixes),
         navigationTimeoutMs: timeoutSec * 1000,
-        viewports: VIEWPORTS.map((v) => v.name).filter((n) => sizes.includes(n)) as Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>,
+        profileId: profileId || undefined,
+        viewports: profileId && !sizesTouched ? undefined : VIEWPORTS.map((v) => v.name).filter((n) => sizes.includes(n)) as Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>,
         layout,
         compareBaseline: layout && compareBaseline,
         testNonResponsive: layout && testNonResponsive,
@@ -138,7 +142,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         accessibility,
         maxStates,
         maxDepth,
-        terminology: terms
+        terminology: terms.trim() === '' ? undefined : terms
           .split('\n')
           .map((l) => l.trim())
           .filter(Boolean)
@@ -170,6 +174,20 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
       <div className="field">
         <label htmlFor="s-url">Course URL</label>
         <input id="s-url" type="url" required inputMode="url" placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />
+      </div>
+      <div className="field">
+        <label htmlFor="s-profile">Client profile</label>
+        <select id="s-profile" value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-describedby="s-profile-help">
+          <option value="">None (neutral settings, no brand checks)</option>
+          {(profiles ?? []).map((pr) => (
+            <option key={pr.id} value={pr.id}>
+              {pr.name}
+            </option>
+          ))}
+        </select>
+        <p id="s-profile-help" className="help">
+          A profile holds a client's own settings: brand fonts and colours, terms, link policy, screen sizes. The scan keeps a copy, so editing the profile later does not change past reports. <a href="#/profiles">Manage profiles</a>
+        </p>
       </div>
       <div className="grid-2">
         <div className="field">
@@ -203,7 +221,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
                 type="checkbox"
                 checked={sizes.includes(v.name)}
                 disabled={!layout || (sizes.length === 1 && sizes.includes(v.name))}
-                onChange={(e) => setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name)))}
+                onChange={(e) => (setSizesTouched(true), setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name))))}
               />{' '}
               {v.name} {v.width}×{v.height}
             </label>

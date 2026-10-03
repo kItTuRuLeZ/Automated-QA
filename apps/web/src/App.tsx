@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FindingPage } from './pages/FindingPage';
+import { ProfilesPage } from './pages/ProfilesPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { RunPage } from './pages/RunPage';
@@ -18,6 +19,7 @@ function Page({ route }: { route: string }) {
   const [, section, id] = route.split('/');
   if (section === 'projects' && id) return <ProjectPage id={id} />;
   if (section === 'runs' && id) return <RunPage id={id} />;
+  if (section === 'profiles') return <ProfilesPage />;
   if (section === 'findings' && id) return <FindingPage id={id} />;
   return <ProjectsPage />;
 }
@@ -40,6 +42,9 @@ export function App() {
         <a href="#/" className="brand">
           Course QA Automation
         </a>
+        <nav aria-label="Main">
+          <a href="#/profiles">Client profiles</a>
+        </nav>
         <span className="topbar-note">Local · no AI · evidence-backed</span>
       </header>
       <main id="main" ref={mainRef} tabIndex={-1} className="container">

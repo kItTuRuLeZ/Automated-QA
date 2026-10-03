@@ -20,6 +20,7 @@ Local course fixtures served by `tests/support/fixture-server.ts` on `127.0.0.1`
 | `perf-heavy/` | Two large images for page-load thresholds (PERF-001). |
 | `inconsistent-control/` | A control that works in one state and not another (review item, not a defect). |
 | `authoring-patterns/`, `slow-first-tab/` | Storyline-style script links, inline placeholder video, player controls, Back to top, Start Course; a control slow only the first time (must not be reported). |
+| `brand/` | Approved and off-palette colours, an unapproved font, tiny text; used with a client profile (BRD-001..003). |
 | `canvas/`, `unsafe-actions/` | Canvas disclosure (COV-003); unsafe and ambiguous controls skipped (COV-001). |
 | `lazy-image/`, `broken-media/` | Lazy valid/broken images, oversized image, playable and missing audio/video, uncaptioned video (MED-001..005). |
 | `placeholder-text/`, `hidden-placeholder/` | Placeholders and production notes, exclusions, hidden text, placeholder revealed only by expanding (TXT-001/002). |

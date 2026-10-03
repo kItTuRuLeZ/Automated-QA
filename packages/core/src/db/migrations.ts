@@ -178,4 +178,17 @@ CREATE TABLE finding_history (
 CREATE INDEX idx_finding_history ON finding_history(project_id, fingerprint, at);
 `,
   },
+  {
+    version: 5,
+    name: 'client_profiles',
+    sql: `
+CREATE TABLE client_profiles (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  data_json TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+`,
+  },
 ];

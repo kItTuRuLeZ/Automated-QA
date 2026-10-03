@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { EngineSelection, LayoutSettings, ProjectId, ScanBudgets, ScanConfig, ScanScope, TerminologyRule, Viewport } from '@cqa/shared';
+import type { EngineSelection, LayoutSettings, ProjectId, ScanBudgets, ScanConfig, ScanScope, TerminologyRule, ProfileSnapshot, Viewport } from '@cqa/shared';
 import { DEFAULT_REDACTION } from './redaction.js';
 
 export interface DataPaths {
@@ -175,6 +175,8 @@ export function buildScanConfig(input: {
   maxDepth?: number;
   terminology?: TerminologyRule[];
   textExclusions?: string[];
+  /** Client profile settings for this scan (a copy; later edits to the profile do not change it). */
+  profile?: ProfileSnapshot;
 }): ScanConfig {
   const scope = { ...defaultScopeFor(input.url), ...input.scope };
   return {
@@ -196,6 +198,7 @@ export function buildScanConfig(input: {
       layout: input.layout ?? true,
       performance: input.layout ?? true,
       visualBaseline: input.compareBaseline ?? false,
+      brand: hasBrandValues(input.profile),
     },
     actionPolicy: {
       allowedKinds: ['navigate', 'select_tab', 'expand', 'open_dialog', 'close_dialog', 'next', 'back'],
@@ -208,5 +211,11 @@ export function buildScanConfig(input: {
     mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
     layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf }, testNonResponsive: input.testNonResponsive ?? false },
     configVersion: 1,
+    ...(input.profile ? { profileId: input.profile.id, profile: input.profile } : {}),
   };
+}
+
+export function hasBrandValues(profile: ProfileSnapshot | undefined): boolean {
+  const b = profile?.brand;
+  return Boolean(b && (b.approvedFonts.length || b.approvedColors.length || b.minTextSizePx));
 }

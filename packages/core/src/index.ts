@@ -12,3 +12,5 @@ export * from './plain-language.js';
 export * from './report.js';
 export * from './baseline.js';
 export * from './workflow.js';
+export * from './color.js';
+export * from './profile.js';

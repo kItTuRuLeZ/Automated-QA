@@ -539,6 +539,49 @@ export const LAYOUT_RULES: readonly RuleDefinition[] = [
   }),
 ];
 
+/** Brand checks. They run only when a client profile supplies brand values; there are no built-in brand rules. */
+export const BRAND_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'BRD-001',
+    name: 'Text uses an approved font',
+    category: 'brand',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'medium',
+    capability: 'heuristic',
+    phase: 5,
+    applicability: 'Profiles with approved fonts; visible text on each reached screen',
+    evidenceCollected: ['Computed font family of visible text', 'Sample text and element'],
+    limitations: ['Compares the first font in the computed list by name; a fallback font actually drawn is not detected.', 'Icon fonts are skipped by name.', 'The approved list is whatever the client profile says; the scanner does not know the brand rules.'],
+  }),
+  rule({
+    id: 'BRD-002',
+    name: 'Text colour is close to an approved colour',
+    category: 'brand',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'low',
+    capability: 'heuristic',
+    phase: 5,
+    applicability: 'Profiles with approved colours; visible text on each reached screen',
+    evidenceCollected: ['Computed text colour', 'Nearest approved colour and CIEDE2000 distance', 'Sample element'],
+    limitations: ['Black and white text is treated as neutral and not flagged unless approved colours exclude it.', 'Only text colour is compared, not backgrounds, images, or gradients.'],
+  }),
+  rule({
+    id: 'BRD-003',
+    name: 'Text is not smaller than the minimum size',
+    category: 'brand',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'medium',
+    capability: 'heuristic',
+    phase: 5,
+    applicability: 'Profiles with a minimum text size; visible text on each reached screen',
+    evidenceCollected: ['Computed font size in CSS pixels', 'Sample text and element'],
+    limitations: ['Measured at the screen size being tested; text scaled by a fixed-size stage is measured before scaling.'],
+  }),
+];
+
 export const ALL_RULES: readonly RuleDefinition[] = [
   ...PHASE1_RULES,
   ...TRAVERSAL_RULES,
@@ -548,6 +591,7 @@ export const ALL_RULES: readonly RuleDefinition[] = [
   ...ACCESSIBILITY_RULES,
   ...KEYBOARD_RULES,
   ...LAYOUT_RULES,
+  ...BRAND_RULES,
 ];
 
 const BY_ID = new Map(ALL_RULES.map((r) => [r.id, r]));
@@ -614,5 +658,6 @@ export function rulesForEngines(engines: EngineSelection): readonly RuleDefiniti
     ...(engines.layout ? LAYOUT_RULES.filter((r) => r.id.startsWith('LAY-')) : []),
     ...(engines.performance ? LAYOUT_RULES.filter((r) => r.id === 'PERF-001') : []),
     ...(engines.visualBaseline ? LAYOUT_RULES.filter((r) => r.id === 'VIS-001') : []),
+    ...(engines.brand ? BRAND_RULES : []),
   ];
 }

@@ -30,6 +30,8 @@ export const CreateScanInput = z.object({
     .max(20)
     .optional(),
   navigationTimeoutMs: z.number().int().min(1_000).max(120_000).optional(),
+  /** Client profile whose settings apply to this scan. Values typed on the scan form win. */
+  profileId: z.string().trim().max(64).optional(),
   explore: z.boolean().optional(),
   accessibility: z.boolean().optional(),
   layout: z.boolean().optional(),

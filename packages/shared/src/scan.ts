@@ -1,3 +1,4 @@
+import type { ProfileSnapshot } from './profile.js';
 import type {
   ActionId,
   BrowserInfo,
@@ -139,6 +140,8 @@ export interface EngineSelection {
   visualBaseline: boolean;
   /** Optional AI advisory (Phase 8). Always false unless explicitly enabled per run. */
   advisory: boolean;
+  /** Brand checks (BRD-*). Only on when the profile has user-supplied brand values. */
+  brand?: boolean;
 }
 
 export interface ScanConfig {
@@ -155,6 +158,8 @@ export interface ScanConfig {
   /** Absent on scans made before Phase 4. */
   layout?: LayoutSettings;
   profileId?: ProfileId;
+  /** Copy of the profile settings used for this scan, so the report stays true if the profile is edited later. */
+  profile?: ProfileSnapshot;
   /** Configuration schema version for migrations and baseline compatibility. */
   configVersion: number;
 }

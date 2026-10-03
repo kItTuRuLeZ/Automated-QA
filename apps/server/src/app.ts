@@ -1,8 +1,8 @@
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import type { ProjectId } from '@cqa/shared';
-import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, validateWorkflowChange, viewportsByName } from '@cqa/core';
+import type { ProfileId, ProjectId } from '@cqa/shared';
+import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, ProfileInput, newId, profileScanOptions, toClientProfile, validateWorkflowChange, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { buildHtmlReport } from './export/html.js';
@@ -98,6 +98,33 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     return store.listRuns(req.params.id).map((run) => ({ ...run, summary: store.summarizeRun(run.id) }));
   });
 
+  // ---- client profiles: settings a person supplies per client; nothing here is a built-in brand rule ----
+  app.get('/api/profiles', async () => store.listProfiles());
+  app.get<{ Params: { id: string } }>('/api/profiles/:id', async (req, reply) => {
+    const p = isOpaqueId(req.params.id) ? store.getProfile(req.params.id) : undefined;
+    return p ?? notFound(reply, 'Client profile not found.');
+  });
+  app.post('/api/profiles', async (req, reply) => {
+    const parsed = ProfileInput.safeParse(req.body);
+    if (!parsed.success) return badRequest(reply, 'Invalid client profile.', parsed.error.issues);
+    const profile = toClientProfile(newId<ProfileId>(), parsed.data);
+    store.saveProfile(profile);
+    return reply.code(201).send(profile);
+  });
+  app.put<{ Params: { id: string } }>('/api/profiles/:id', async (req, reply) => {
+    const prev = isOpaqueId(req.params.id) ? store.getProfile(req.params.id) : undefined;
+    if (!prev) return notFound(reply, 'Client profile not found.');
+    const parsed = ProfileInput.safeParse(req.body);
+    if (!parsed.success) return badRequest(reply, 'Invalid client profile.', parsed.error.issues);
+    const profile = toClientProfile(prev.id, parsed.data, prev);
+    store.saveProfile(profile);
+    return profile;
+  });
+  app.delete<{ Params: { id: string } }>('/api/profiles/:id', async (req, reply) => {
+    if (!isOpaqueId(req.params.id) || !store.deleteProfile(req.params.id)) return notFound(reply, 'Client profile not found.');
+    return reply.code(204).send();
+  });
+
   // ---- scans ----
   app.post<{ Params: { id: string } }>('/api/projects/:id/scans', async (req, reply) => {
     const project = isOpaqueId(req.params.id) ? store.getProject(req.params.id) : undefined;
@@ -107,9 +134,14 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const input = parsed.data;
     const target = policy.parseTarget(input.url);
     if (!target.ok) return reply.code(422).send({ error: target.detail, reason: target.reason, ruleId: 'NET-001' });
+    const profile = input.profileId ? (isOpaqueId(input.profileId) ? store.getProfile(input.profileId) : undefined) : undefined;
+    if (input.profileId && !profile) return notFound(reply, 'Client profile not found.');
+    const fromProfile = profile ? profileScanOptions(profile) : undefined;
     const scope = { ...defaultScopeFor(target.url) };
-    if (input.allowedOrigins?.length) scope.allowedOrigins = [...new Set([target.url.origin, ...input.allowedOrigins])];
-    if (input.allowedPathPrefixes?.length) scope.allowedPathPrefixes = input.allowedPathPrefixes;
+    const origins = input.allowedOrigins?.length ? input.allowedOrigins : fromProfile?.scope.allowedOrigins ?? [];
+    const prefixes = input.allowedPathPrefixes?.length ? input.allowedPathPrefixes : fromProfile?.scope.allowedPathPrefixes ?? [];
+    if (origins.length) scope.allowedOrigins = [...new Set([target.url.origin, ...origins])];
+    if (prefixes.length) scope.allowedPathPrefixes = prefixes;
     const viewport = input.viewport ? { ...input.viewport, deviceScaleFactor: 1, isMobile: input.viewport.width < 768, hasTouch: input.viewport.width < 768 } : undefined;
     const config = buildScanConfig({
       projectId: project.id as ProjectId,
@@ -122,9 +154,13 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       layout: input.layout,
       compareBaseline: input.compareBaseline,
       testNonResponsive: input.testNonResponsive,
-      viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
+      viewports: input.viewports ? viewportsByName(input.viewports) : fromProfile?.viewportNames.length ? viewportsByName(fromProfile.viewportNames) : undefined,
+      perf: fromProfile && Object.keys(fromProfile.perf).length ? fromProfile.perf : undefined,
+      profile: fromProfile?.snapshot,
       maxStates: input.maxStates,
       maxDepth: input.maxDepth,
+      terminology: input.terminology?.length ? input.terminology : fromProfile?.terminology,
+      textExclusions: input.textExclusions?.length ? input.textExclusions : fromProfile?.textExclusions,
     });
     // Pre-check scope and resolved destination; denied targets are never queued.
     const decision = await policy.validateTarget(target.url.toString(), config.scope);

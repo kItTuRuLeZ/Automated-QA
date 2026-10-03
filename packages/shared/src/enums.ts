@@ -152,6 +152,7 @@ export const REASON_CODES = [
   'rate_limited',
   'no_baseline',
   'baseline_incompatible',
+  'excluded_by_profile',
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 

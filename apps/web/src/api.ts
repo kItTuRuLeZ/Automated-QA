@@ -47,6 +47,27 @@ export interface RunReport {
   }>;
 }
 
+export interface ProfileForm {
+  name: string;
+  brand: { approvedFonts: string[]; approvedColors: Array<{ name: string; value: string }>; colorTolerance?: number; minTextSizePx?: number; source: string };
+  terminology: Array<{ term: string; preferred?: string }>;
+  textExclusions: string[];
+  linkPolicy: { checkExternalLinks: boolean; excludedUrlPatterns: string[] };
+  viewports: string[];
+  thresholds: { loadMs?: number; totalBytes?: number; requestCount?: number };
+  scopeRules: { allowedOrigins: string[]; allowedPathPrefixes: string[] };
+  ruleExclusions: Array<{ ruleId: string; reason: string }>;
+  severityOverrides: Array<{ ruleId: string; severity: string; reason: string }>;
+}
+
+/** A saved profile as the API returns it. */
+export interface ProfileView extends Omit<ProfileForm, 'brand' | 'viewports' | 'thresholds'> {
+  id: string;
+  updatedAt: string;
+  brand: Omit<ProfileForm['brand'], 'source'> & { provenance?: { note?: string } };
+  presets?: { viewports: string[]; thresholds: ProfileForm['thresholds'] };
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -92,6 +113,7 @@ export const api = {
       maxDepth?: number;
       terminology?: Array<{ term: string; preferred?: string }>;
       textExclusions?: string[];
+      profileId?: string;
     },
   ) => request<ScanRun>('POST', `/api/projects/${encodeURIComponent(projectId)}/scans`, input),
   getRun: (id: string) => request<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
@@ -99,6 +121,11 @@ export const api = {
   deleteRun: (id: string) => request<void>('DELETE', `/api/runs/${encodeURIComponent(id)}`),
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
   setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
+  listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
+  getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),
+  createProfile: (input: ProfileForm) => request<ProfileView>('POST', '/api/profiles', input),
+  updateProfile: (id: string, input: ProfileForm) => request<ProfileView>('PUT', `/api/profiles/${encodeURIComponent(id)}`, input),
+  deleteProfile: (id: string) => request<void>('DELETE', `/api/profiles/${encodeURIComponent(id)}`),
   setWorkflow: (findingId: string, input: { status?: string; assignee?: string | null; reason?: string | null }) => request<Finding>('PATCH', `/api/findings/${encodeURIComponent(findingId)}/workflow`, input),
   findingHistory: (findingId: string) => request<Array<{ at: string; actor: string; from: string; to: string; assignee?: string; reason?: string }>>('GET', `/api/findings/${encodeURIComponent(findingId)}/history`),
   retestRun: (runId: string) => request<ScanRun>('POST', `/api/runs/${encodeURIComponent(runId)}/retest`, {}),

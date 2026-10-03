@@ -94,6 +94,8 @@ export interface RunReport {
     toolVersions: Array<{ name: string; version: string }>;
     platform?: string;
     aiUsed: false;
+    /** Client profile used for this scan, if any (a person's settings, not built-in rules). */
+    profile?: { name: string; brandSource?: string; rulesSwitchedOff: Array<{ ruleId: string; reason: string }>; severityChanges: Array<{ ruleId: string; severity: string; reason: string }> };
   };
   /** Findings by rule category, grouped by what to do about them. */
   byCategory: Array<{ category: string; fix: number; check: number; notChecked: number }>;
@@ -208,6 +210,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     ['layout', 'screen sizes and layout'],
     ['performance', 'page load'],
     ['visualBaseline', 'baseline comparison'],
+    ['brand', 'brand (from client profile)'],
   ];
   const allChecks = store.listCheckResults(runId);
   const axeVersion = allChecks.find((c) => c.engineVersion)?.engineVersion;
@@ -254,6 +257,9 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       toolVersions,
       platform: run.coverage?.platform,
       aiUsed: false,
+      profile: run.config.profile
+        ? { name: run.config.profile.name, brandSource: run.config.profile.brand.provenance?.note, rulesSwitchedOff: run.config.profile.ruleExclusions, severityChanges: run.config.profile.severityOverrides.map((o) => ({ ruleId: o.ruleId, severity: o.severity, reason: o.reason })) }
+        : undefined,
     },
     byCategory: [...categories.entries()].map(([category, c]) => ({ category, ...c })).sort((a, b) => b.fix - a.fix || a.category.localeCompare(b.category)),
     skippedActions,

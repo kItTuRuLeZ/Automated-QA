@@ -31,6 +31,7 @@ const PRIORITY_FILL: Record<Severity, string> = { critical: 'FFF4B6B0', high: 'F
 
 export const REASON_PLAIN: Record<string, string> = {
   budget_states: 'Screen limit reached',
+  excluded_by_profile: 'Switched off by the client profile',
   budget_depth: 'Depth limit reached',
   budget_pages: 'Page limit reached',
   budget_runtime: 'Time limit reached',
