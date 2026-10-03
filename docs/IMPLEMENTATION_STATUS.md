@@ -338,6 +338,7 @@ Requested after the first review: reports were too hard to read. Audience chosen
 - Geometry checks are heuristics. Content revealed by interaction at a size is not measured, and controls below the fold are not hit-tested.
 - Page-load evidence is one cold-cache sample from this machine; cross-origin resource sizes are often unavailable (so totals can be understated, shown as "at least"). No Core Web Vitals, throttling, or repeated runs.
 - Baselines compare pixels, so animation, carousels, dates, and ads cause differences; use stable pages. A baseline is tied to the scan that created it: deleting that scan deletes the baseline.
+- Two fixes came from scanning the supplied Storyline course after the full run: page overflow that the page hides with overflow-x hidden is no longer reported as sideways scrolling (learners cannot scroll to it; fixture case added), and the opening page is always treated as restorable, because Storyline's changing text made the scanner think it could not return to it and stop after one screen. The layout and traversal test files were re-run after both (14 and 14 passed); the full suite had passed (146) just before.
 - Mobile is a viewport and device-settings simulation in Chromium; it is not an iOS or Android browser test.
 
 ## Phase 5 — plan (next)

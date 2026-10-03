@@ -78,7 +78,11 @@ export function measureLayout(): LayoutMeasure {
   const doc = document.documentElement;
   const scrollWidth = Math.max(doc.scrollWidth, document.body?.scrollWidth ?? 0);
   const offenders: LayoutMeasure['overflow']['offenders'] = [];
-  if (scrollWidth > vw + 1) {
+  // If the page hides horizontal overflow (overflow-x hidden or clip on the viewport), learners cannot scroll sideways: not a problem.
+  const rootOx = getComputedStyle(doc).overflowX;
+  const effectiveOx = rootOx === 'visible' ? getComputedStyle(document.body).overflowX : rootOx;
+  const userCanScrollSideways = effectiveOx !== 'hidden' && effectiveOx !== 'clip';
+  if (scrollWidth > vw + 1 && userCanScrollSideways) {
     const insideScroller = (el: Element) => {
       for (let p = el.parentElement; p && p !== document.body && p !== doc; p = p.parentElement) {
         const ox = getComputedStyle(p).overflowX;
@@ -173,7 +177,7 @@ export function measureLayout(): LayoutMeasure {
 
   return {
     viewport: { width: vw, height: vh },
-    overflow: { scrollWidth, clientWidth: vw, offenders },
+    overflow: { scrollWidth: userCanScrollSideways ? scrollWidth : Math.min(scrollWidth, vw), clientWidth: vw, offenders },
     clipped,
     obscured: { tested, items: obscured },
     dialogs,

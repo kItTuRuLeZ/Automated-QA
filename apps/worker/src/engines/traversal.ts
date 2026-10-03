@@ -165,6 +165,8 @@ export class Traversal {
       try {
         await page.goto(this.deps.targetUrl, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
         await settle();
+        // The opening page is the page the target address loads; text that changes on its own (timers, video players) must not make it "unrestorable".
+        if (node.path.length === 0) return true;
         for (const step of node.path) await execute(step);
         const now = await snap();
         return strictKey(now) === strictKey(node.snap) || structuralKey(now) === structuralKey(node.snap);
