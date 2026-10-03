@@ -99,9 +99,13 @@ Limits on compressed bytes, expanded bytes, entry count, compression ratio, and 
 
 ## Retention and deletion
 
-- Per-project retention (default: keep until deleted). Deleting a run removes its rows and artifact directory; deleting a project cascades.
+- Retention (default: keep until deleted). `CQA_RETENTION_DAYS` or `npm run retention` deletes scans older than N days, always keeping the latest scan of each course and any scan holding a visual baseline. Deleting a run removes its rows and artifact directory (a run holding a baseline needs explicit confirmation); deleting a project cascades.
 - Temp files are removed at run end, failure, and cancellation; orphaned temp dirs are cleaned on worker start.
-- Backup/restore (Phase 5) exports DB + artifacts; restore validates archive paths with the same rules as uploads.
+- Backup/restore (Phase 5): `npm run backup` writes a zip with an online-consistent database copy, all artifacts, and SHA-256 checksums. Restore verifies the manifest and every checksum, accepts only the database and well-formed `artifacts/<run>/<file>` names (no `..`, absolute, or unlisted paths), checks the restored database with SQLite's integrity check, refuses backups from a newer schema, and moves existing data aside instead of deleting it.
+
+## Local targets (administrator opt-in)
+
+Production policy denies loopback and private addresses. For the offline sample pack, an administrator can set `CQA_ALLOW_LOCAL_TARGETS` to exact `127.0.0.1:port` / `[::1]:port` pairs before starting the app and worker. Only loopback pairs are accepted (anything else is ignored with a warning), the value is read once at start-up, and it cannot be set from the API or UI. The About page shows when it is on.
 
 ## Integrity
 

@@ -127,9 +127,9 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BRD-001 | Font family not in approved list | Computed style, element | Profile with fonts | heuristic_warning | Low/medium | 5 | planned | Requires user-supplied values. |
-| BRD-002 | Color outside approved palette tolerance | Computed color, nearest approved, ΔE | Profile with colors | heuristic_warning | Low/low | 5 | planned | Images/gradients not evaluated. |
-| BRD-003 | Text below profile minimum size | Computed font-size | Profile rule | heuristic_warning | Low/medium | 5 | planned | — |
+| BRD-001 | Font family not in approved list | Computed style, element | Profile with fonts | heuristic_warning | Low/medium | 5 | heuristic | Requires user-supplied values and a stated source. First font in the computed list only; icon fonts skipped. |
+| BRD-002 | Color outside approved palette tolerance | Computed color, nearest approved, ΔE | Profile with colors | heuristic_warning | Low/low | 5 | heuristic | Text colour only; black, white, grey ignored; images/gradients not evaluated. CIEDE2000, default tolerance 10. |
+| BRD-003 | Text below profile minimum size | Computed font-size | Profile rule | heuristic_warning | Low/medium | 5 | heuristic | Measured at the primary screen size. |
 
 ### Package, SCORM, fidelity (PKG, SCO, FID) — Phases 6, 7, 9
 
@@ -175,7 +175,7 @@ Always listed in reports; never auto-passed.
 | Text | TXT-001 (Phase 2b) | — | TXT-002 (Phase 2b) | — |
 | Accessibility | A11Y-ENG, A11Y-AXE-* (Phase 3), A11Y-001..007 via axe, KBD-001, KBD-003, KBD-004 | — | A11Y-008, KBD-002 | MAN-001..003, MAN-007, MAN-009, MAN-010 |
 | Layout / visual / perf | LAY-005, VIS-001 (Phase 4) | — | LAY-001..004, PERF-001 (Phase 4) | — |
-| Brand | — | — | BRD-001..003 | — |
+| Brand | — | — | BRD-001..003 (Phase 5; only with a profile that supplies brand values) | — |
 | Package / SCORM / fidelity | — | PKG-*, SCO-*, FID-* | — | MAN-008 |
 
 The "Implemented" column is updated as each phase lands; see [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md).

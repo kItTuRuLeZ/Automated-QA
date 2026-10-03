@@ -5,6 +5,7 @@ import type { ProfileId, ProjectId } from '@cqa/shared';
 import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, ProfileInput, newId, profileScanOptions, toClientProfile, validateWorkflowChange, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
+import { type CapabilityOptions, buildCapabilities } from './capabilities.js';
 import { buildHtmlReport } from './export/html.js';
 import { renderPdf } from './export/pdf.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
@@ -20,6 +21,8 @@ export interface AppOptions {
   /** Built web UI directory to serve, if present. */
   webDist?: string;
   logger?: boolean;
+  /** What the About page reports; the server entry point fills these from its settings. */
+  capabilities?: CapabilityOptions;
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -64,6 +67,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
 
   app.get('/api/health', async () => ({ ok: true }));
   app.get('/api/rules', async () => allRules());
+  app.get('/api/capabilities', async () => buildCapabilities(opts.capabilities));
   app.get('/api/manual-checklist', async () => ({ disclaimer: ACCESSIBILITY_DISCLAIMER, items: MANUAL_REVIEW_CHECKLIST }));
 
   // ---- projects ----
@@ -189,6 +193,10 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
     if (!run) return notFound(reply);
     if (run.status === 'running' || run.status === 'queued') return reply.code(409).send({ error: 'Cancel the scan before deleting it.' });
+    // Deleting a scan that holds the stored visual baseline would silently remove that baseline.
+    if (store.runHoldsBaselines(run.id) && (req.query as { discardBaselines?: string }).discardBaselines !== '1') {
+      return reply.code(409).send({ error: 'This scan holds the stored visual baseline for its course. Deleting it removes the baseline. Set a newer baseline first, or confirm deleting the baseline too.', baseline: true });
+    }
     store.deleteRun(run.id);
     artifacts.deleteRunArtifacts(run.id);
     return reply.code(204).send();

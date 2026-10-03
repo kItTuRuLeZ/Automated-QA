@@ -321,6 +321,16 @@ export class Store {
     return (this.db.prepare('SELECT COUNT(*) AS n FROM baselines WHERE project_id = ? AND course_url = ?').get(projectId, courseUrl) as { n: number }).n;
   }
 
+  /** True when this run's screenshots are the stored visual baselines for a course; deleting it would remove them. */
+  runHoldsBaselines(runId: string): boolean {
+    return Boolean(this.db.prepare('SELECT 1 FROM baselines WHERE run_id = ? LIMIT 1').get(runId));
+  }
+
+  /** Finished runs, oldest first, with what retention needs to decide. */
+  listFinishedRunsForRetention(): Array<{ id: string; projectId: string; targetUrl: string; finishedAt: string }> {
+    return (this.db.prepare("SELECT id, project_id, target_url, finished_at FROM scan_runs WHERE status IN ('completed','partial','failed','cancelled') AND finished_at IS NOT NULL ORDER BY finished_at").all() as Array<{ id: string; project_id: string; target_url: string; finished_at: string }>).map((r) => ({ id: r.id, projectId: r.project_id, targetUrl: r.target_url, finishedAt: r.finished_at }));
+  }
+
   deleteRun(runId: string): boolean {
     return this.db.prepare('DELETE FROM scan_runs WHERE id = ?').run(runId).changes > 0;
   }

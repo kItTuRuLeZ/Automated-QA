@@ -17,19 +17,19 @@ export interface FixtureServer {
   close(): Promise<void>;
 }
 
-function listen(handler: http.RequestListener): Promise<http.Server> {
+function listen(handler: http.RequestListener, port = 0): Promise<http.Server> {
   const server = http.createServer(handler);
-  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve(server)));
+  return new Promise((resolve) => server.listen(port, '127.0.0.1', () => resolve(server)));
 }
 
 /** Test-only static server for fixtures. Never used in production code paths. */
-export async function startFixtureServer(): Promise<FixtureServer> {
+export async function startFixtureServer(ports: { port?: number; otherPort?: number } = {}): Promise<FixtureServer> {
   const pending = new Set<http.ServerResponse>();
   let baselineVariant: 'v1' | 'v2' = 'v1';
   let otherOrigin = '';
   const other = await listen((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' }).end('<!doctype html><title>Other origin</title><p>Outside scope</p>');
-  });
+  }, ports.otherPort);
   const otherPort = (other.address() as AddressInfo).port;
   otherOrigin = `http://127.0.0.1:${otherPort}`;
 
@@ -155,7 +155,7 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     if (!existsSync(file)) return void res.writeHead(404, { 'Content-Type': 'text/plain' }).end('not found');
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] ?? 'application/octet-stream' });
     createReadStream(file).pipe(res);
-  });
+  }, ports.port);
   const port = (main.address() as AddressInfo).port;
 
   return {

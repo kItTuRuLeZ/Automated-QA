@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 4 complete (screen sizes, visual heuristics, performance evidence). **Next phase ready to run: Phase 5.**
+**Current state:** Phase 5 complete (V1 release candidate for local use). Next: optional hosting phase, or Phase 6 (package inspection).
 
 ## Phase checklist
 
@@ -13,7 +13,7 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 2 | Bounded traversal, functional checks, links, media | ✅ Complete (2026-10-03) |
 | 3 | Automated accessibility and keyboard review | ✅ Complete (2026-10-03) |
 | 4 | Responsive, visual heuristics, performance evidence | ✅ Complete (2026-10-03) |
-| 5 | Reports, client profiles, retest, standalone V1 | ⏭ Next (Excel export already delivered early) |
+| 5 | Reports, client profiles, retest, standalone V1 | ✅ Complete (2026-10-04) |
 | 6 | HTML5/SCORM package inspection and isolated scans | Not started |
 | 7 | SCORM runtime harness and platform adapters | Not started |
 | 8 | Optional AI-assisted review (only on explicit request) | Not started |
@@ -351,10 +351,24 @@ Requested: Storyline courses are a fixed-size stage and not responsive, so they 
 - **Tests** (4 new in `tests/layout.integration.test.ts`, fixture `storyline-like/`): recognized and tested at the first size only; skip visible in the report and workbook; override works; ordinary pages are unaffected.
 - **Limitation**: detection relies on Storyline's own markers; output from other tools that is also fixed-size (for example some Captivate output) is not recognized and will still be tested at every size.
 
-## Phase 5 — plan (next)
+## Phase 5 — delivered (reports, profiles, retest, standalone V1)
 
-1. Canonical report model exports: JSON, self-contained HTML, and PDF (Excel exists); counts with defined denominators; evidence embedded; untrusted text escaped.
-2. Client profiles (brand values only as supplied by the user), terminology and thresholds per profile.
-3. Finding workflow (Open, Assigned, Fixed, Retest, Verified, Accepted Risk, False Positive) with reasons, retest runs linked by fingerprint, and "not reproduced" vs "not retested".
-4. Backup/restore, retention and deletion settings, setup docs, sample fixture pack, and an offline run of fixtures.
-5. Validation on supplied Rise, Storyline, and custom HTML samples; mark anything not covered as pending.
+- **Reports** from one model (`buildRunReport`): JSON, script-free self-contained HTML (CSP, screenshots embedded once), offline PDF (Chromium, JS off, all requests aborted), Excel. Denominators stated; skipped and errored checks never counted as passed.
+- **Finding workflow**: status, owner, reason, history keyed by fingerprint across scans (migration 4). Reason required for accepted risk and false positive. Verified, Not reproduced, Not retested are set only by a retest.
+- **Retest**: `POST /api/runs/:id/retest` creates a new linked run; the earlier run is never changed. Verified needs a fix claim, absence, and the rule passing on an equivalent screen (same route and screen size). Unreached screens, unfinished retests, and rules that did not run give Not retested.
+- **Client profiles** (migration 5): user-supplied values only; brand values need a stated source. Scans keep a copy. Brand rules BRD-001..003 (heuristic) run only with brand values. Rule exclusions show as not applicable with the reason; priority changes recorded; link policy skips counted. Also fixed: terminology and text exclusions from the scan request were not reaching the scan config.
+- **Operations**: backup/restore (checksummed zip, integrity check, safe paths, keeps previous data), retention (keeps latest scan per course and baseline holders), deletion guard for baseline-holding scans, `CQA_ALLOW_LOCAL_TARGETS` (loopback pairs only) with `npm run fixtures:serve` for offline runs, About page backed by `/api/capabilities`.
+- **Docs**: `docs/SETUP.md`, `docs/RELEASE_V1.md` (supported surfaces, remaining manual QA, validation status).
+
+### Commands run (Phase 5)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed, 0 errors |
+| `npx vitest run` | **176 passed / 176** in 15 files (new: report-formats, retest, profile.integration, ops, offline.e2e) |
+
+### Known limitations (Phase 5)
+
+- Rise and Storyline validation is partial; older Storyline, Captivate, and other custom HTML are pending (see RELEASE_V1.md).
+- Excel status is a one-way export. Brand checks run at the primary screen size only. Backup, restore, and retention have no buttons in the app.
+- Shared hosting, sign-in, and a containerized worker are not built.

@@ -1,22 +1,34 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ArtifactStore, NetworkPolicy, SERVER_HOST, SERVER_PORT, Store, WEB_DEV_PORT, createLogger, openDatabase, resolveDataPaths } from '@cqa/core';
+import { ArtifactStore, NetworkPolicy, parseLocalTargets, SERVER_HOST, SERVER_PORT, Store, WEB_DEV_PORT, createLogger, openDatabase, resolveDataPaths, sweepRetention } from '@cqa/core';
 import { buildApp } from './app.js';
 
 const log = createLogger('server');
 const paths = resolveDataPaths();
+// Off by default. An administrator can allow exact loopback address:port pairs (for the offline sample pack); see docs/SETUP.md.
+const localTargets = parseLocalTargets(process.env.CQA_ALLOW_LOCAL_TARGETS);
+for (const r of localTargets.rejected) log.warn({ entry: r.entry }, `CQA_ALLOW_LOCAL_TARGETS entry ignored: ${r.reason}`);
+if (localTargets.exemptions.length) log.warn({ allowed: localTargets.exemptions }, 'Scanning of these local addresses is allowed by CQA_ALLOW_LOCAL_TARGETS');
 const store = new Store(openDatabase(paths.dbFile));
 const artifacts = new ArtifactStore(paths.artifacts, store);
+
+// Optional clean-up of old scans at start-up (CQA_RETENTION_DAYS). Off unless set.
+const retentionDays = Number(process.env.CQA_RETENTION_DAYS) > 0 ? Number(process.env.CQA_RETENTION_DAYS) : undefined;
+if (retentionDays) {
+  const swept = sweepRetention(store, artifacts, { days: retentionDays });
+  log.info({ days: retentionDays, deleted: swept.deleted.length, keptLatest: swept.kept.latestForCourse, keptBaseline: swept.kept.holdsBaseline }, 'retention clean-up done');
+}
 const here = path.dirname(fileURLToPath(import.meta.url));
 
 const hosts = [`${SERVER_HOST}:${SERVER_PORT}`, `localhost:${SERVER_PORT}`, `${SERVER_HOST}:${WEB_DEV_PORT}`, `localhost:${WEB_DEV_PORT}`];
 const app = buildApp({
   store,
   artifacts,
-  policy: new NetworkPolicy(),
+  policy: new NetworkPolicy({ exemptAddresses: localTargets.exemptions }),
   allowedHosts: hosts,
   allowedOrigins: hosts.map((h) => `http://${h}`),
   webDist: path.resolve(here, '../../web/dist'),
+  capabilities: { localTargets: localTargets.exemptions, retentionDays },
 });
 
 // Bound to loopback only. Network exposure requires authentication first (future work).

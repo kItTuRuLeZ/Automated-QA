@@ -121,6 +121,7 @@ export const api = {
   deleteRun: (id: string) => request<void>('DELETE', `/api/runs/${encodeURIComponent(id)}`),
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
   setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
+  capabilities: () => request<Array<{ id: string; name: string; status: 'available' | 'blocked' | 'unavailable' | 'not_included'; detail: string }>>('GET', '/api/capabilities'),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),
   createProfile: (input: ProfileForm) => request<ProfileView>('POST', '/api/profiles', input),

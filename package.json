@@ -16,7 +16,11 @@
     "test": "vitest run",
     "dev": "concurrently -n server,worker,web -c blue,magenta,green \"npm run dev -w @cqa/server\" \"npm run dev -w @cqa/worker\" \"npm run dev -w @cqa/web\"",
     "start": "npm run build -w @cqa/web && concurrently -n server,worker -c blue,magenta \"npm run start -w @cqa/server\" \"npm run start -w @cqa/worker\"",
-    "browsers:install": "playwright install chromium"
+    "browsers:install": "playwright install chromium",
+    "backup": "tsx scripts/cli.ts backup",
+    "restore": "tsx scripts/cli.ts restore",
+    "retention": "tsx scripts/cli.ts retention",
+    "fixtures:serve": "tsx scripts/serve-fixtures.ts"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
