@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Late Controls Fixture</title></head>
+<body>
+  <main>
+    <h1>Controls that appear after the page looks finished</h1>
+    <p id="status">Loading…</p>
+    <div id="host"></div>
+  </main>
+  <script>
+    // Nothing changes for ~3 s (the page looks stable), then the interactive content is rendered.
+    setTimeout(function () {
+      document.getElementById('status').textContent = 'Ready';
+      document.getElementById('host').innerHTML =
+        '<div role="tablist" aria-label="Late tabs">' +
+        '<button role="tab" id="lt1" aria-selected="true" aria-controls="lp1">First</button>' +
+        '<button role="tab" id="lt2" aria-selected="false" aria-controls="lp2">Second</button></div>' +
+        '<div role="tabpanel" id="lp1">First panel.</div><div role="tabpanel" id="lp2" hidden>Second panel.</div>';
+      document.getElementById('lt2').addEventListener('click', function () {
+        this.setAttribute('aria-selected', 'true'); document.getElementById('lt1').setAttribute('aria-selected', 'false');
+        document.getElementById('lp2').hidden = false; document.getElementById('lp1').hidden = true;
+      });
+      document.getElementById('lt1').addEventListener('click', function () {
+        this.setAttribute('aria-selected', 'true'); document.getElementById('lt2').setAttribute('aria-selected', 'false');
+        document.getElementById('lp1').hidden = false; document.getElementById('lp2').hidden = true;
+      });
+    }, 3000);
+  </script>
+</body>
+</html>

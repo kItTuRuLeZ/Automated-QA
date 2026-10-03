@@ -198,6 +198,7 @@ export class Traversal {
     await this.deps.onStateReady?.(root.state, describePath([]));
     const queue: Node[] = [root];
     let stop = false;
+    let emptyRetries = 0;
 
     const addFinding = (ruleId: RuleId, node: Node, f: Parameters<typeof finding>[2], location?: Partial<FindingLocation>) =>
       findings.push(finding(ruleId, { stateId: node.state.id, url: node.state.url, lessonId: node.state.lessonId, viewportName, browser: 'chromium', ...location }, f));
@@ -254,7 +255,15 @@ export class Traversal {
       }
 
       // ---- discover actions ----
-      const candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
+      let candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
+      // Single-page apps can still be drawing when the content looks stable. If nothing was found, look again a couple of
+      // times before concluding there are no controls (bounded per run so static pages are not slowed down much).
+      for (let attempt = 0; candidates.length === 0 && attempt < 3 && emptyRetries < 12 && timeLeft(); attempt++) {
+        emptyRetries++;
+        await page.waitForTimeout(2_000);
+        await settle();
+        candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
+      }
       const skipped = candidates.filter((c) => c.reason);
       // In-page interactions first; links last, so site navigation does not consume the state budget before the content is explored.
       const runnable = candidates.filter((c) => !c.reason).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);

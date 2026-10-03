@@ -14,6 +14,7 @@ Local course fixtures served by `tests/support/fixture-server.ts` on `127.0.0.1`
 | `spa-lessons/`, `tabs/`, `accordion/`, `modal/`, `nav-loop/` | Traversal: hash-routed lessons, working and broken tabs/sections/dialogs, a cycling Next. |
 | `a11y-known/`, `reflow-wide/` | Known axe-core defects (missing alt, label, button name, lang, contrast, headings); decorative and described images that must not be flagged; 900 px fixed layout (A11Y-008). |
 | `dialog-good/`, `dialog-broken/`, `keyboard-trap/`, `focus-style/`, `keyboard-controls/` | Working and broken modal dialog keyboard behavior; a Tab trap; four focus styles; native, mouse-only, and click-only controls (KBD-001..004). |
+| `late-controls/` | Tabs rendered 3 s after the page looks stable; discovery must look again. |
 | `inconsistent-control/` | A control that works in one state and not another (review item, not a defect). |
 | `authoring-patterns/`, `slow-first-tab/` | Storyline-style script links, inline placeholder video, player controls, Back to top, Start Course; a control slow only the first time (must not be reported). |
 | `canvas/`, `unsafe-actions/` | Canvas disclosure (COV-003); unsafe and ambiguous controls skipped (COV-001). |

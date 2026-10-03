@@ -167,3 +167,11 @@ describe('inconsistent controls', () => {
     expect(checks.some((c) => c.ruleId === 'NAV-001' && c.outcome === 'failed')).toBe(false);
   });
 });
+
+describe('slow-rendering pages', () => {
+  it('controls that appear several seconds after the page looks finished are still found', async () => {
+    const { actions, findings } = await scan('late-controls/');
+    expect(actionsFor(actions, 'Second')[0]?.outcome).toBe('succeeded');
+    expect(ruleFindings(findings, 'NAV-001')).toEqual([]);
+  });
+});
