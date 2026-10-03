@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { EngineSelection, ProjectId, ScanBudgets, ScanConfig, ScanScope, Viewport } from '@cqa/shared';
+import type { EngineSelection, ProjectId, ScanBudgets, ScanConfig, ScanScope, TerminologyRule, Viewport } from '@cqa/shared';
 import { DEFAULT_REDACTION } from './redaction.js';
 
 export interface DataPaths {
@@ -47,15 +47,18 @@ export const DEFAULT_BUDGETS: ScanBudgets = {
   maxTotalBytes: 200 * 1024 * 1024,
   maxDownloads: 0,
   concurrency: 1,
+  maxLinkChecks: 200,
+  linkCheckTimeoutMs: 10_000,
+  linkCheckBudgetMs: 120_000,
 };
 
-/** Engines available so far: initial capture and bounded traversal. */
+/** Engines available so far: initial capture, bounded traversal, links, media, and text checks. */
 export const DEFAULT_ENGINES: EngineSelection = {
   capture: true,
   traversal: true,
-  links: false,
-  media: false,
-  content: false,
+  links: true,
+  media: true,
+  content: true,
   accessibility: false,
   keyboard: false,
   layout: false,
@@ -95,6 +98,35 @@ export const DEFAULT_DENIED_NAME_PATTERNS = [
   'check answer',
 ];
 
+/**
+ * Placeholder and production-note patterns: regular expressions, case-insensitive
+ * unless prefixed with `cs:` (used for all-caps markers like TBD so "a todo item" is not flagged).
+ * Matches are TXT-001 findings unless excluded.
+ */
+export const DEFAULT_PLACEHOLDER_PATTERNS = [
+  String.raw`lorem ipsum`,
+  String.raw`\bdolor sit amet\b`,
+  String.raw`cs:\bTBD\b`,
+  String.raw`cs:\bTBC\b`,
+  String.raw`cs:\bTODO\b`,
+  String.raw`cs:\bFIXME\b`,
+  String.raw`cs:\bXXX+\b`,
+  String.raw`\[\s*(insert|add|placeholder|image|graphic|audio|video|text|copy|link)\b[^\]]{0,80}\]`,
+  String.raw`\bnote\s+to\s+(the\s+)?(gd|graphic\s+designer|designer|dev|developer|programmer|reviewer|sme|id|instructional\s+designer|editor|author)\b`,
+  String.raw`\b(placeholder|dummy)\s+(text|copy|image|content)\b`,
+  String.raw`\{\{[^}]{1,60}\}\}`,
+];
+
+/**
+ * Size warning thresholds for MED-005. These are application defaults, not a
+ * standard; set them per project when a client has its own limits.
+ */
+export const DEFAULT_MEDIA_THRESHOLDS = {
+  maxImageBytes: 1_000_000,
+  maxMediaBytes: 50_000_000,
+  provenance: 'Application default (1 MB per image, 50 MB per audio/video file); not a published standard.',
+};
+
 export function defaultScopeFor(url: URL): ScanScope {
   const port = url.port ? [Number(url.port)] : [];
   return { allowedOrigins: [url.origin], allowedPathPrefixes: [], subrequestPolicy: 'public_allowed', allowedPorts: port };
@@ -109,6 +141,8 @@ export function buildScanConfig(input: {
   explore?: boolean;
   maxStates?: number;
   maxDepth?: number;
+  terminology?: TerminologyRule[];
+  textExclusions?: string[];
 }): ScanConfig {
   const scope = { ...defaultScopeFor(input.url), ...input.scope };
   return {
@@ -130,6 +164,8 @@ export function buildScanConfig(input: {
       followExternalLinks: false,
     },
     redaction: DEFAULT_REDACTION,
+    textRules: { placeholderPatterns: DEFAULT_PLACEHOLDER_PATTERNS, terminology: input.terminology ?? [], exclusions: input.textExclusions ?? [] },
+    mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
     configVersion: 1,
   };
 }

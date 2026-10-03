@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 2a (traversal and coverage) complete. **Next: Phase 2b (links, media, text checks).**
+**Current state:** Phase 2 complete (2a traversal and coverage, 2b links, media, text). **Next phase ready to run: Phase 3.**
 
 ## Phase checklist
 
@@ -10,8 +10,8 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | --- | --- | --- |
 | 0 | Architecture, scope, and execution plan | ✅ Complete (2026-10-03) |
 | 1 | Working local application and URL scan pipeline | ✅ Complete (2026-10-03) |
-| 2 | Bounded traversal, functional checks, links, media | 🟡 2a complete (2026-10-03); 2b next |
-| 3 | Automated accessibility and keyboard review | Not started |
+| 2 | Bounded traversal, functional checks, links, media | ✅ Complete (2026-10-03) |
+| 3 | Automated accessibility and keyboard review | ⏭ Next |
 | 4 | Responsive, visual heuristics, performance evidence | Not started |
 | 5 | Reports, client profiles, retest, standalone V1 | Not started |
 | 6 | HTML5/SCORM package inspection and isolated scans | Not started |
@@ -159,9 +159,50 @@ A working local application: create a project, configure and validate a URL scan
 
 Product-specific validation status: **Rise — partial** (navigation works; Continue blocks, knowledge checks, and in-lesson interactions not yet exercised). **Storyline — pending** (adapter needed). **Custom HTML — pending** (no sample yet).
 
-## Phase 2b — plan (next)
+## Phase 2b — delivered (links, media, text)
 
-1. Link checks (LNK-001..005): collect links from every reached state, normalize and deduplicate, HEAD with bounded GET fallback through the same policy and IP pinning, classify HTTP failure vs 401/403 vs timeout vs unverified destination, never download whole large resources.
-2. Media checks (MED-001..005): broken images after scrolling into view and waiting for lazy loading, `MediaError` and failed media requests, caption track metadata, configurable size warnings.
-3. Placeholder and terminology checks (TXT-001..002) with exclusion lists. Include reviewer/production notes such as "Note to the GD", "Note to dev", "[insert …]", "TBD", highlighted comment text, alongside lorem ipsum.
-4. Fixtures: restricted link (401/403), timeout link, HEAD-405-then-GET, redirect chain, lazy image, broken media, placeholder text. Tests and UI updates.
+- **Per-state content checks** (`engines/content.ts`, `adapters/content-scripts.ts`): run on every reached state (root and each new state during traversal, or the captured page when exploration is off). The page is scrolled through first so lazy content loads.
+  - MED-001 broken images: loaded but undecodable (`complete`, `naturalWidth` 0, and `img.decode()` rejects). Images still loading are not tested, not passed.
+  - MED-002 audio/video errors (`MediaError` or no playable source), MED-003 video without a captions/subtitles track, MED-004 media without native controls (heuristic), MED-005 asset size over threshold (sizes only where the browser exposes them; thresholds are application defaults with stated provenance).
+  - TXT-001 placeholders and production notes (lorem ipsum, TBD/TBC/TODO/FIXME/XXX in capitals only, `[Insert …]`, "Note to the GD/dev/SME…", `{{…}}`), one finding per element, exclusions honoured, hidden text ignored. TXT-002 terminology only when a list is configured.
+  - LNK-005 `javascript:`, empty, and malformed hrefs.
+- **Link checker** (`engines/links.ts`): unique destinations from all states (fragments removed), HEAD then GET on any error status, 5xx retried once, redirects followed manually with every hop validated by the network policy and connected to the pinned IP, bodies never downloaded. Results: LNK-001 broken (404/410/other errors), LNK-002 restricted (401/403/407), LNK-003 unverified (timeout, DNS, rate limit, blocked by policy, redirect loops). Restricted and unverified links are `not_tested` for LNK-001, never passed. Budgets: 200 unique URLs, 10 s per request, 120 s total, 4 concurrent.
+- **Noise reductions**: with media checks on, images and media go to MED-001/002 rather than RUN-004; Chromium's "Failed to load resource" console lines are not RUN-003 (the network finding has better detail).
+- **Contracts**: `TextRules`, `MediaThresholds`, link budgets, reason codes `access_restricted` and `rate_limited`. Engines `links`, `media`, `content` are on by default. Any owned rule without a result gets an explicit `not_tested` with a reason at the end of the run.
+- **UI**: New Scan has a Text checks section (terms to flag with `term => preferred`, and exclusions).
+
+### Commands run (Phase 2b)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` / `npm run build -w @cqa/web` | Passed / built |
+| `npx vitest run` | **99 passed / 99** (adds 12 content/link tests; the Phase 1 missing-asset test now expects MED-001 for the image) |
+| Harness scan of the Rise sample (`maxStates` 6, `maxDepth` 1) | Partial (state budget). Found 7 "Note to the GD" production notes across the first lessons. Adobe Stock link (403) reported as restricted, AT&T Brand Center link (timeout) as unverified; neither called broken. No other findings. |
+
+### Acceptance (remaining Phase 2 rows)
+
+| Criterion | Result |
+| --- | --- |
+| Restricted link fixture | Passed (401 and 403 → LNK-002, not broken). |
+| Lazy image fixture | Passed (valid lazy image passes after scrolling; broken lazy image → MED-001; decorative empty-alt image not flagged). |
+| Broken media fixture | Passed (missing audio and video → MED-002; playable WAV passes; uncaptioned video → MED-003). |
+| Link classification | Passed (404/410/redirect-to-404 broken; HEAD-405 server passes via GET; redirect followed; timeout, metadata address, and redirect to a private IP unverified; fragments de-duplicated). |
+| Placeholder checks with exclusions, no full grammar claim | Passed. |
+
+**Phase 2 is complete.**
+
+### Known limitations (Phase 2b)
+
+- CSS background images, images inside frames, and canvas content are not checked.
+- Media checks read element state; they do not play media end to end. Embedded players (YouTube, Vimeo, Storyline) are not inspected.
+- Link checks see the link from outside the learner's session: destinations that need sign-in show as restricted, and sites that block automated requests may time out (unverified).
+- Placeholder patterns are English and rule-based; client-specific patterns and exclusions arrive with client profiles in Phase 5.
+- Scrolling each state for lazy content adds time per state on long pages.
+
+## Phase 3 — plan (next)
+
+1. Inject axe-core into each reached state and supported frame; record engine version, rule ID, impact, nodes, tags; map violations/incomplete/passes/inapplicable as in the catalog; deduplicate across states with occurrences.
+2. Missing vs empty alt handled per catalog (A11Y-001/002); heading jumps as warnings; page language, accessible names, hidden focusable elements, target size, reflow at 320 CSS px.
+3. Bounded keyboard journeys (Tab, Shift+Tab, Enter, Space, Escape) with focus sequences; keyboard trap detection; dialog focus entry/containment/return for recognized dialogs; visible focus heuristic.
+4. Manual review checklist in reports; explicit statement that automated checks do not establish compliance.
+5. Accessibility audit of the application's own UI.

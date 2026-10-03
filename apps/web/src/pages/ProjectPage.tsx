@@ -82,6 +82,8 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [explore, setExplore] = useState(true);
   const [maxStates, setMaxStates] = useState(25);
   const [maxDepth, setMaxDepth] = useState(4);
+  const [terms, setTerms] = useState('');
+  const [exclusions, setExclusions] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -105,6 +107,18 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         explore,
         maxStates,
         maxDepth,
+        terminology: terms
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => {
+            const [term, preferred] = l.split('=>').map((x) => x.trim());
+            return preferred ? { term: term!, preferred } : { term: term! };
+          }),
+        textExclusions: exclusions
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean),
       });
       onQueued(run.id);
     } catch (err) {
@@ -119,8 +133,8 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
       <h2 id="new-scan-heading">New scan</h2>
       <p className="muted">
         Captures the initial page (screenshot, title, final URL, JavaScript exceptions, console errors, failed requests, load timing), then optionally explores recognized
-        tabs, accordions, dialogs, Next/Back controls, and in-scope links without submitting forms or clicking unsafe controls. Private, loopback, and reserved network
-        addresses are blocked.
+        tabs, accordions, dialogs, Next/Back controls, and in-scope links without submitting forms or clicking unsafe controls. Every reached state is checked for broken
+        images and media, missing captions, and placeholder text, and every link destination is checked once. Private, loopback, and reserved network addresses are blocked.
       </p>
       <div className="field">
         <label htmlFor="s-url">Course URL</label>
@@ -171,6 +185,26 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
           <div className="field">
             <label htmlFor="s-depth">Maximum depth (actions from the start)</label>
             <input id="s-depth" type="number" min={0} max={10} required disabled={!explore} value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
+          </div>
+        </div>
+      </fieldset>
+      <fieldset className="fieldset">
+        <legend>Text checks</legend>
+        <p className="help">Placeholder text (lorem ipsum, TBD, [Insert …], notes to the GD/developer) is always checked. This is not a grammar review.</p>
+        <div className="grid-2">
+          <div className="field">
+            <label htmlFor="s-terms">Terms to flag</label>
+            <textarea id="s-terms" rows={3} placeholder={'e-learning => eLearning'} value={terms} onChange={(e) => setTerms(e.target.value)} aria-describedby="s-terms-help" />
+            <p id="s-terms-help" className="help">
+              One per line. Use "term =&gt; preferred" to suggest a replacement.
+            </p>
+          </div>
+          <div className="field">
+            <label htmlFor="s-excl">Never flag text containing</label>
+            <textarea id="s-excl" rows={3} placeholder="XXX Series" value={exclusions} onChange={(e) => setExclusions(e.target.value)} aria-describedby="s-excl-help" />
+            <p id="s-excl-help" className="help">
+              One per line. For intentional uses of words like TBD.
+            </p>
           </div>
         </div>
       </fieldset>

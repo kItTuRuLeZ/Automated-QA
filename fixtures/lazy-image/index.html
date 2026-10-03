@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Lazy Image Fixture</title></head>
+<body>
+  <h1>Images</h1>
+  <img src="../healthy/logo.svg" alt="Loads immediately" width="64" height="64">
+  <img src="../healthy/logo.svg" alt="" width="64" height="64"><!-- decorative, valid -->
+  <img src="/media/large.png" alt="Oversized file" width="64" height="64">
+  <div style="height: 3000px">Scroll down…</div>
+  <img src="../healthy/logo.svg" alt="Lazy and valid" width="64" height="64" loading="lazy">
+  <img src="missing-lazy.png" alt="Lazy and broken" width="64" height="64" loading="lazy">
+</body>
+</html>

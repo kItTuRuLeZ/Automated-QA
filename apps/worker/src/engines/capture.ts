@@ -44,6 +44,8 @@ export class InitialCapture implements CaptureProvider {
       policy: NetworkPolicy;
       targetUrl: string;
       blocked: () => readonly BlockedConnection[];
+      /** Resource types reported by a more specific engine (images and media go to MED-001/002). */
+      excludeResourceTypes?: readonly string[];
     },
   ) {}
 
@@ -65,6 +67,8 @@ export class InitialCapture implements CaptureProvider {
       const loc = msg.location();
       // Chromium logs a console error for every request our policy blocked; those are NET-002, not course errors.
       if (loc.url && this.isBlockedByUs(loc.url)) return;
+      // Chromium also logs every failed resource load; those are reported with more detail by RUN-004 / MED-001 / MED-002.
+      if (msg.text().startsWith('Failed to load resource')) return;
       consoleErrors.push({ text: sanitizeText(msg.text(), redaction), location: loc.url ? `${san(loc.url)}:${loc.lineNumber}` : undefined, at: nowIso() });
     });
     let mainRequest: Request | undefined;
@@ -72,6 +76,7 @@ export class InitialCapture implements CaptureProvider {
     page.on('response', (res: Response) => {
       const req = res.request();
       if (isMain(req)) return;
+      if (this.deps.excludeResourceTypes?.includes(req.resourceType())) return;
       if (res.status() >= 400 && res.headers()['x-cqa-blocked'] !== '1') {
         failedRequests.push({ url: san(req.url()), resourceType: req.resourceType(), status: res.status() });
       }
@@ -81,6 +86,7 @@ export class InitialCapture implements CaptureProvider {
       if (this.isBlockedByUs(req.url())) return;
       // Requests cancelled by the page itself (AbortController, route change) are not failures.
       if (isAbort(req.failure()?.errorText)) return;
+      if (this.deps.excludeResourceTypes?.includes(req.resourceType())) return;
       failedRequests.push({ url: san(req.url()), resourceType: req.resourceType(), error: req.failure()?.errorText ?? 'failed' });
     });
     page.on('request', (req) => {

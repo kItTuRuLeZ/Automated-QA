@@ -54,16 +54,20 @@ describe('URL scan pipeline against local fixtures', () => {
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(shot?.sha256);
   });
 
-  it('missing assets are reported as failed requests with the right resource types', async () => {
+  it('missing assets: a 404 script is a failed request, a 404 image is a broken image (not reported twice)', async () => {
     const run = await h.waitForTerminal(h.queueScan(`${fx.origin}/missing-asset/`).id);
     expect(run.status).toBe('completed');
-    const failed = h.store.listFindings(run.id).filter((f) => f.ruleId === 'RUN-004');
-    const urls = failed.map((f) => f.observed);
-    expect(urls.some((u) => u.includes('/missing-asset/missing.js') && u.includes('HTTP 404'))).toBe(true);
-    expect(urls.some((u) => u.includes('/missing-asset/missing.png') && u.includes('HTTP 404'))).toBe(true);
-    expect(failed.find((f) => f.observed.includes('missing.js'))?.severity).toBe('high');
-    expect(failed.find((f) => f.observed.includes('missing.png'))?.severity).toBe('medium');
-    for (const f of failed) expect(f.reproductionSteps.length).toBeGreaterThan(1);
+    const findings = h.store.listFindings(run.id);
+    const failed = findings.filter((f) => f.ruleId === 'RUN-004');
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.observed).toContain('/missing-asset/missing.js');
+    expect(failed[0]?.observed).toContain('HTTP 404');
+    expect(failed[0]?.severity).toBe('high');
+    expect(failed[0]?.reproductionSteps.length).toBeGreaterThan(1);
+    const images = findings.filter((f) => f.ruleId === 'MED-001');
+    expect(images.map((f) => f.observed)).toEqual([expect.stringContaining('/missing-asset/missing.png')]);
+    // Chromium's own "Failed to load resource" console lines are not duplicated as RUN-003.
+    expect(findings.some((f) => f.ruleId === 'RUN-003')).toBe(false);
   });
 
   it('captures uncaught exceptions and console errors accurately', async () => {

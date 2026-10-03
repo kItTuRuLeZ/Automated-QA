@@ -49,6 +49,8 @@ export const api = {
       explore?: boolean;
       maxStates?: number;
       maxDepth?: number;
+      terminology?: Array<{ term: string; preferred?: string }>;
+      textExclusions?: string[];
     },
   ) => request<ScanRun>('POST', `/api/projects/${encodeURIComponent(projectId)}/scans`, input),
   getRun: (id: string) => request<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),

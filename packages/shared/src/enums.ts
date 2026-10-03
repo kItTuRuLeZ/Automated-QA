@@ -148,6 +148,8 @@ export const REASON_CODES = [
   'navigation_failed',
   'worker_lost',
   'not_implemented',
+  'access_restricted',
+  'rate_limited',
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 

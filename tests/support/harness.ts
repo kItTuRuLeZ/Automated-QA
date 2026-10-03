@@ -14,7 +14,7 @@ export interface Harness {
   tmpRoot: string;
   worker?: WorkerLoop;
   startWorker(): WorkerLoop;
-  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; maxStates?: number; maxDepth?: number; allowedOrigins?: string[] }): ScanRun;
+  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number }): ScanRun;
   waitForTerminal(runId: string, timeoutMs?: number): Promise<ScanRun>;
   close(): Promise<void>;
 }
@@ -53,9 +53,12 @@ export function createHarness(policyOptions: PolicyOptions = {}): Harness {
         explore: opts.explore,
         maxStates: opts.maxStates,
         maxDepth: opts.maxDepth,
+        terminology: opts.terminology,
+        textExclusions: opts.textExclusions,
         scope: opts.allowedOrigins ? { allowedOrigins: [new URL(url).origin, ...opts.allowedOrigins] } : undefined,
       });
       if (opts.maxRuntimeMs) config.budgets.maxRuntimeMs = opts.maxRuntimeMs;
+      if (opts.linkCheckTimeoutMs) config.budgets.linkCheckTimeoutMs = opts.linkCheckTimeoutMs;
       return store.createRun(config, url);
     },
     async waitForTerminal(runId, timeoutMs = 45_000) {

@@ -87,6 +87,9 @@ export class Traversal {
       rootState: CourseState;
       deadline: number;
       blocked: () => readonly BlockedConnection[];
+      excludeResourceTypes?: readonly string[];
+      /** Called once per reached state while the page shows it (per-state content checks). */
+      onStateReady?: (state: CourseState, reproductionSteps: string[]) => Promise<void>;
     },
   ) {}
 
@@ -113,10 +116,12 @@ export class Traversal {
     page.on('pageerror', (e) => collecting && observed.push({ kind: 'exception', text: sanitizeText(e.message, redaction) }));
     page.on('response', (r) => {
       if (!collecting || r.request().isNavigationRequest() || r.status() < 400 || r.headers()['x-cqa-blocked'] === '1') return;
+      if (this.deps.excludeResourceTypes?.includes(r.request().resourceType())) return;
       observed.push({ kind: 'request', text: `${san(r.url())} (HTTP ${r.status()})`, resourceType: r.request().resourceType() });
     });
     page.on('requestfailed', (r) => {
       if (!collecting || r.isNavigationRequest() || isAbort(r.failure()?.errorText) || this.deps.blocked().some((b) => b.host === hostOf(r.url()))) return;
+      if (this.deps.excludeResourceTypes?.includes(r.resourceType())) return;
       observed.push({ kind: 'request', text: `${san(r.url())} (${r.failure()?.errorText ?? 'failed'})`, resourceType: r.resourceType() });
     });
 
@@ -187,6 +192,7 @@ export class Traversal {
     const states: CourseState[] = [root.state];
     const pages = new Set([pageKey(rootSnap.url)]);
     onState(root.state);
+    await this.deps.onStateReady?.(root.state, describePath([]));
     const queue: Node[] = [root];
     let stop = false;
 
@@ -366,6 +372,7 @@ export class Traversal {
           const shot = await screenshot(`State reached by ${stepText(cand)}`, target.state.id);
           void shot;
           onState(target.state);
+          await this.deps.onStateReady?.(target.state, describePath(target.path));
           queue.push(target);
         }
 

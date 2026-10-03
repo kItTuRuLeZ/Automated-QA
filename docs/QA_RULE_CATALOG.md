@@ -44,8 +44,8 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | RUN-001 | Initial page loads (navigation succeeds, non-error final status) | Final sanitized URL, status, screenshot, timing | Every URL target | automated_defect | Critical/high | 1 | implemented | Cannot tell a "correct" page from a wrong-but-200 page. |
 | RUN-002 | Uncaught JavaScript exceptions | Message, stack (sanitized), state, timestamp | Every state | automated_defect | High/high | 1 | implemented | Third-party exceptions are flagged with origin; impact on learner unknown. |
-| RUN-003 | Console errors (`console.error`) | Text (sanitized), source location | Every state | heuristic_warning | Low/medium | 1 | implemented | Many console errors are benign. |
-| RUN-004 | Failed subrequests (network error or HTTP ≥ 400) | URL (sanitized), resource type, status/error | Every state | automated_defect | High (script/style/doc) · Medium (other)/high | 1 | implemented | Requests blocked by our policy are reported separately (NET-002), not as course defects. |
+| RUN-003 | Console errors (`console.error`) | Text (sanitized), source location | Every state | heuristic_warning | Low/medium | 1 | implemented | Many console errors are benign. Chromium's own "Failed to load resource" lines and lines for requests our policy blocked are not reported (RUN-004, MED-001/002, NET-002 cover them). |
+| RUN-004 | Failed subrequests (network error or HTTP ≥ 400) | URL (sanitized), resource type, status/error | Every state | automated_defect | High (script/style/doc) · Medium (other)/high | 1 | implemented | Requests blocked by our policy are NET-002. Requests the page aborts itself (`net::ERR_ABORTED`) are not failures. With media checks on, images and audio/video are reported by MED-001/MED-002 instead. |
 | RUN-005 | Page title present | Title text | Top document | standards_warning | Low/high | 1 | implemented | Title adequacy is manual. WCAG 2.4.2. |
 | RUN-006 | Navigation timing captured | Navigation Timing entries | Top document | (metric, no finding) | —/— | 1 | implemented | Single sample; machine and network dependent. |
 
@@ -73,28 +73,28 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| LNK-001 | Link returns HTTP error (404, 410, 5xx) | Normalized URL, method, status, redirect chain | HTTP(S) links within link policy | automated_defect | High/high | 2 | planned | 5xx may be transient; retried once. |
-| LNK-002 | Link access-restricted (401/403) | Status | Same | manual_review | Informational/high | 2 | planned | Not a broken link. |
-| LNK-003 | Link timeout / blocked / DNS failure | Error | Same | manual_review | Informational/medium | 2 | planned | Not a broken link. |
+| LNK-001 | Link returns HTTP error (404, 410, 5xx) | Normalized URL, method, status, redirect chain | HTTP(S) links within link policy | automated_defect | High/high | 2 | implemented | 5xx may be transient; retried once. |
+| LNK-002 | Link access-restricted (401/403) | Status | Same | manual_review | Informational/high | 2 | implemented | Not a broken link. |
+| LNK-003 | Link timeout / blocked / DNS failure | Error | Same | manual_review | Informational/medium | 2 | implemented | Not a broken link. |
 | LNK-004 | Destination correctness | — | Every link | manual_review | Informational/— | 2 | manual | A 200 response does not prove the right destination. |
-| LNK-005 | Malformed or empty href / `javascript:` link | href | Anchors | standards_warning | Low/high | 2 | planned | — |
+| LNK-005 | Malformed or empty href / `javascript:` link | href | Anchors | standards_warning | Low/high | 2 | implemented | — |
 
 ### Media (MED)
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| MED-001 | Broken image (complete, naturalWidth 0, or failed request) | src (sanitized), state, screenshot crop | `img` after scroll/wait | automated_defect | High/high | 2 | planned | Lazy images checked only after being brought into view. |
-| MED-002 | Media element error (`MediaError`) or failed media request | Error code, src | `audio`/`video` | automated_defect | High/high | 2 | planned | Metadata load ≠ guaranteed playback. |
-| MED-003 | Video without caption/subtitle track metadata | Track list | `video` with audio | standards_warning | Medium/medium | 2 | planned | Captions may be burned in or in a custom player; accuracy is manual (MAN-004). WCAG 1.2.2. |
-| MED-004 | Media without visible controls | Attributes, custom controls detected | `audio`/`video` | heuristic_warning | Low/low | 2 | heuristic | Custom players may provide controls. |
-| MED-005 | Asset exceeds configured size threshold | Bytes (when observable), threshold provenance | Images, media | heuristic_warning | Low/high | 2 | planned | Transfer size may be unavailable (cache, opaque). |
+| MED-001 | Broken image (complete, naturalWidth 0, or failed request) | src (sanitized), state, screenshot crop | `img` after scroll/wait | automated_defect | High/high | 2 | implemented | Lazy images checked only after being brought into view. |
+| MED-002 | Media element error (`MediaError`) or failed media request | Error code, src | `audio`/`video` | automated_defect | High/high | 2 | implemented | Metadata load ≠ guaranteed playback. |
+| MED-003 | Video without caption/subtitle track metadata | Track list | `video` with audio | standards_warning | Medium/medium | 2 | implemented | Captions may be burned in or in a custom player; accuracy is manual (MAN-004). WCAG 1.2.2. |
+| MED-004 | Media without visible controls | Attributes, custom controls detected | `audio`/`video` | heuristic_warning | Low/low | 2 | implemented (heuristic) | Custom players may provide controls. |
+| MED-005 | Asset exceeds configured size threshold | Bytes (when observable), threshold provenance | Images, media | heuristic_warning | Low/high | 2 | implemented | Transfer size may be unavailable (cache, opaque). |
 
 ### Content text (TXT)
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TXT-001 | Placeholder text (lorem ipsum, TBD, TODO, XXX, `[insert …]`) | Matched text, element, state | Visible text | automated_defect | Medium/medium | 2 | planned | Exclusion list per profile; intentional uses possible. |
-| TXT-002 | Terminology rule violation (profile list) | Term, preferred term, context | Visible text | heuristic_warning | Low/medium | 2 | planned | Context-dependent; no grammar review claimed. |
+| TXT-001 | Placeholder text (lorem ipsum, TBD, TODO, XXX, `[insert …]`) | Matched text, element, state | Visible text | automated_defect | Medium/medium | 2 | implemented | Exclusion list per profile; intentional uses possible. |
+| TXT-002 | Terminology rule violation (profile list) | Term, preferred term, context | Visible text | heuristic_warning | Low/medium | 2 | implemented | Context-dependent; no grammar review claimed. |
 
 ### Accessibility (A11Y, KBD)
 
@@ -171,9 +171,9 @@ Always listed in reports; never auto-passed.
 | --- | --- | --- | --- | --- |
 | Load / runtime / network | RUN-001..006, NET-001..003 (Phase 1) | — | RUN-003 | — |
 | Traversal & coverage | NAV-001..003, COV-001..004 (Phase 2a) | — | NAV-002 (inconclusive) | MAN-006 |
-| Links | — | LNK-001..003, LNK-005 | — | LNK-004, MAN-005 |
-| Media | — | MED-001..003, MED-005 | MED-004 | MAN-004 |
-| Text | — | TXT-001 | TXT-002 | — |
+| Links | LNK-001..003, LNK-005 (Phase 2b) | — | — | LNK-004, MAN-005 |
+| Media | MED-001..003, MED-005 (Phase 2b) | — | MED-004 (Phase 2b) | MAN-004 |
+| Text | TXT-001 (Phase 2b) | — | TXT-002 (Phase 2b) | — |
 | Accessibility | — | A11Y-AXE-*, A11Y-001..006, KBD-001, KBD-003, KBD-004 | A11Y-007, A11Y-008, KBD-002 | MAN-001..003, MAN-007 |
 | Layout / visual / perf | — | LAY-005, VIS-001 | LAY-001..004, PERF-001 | — |
 | Brand | — | — | BRD-001..003 | — |

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Hidden Placeholder Fixture</title></head>
+<body>
+  <h1>Module 2</h1>
+  <p>Everything visible on load is final copy.</p>
+  <h2><button type="button" id="more" aria-expanded="false" aria-controls="more-region">More details</button></h2>
+  <div id="more-region" hidden><p>Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p></div>
+  <script>
+    document.getElementById('more').addEventListener('click', function () {
+      this.setAttribute('aria-expanded', 'true');
+      document.getElementById('more-region').hidden = false;
+    });
+  </script>
+</body>
+</html>

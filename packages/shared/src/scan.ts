@@ -21,6 +21,7 @@ import type {
   TargetKind,
   TraversalActionKind,
 } from './enums.js';
+import type { TerminologyRule } from './profile.js';
 
 /** Which URLs a scan may navigate to and which subrequests it may load. */
 export interface ScanScope {
@@ -51,6 +52,28 @@ export interface ScanBudgets {
   maxDownloads: number;
   /** Concurrent browser contexts per run. V1: 1. */
   concurrency: number;
+  /** Unique link URLs checked per run (Phase 2b). */
+  maxLinkChecks: number;
+  /** Per-request timeout for link checks. */
+  linkCheckTimeoutMs: number;
+  /** Total time allowed for link checking after exploration. */
+  linkCheckBudgetMs: number;
+}
+
+/** Rule-based text checks (Phase 2b). Not a grammar review. */
+export interface TextRules {
+  /** Case-insensitive regular expressions for placeholder or production-note text. */
+  placeholderPatterns: string[];
+  terminology: TerminologyRule[];
+  /** Text (case-insensitive substrings) that must never be flagged. */
+  exclusions: string[];
+}
+
+/** Size warnings for media (MED-005), with where each value came from. */
+export interface MediaThresholds {
+  maxImageBytes: number;
+  maxMediaBytes: number;
+  provenance: string;
 }
 
 /** Read-only exploration policy (Phase 2). Deny always wins over allow. */
@@ -105,6 +128,8 @@ export interface ScanConfig {
   engines: EngineSelection;
   actionPolicy: ActionPolicy;
   redaction: RedactionPolicy;
+  textRules: TextRules;
+  mediaThresholds: MediaThresholds;
   profileId?: ProfileId;
   /** Configuration schema version for migrations and baseline compatibility. */
   configVersion: number;

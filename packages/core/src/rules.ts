@@ -210,7 +210,153 @@ export const TRAVERSAL_RULES: readonly RuleDefinition[] = [
   }),
 ];
 
-export const ALL_RULES: readonly RuleDefinition[] = [...PHASE1_RULES, ...TRAVERSAL_RULES];
+/** Phase 2b: link checks. */
+export const LINK_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'LNK-001',
+    name: 'Link returns an HTTP error',
+    category: 'links',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: 'HTTP(S) links in reached states',
+    evidenceCollected: ['Normalized URL', 'Method', 'Status', 'Redirect chain', 'Where the link appears'],
+    limitations: ['5xx responses are retried once and may still be transient.', 'A successful response does not prove the destination is correct (LNK-004, manual).'],
+  }),
+  rule({
+    id: 'LNK-002',
+    name: 'Link destination is access-restricted',
+    category: 'links',
+    defaultFindingType: 'manual_review',
+    defaultSeverity: 'informational',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: 'Links answering 401, 403, or 407',
+    evidenceCollected: ['Status'],
+    limitations: ['Not a broken link: the destination may work for signed-in learners.'],
+  }),
+  rule({
+    id: 'LNK-003',
+    name: 'Link could not be verified',
+    category: 'links',
+    defaultFindingType: 'manual_review',
+    defaultSeverity: 'informational',
+    defaultConfidence: 'medium',
+    phase: 2,
+    applicability: 'Links that time out, fail DNS or connection, hit rate limits, or are blocked by the scan policy',
+    evidenceCollected: ['Error'],
+    limitations: ['Not a broken link: the destination was not verified either way.'],
+  }),
+  rule({
+    id: 'LNK-005',
+    name: 'Malformed, empty, or script link',
+    category: 'links',
+    defaultFindingType: 'standards_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: 'Anchors with href in reached states',
+    evidenceCollected: ['href', 'Link text'],
+    limitations: ['javascript: links may work, but are fragile and often inaccessible.'],
+  }),
+];
+
+/** Phase 2b: images and media. */
+export const MEDIA_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'MED-001',
+    name: 'Broken image',
+    category: 'media',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: 'Rendered <img> elements after scrolling into view',
+    evidenceCollected: ['Image source', 'Alt text', 'Load state and natural size', 'Where it appears'],
+    limitations: ['CSS background images are not checked.', 'Images still loading after the wait are not tested, not passed.'],
+  }),
+  rule({
+    id: 'MED-002',
+    name: 'Audio or video failed to load',
+    category: 'media',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: '<audio> and <video> elements',
+    evidenceCollected: ['MediaError code', 'Source', 'Network state'],
+    limitations: ['Loading metadata does not prove playback works end to end. Embedded players (YouTube, Vimeo, Storyline) are not inspected.'],
+  }),
+  rule({
+    id: 'MED-003',
+    name: 'Video has no caption or subtitle track',
+    category: 'media',
+    defaultFindingType: 'standards_warning',
+    defaultSeverity: 'medium',
+    defaultConfidence: 'medium',
+    phase: 2,
+    applicability: '<video> elements',
+    evidenceCollected: ['Text track list'],
+    limitations: ['Captions may be burned in or provided by a custom player. Caption accuracy is manual review.'],
+    standards: [{ standard: 'WCAG', version: '2.2', criterion: '1.2.2', relation: 'relevant' }],
+  }),
+  rule({
+    id: 'MED-004',
+    name: 'Media without native controls',
+    category: 'media',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'low',
+    phase: 2,
+    applicability: '<audio> and <video> elements that autoplay or have no controls attribute',
+    evidenceCollected: ['controls / autoplay / muted attributes'],
+    limitations: ['Custom players often provide their own controls.'],
+    capability: 'heuristic',
+  }),
+  rule({
+    id: 'MED-005',
+    name: 'Asset larger than the size threshold',
+    category: 'media',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'high',
+    phase: 2,
+    applicability: 'Images and media whose transfer size the browser exposes',
+    evidenceCollected: ['Encoded size', 'Threshold and its source'],
+    limitations: ['Cross-origin assets without Timing-Allow-Origin report no size and are not tested.', 'Thresholds are defaults, not a standard.'],
+  }),
+];
+
+/** Phase 2b: rule-based text checks. Not a grammar review. */
+export const TEXT_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'TXT-001',
+    name: 'Placeholder or production note in visible text',
+    category: 'content',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'medium',
+    defaultConfidence: 'medium',
+    phase: 2,
+    applicability: 'Visible text in reached states',
+    evidenceCollected: ['Matched text and surrounding words', 'Element'],
+    limitations: ['Pattern-based; exclusions handle intentional uses. Text inside canvas or unreached states is not checked.'],
+  }),
+  rule({
+    id: 'TXT-002',
+    name: 'Terminology rule',
+    category: 'content',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'low',
+    defaultConfidence: 'medium',
+    phase: 2,
+    applicability: 'Visible text, when a terminology list is configured',
+    evidenceCollected: ['Term', 'Preferred term', 'Context'],
+    limitations: ['Context-dependent; no grammar or style review is claimed.'],
+  }),
+];
+
+export const ALL_RULES: readonly RuleDefinition[] = [...PHASE1_RULES, ...TRAVERSAL_RULES, ...LINK_RULES, ...MEDIA_RULES, ...TEXT_RULES];
 
 const BY_ID = new Map(ALL_RULES.map((r) => [r.id, r]));
 
@@ -226,5 +372,11 @@ export function allRules(): readonly RuleDefinition[] {
 
 /** Rules a run owns given its engine selection; each must end with a result or a reason. */
 export function rulesForEngines(engines: EngineSelection): readonly RuleDefinition[] {
-  return engines.traversal ? ALL_RULES : PHASE1_RULES;
+  return [
+    ...PHASE1_RULES,
+    ...(engines.traversal ? TRAVERSAL_RULES : []),
+    ...(engines.links ? LINK_RULES : []),
+    ...(engines.media ? MEDIA_RULES : []),
+    ...(engines.content ? TEXT_RULES : []),
+  ];
 }

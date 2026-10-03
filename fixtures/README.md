@@ -13,5 +13,7 @@ Local course fixtures served by `tests/support/fixture-server.ts` on `127.0.0.1`
 | `aborted-fetch/` | Page aborts its own fetch; must not be RUN-004. |
 | `spa-lessons/`, `tabs/`, `accordion/`, `modal/`, `nav-loop/` | Traversal: hash-routed lessons, working and broken tabs/sections/dialogs, a cycling Next. |
 | `canvas/`, `unsafe-actions/` | Canvas disclosure (COV-003); unsafe and ambiguous controls skipped (COV-001). |
+| `lazy-image/`, `broken-media/` | Lazy valid/broken images, oversized image, playable and missing audio/video, uncaptioned video (MED-001..005). |
+| `placeholder-text/`, `hidden-placeholder/` | Placeholders and production notes, exclusions, hidden text, placeholder revealed only by expanding (TXT-001/002). |
 
-Dynamic routes in the fixture server: `/iframe/` (out-of-scope, blocked, and in-scope frames), `/redirect/in` (302 to `/healthy/`), `/redirect/out` (302 to a second origin, outside scope), `/slow` (responds after the navigation timeout), `/http-404` (404 document).
+Dynamic routes in the fixture server: `/links/` (link page) and `/links/*` (200, 404, 410, 401, 403, slow, HEAD-405, redirects, redirect to a private IP), `/media/*` (generated WAV, VTT, oversized PNG), `/iframe/` (out-of-scope, blocked, and in-scope frames), `/redirect/in` (302 to `/healthy/`), `/redirect/out` (302 to a second origin, outside scope), `/slow` (responds after the navigation timeout), `/http-404` (404 document).

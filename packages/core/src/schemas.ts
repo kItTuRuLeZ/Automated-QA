@@ -33,6 +33,11 @@ export const CreateScanInput = z.object({
   explore: z.boolean().optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
   maxDepth: z.number().int().min(0).max(10).optional(),
+  terminology: z
+    .array(z.object({ term: z.string().trim().min(1).max(100), preferred: z.string().trim().max(100).optional() }))
+    .max(200)
+    .optional(),
+  textExclusions: z.array(z.string().trim().min(1).max(200)).max(200).optional(),
   viewport: z
     .object({
       name: z.string().trim().min(1).max(40),
