@@ -59,8 +59,8 @@ export const DEFAULT_ENGINES: EngineSelection = {
   links: true,
   media: true,
   content: true,
-  accessibility: false,
-  keyboard: false,
+  accessibility: true,
+  keyboard: true,
   layout: false,
   performance: false,
   visualBaseline: false,
@@ -139,6 +139,7 @@ export function buildScanConfig(input: {
   navigationTimeoutMs?: number;
   viewport?: Viewport;
   explore?: boolean;
+  accessibility?: boolean;
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -156,7 +157,7 @@ export function buildScanConfig(input: {
       maxDepth: input.maxDepth ?? DEFAULT_BUDGETS.maxDepth,
     },
     viewports: [input.viewport ?? DEFAULT_VIEWPORT],
-    engines: { ...DEFAULT_ENGINES, traversal: input.explore ?? true },
+    engines: { ...DEFAULT_ENGINES, traversal: input.explore ?? true, accessibility: input.accessibility ?? true, keyboard: input.accessibility ?? true },
     actionPolicy: {
       allowedKinds: ['navigate', 'select_tab', 'expand', 'open_dialog', 'close_dialog', 'next', 'back'],
       deniedNamePatterns: DEFAULT_DENIED_NAME_PATTERNS,

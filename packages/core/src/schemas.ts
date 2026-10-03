@@ -31,6 +31,7 @@ export const CreateScanInput = z.object({
     .optional(),
   navigationTimeoutMs: z.number().int().min(1_000).max(120_000).optional(),
   explore: z.boolean().optional(),
+  accessibility: z.boolean().optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
   maxDepth: z.number().int().min(0).max(10).optional(),
   terminology: z

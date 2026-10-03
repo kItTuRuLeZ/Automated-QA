@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Focus Style Fixture</title>
+<style>
+  .visible:focus-visible { outline: 3px solid #1f4fbf; outline-offset: 2px; }
+  .hidden-focus { outline: none; }
+  .hidden-focus:focus, .hidden-focus:focus-visible { outline: none; }
+  .bg:focus-visible { outline: none; background: #ffe58f; }
+</style></head>
+<body>
+  <main>
+    <h1>Focus indicators</h1>
+    <button type="button" class="visible">Visible outline</button>
+    <button type="button" class="bg">Background change</button>
+    <button type="button" class="hidden-focus">No focus indicator</button>
+    <button type="button">Browser default ring</button>
+  </main>
+</body>
+</html>

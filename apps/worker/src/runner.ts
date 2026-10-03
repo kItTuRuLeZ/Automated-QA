@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
@@ -7,10 +7,19 @@ import { type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, t
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
 import { LinkChecker } from './engines/links.js';
+import { AccessibilityChecks } from './engines/accessibility.js';
+import { KeyboardChecks } from './engines/keyboard.js';
 import { InitialCapture } from './engines/capture.js';
 import { type BlockedConnection, EgressProxy } from './net/egress-proxy.js';
 
 const require = createRequire(import.meta.url);
+let axeCache: string | undefined;
+/** axe-core source from the installed package, read once. */
+function axeSource(): string {
+  axeCache ??= readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8');
+  return axeCache;
+}
+
 const PLAYWRIGHT_VERSION = (require('playwright/package.json') as { version: string }).version;
 
 export interface WorkerDeps {
@@ -117,6 +126,8 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     });
     // tsx/esbuild may wrap serialized functions with a `__name` helper; define a no-op so page.evaluate works.
     await context.addInitScript({ content: 'globalThis.__name ??= (fn) => fn;' });
+    // axe-core is injected into every frame before page scripts run (also works under a restrictive CSP).
+    if (run.config.engines.accessibility) await context.addInitScript({ content: axeSource() });
     const page = await context.newPage();
     const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => '');
     store.setRunEnvironment(run.id, { engine: 'chromium', version: browser.version(), userAgent, headless: true }, [
@@ -152,16 +163,26 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
     const contentOn = run.config.engines.links || run.config.engines.media || run.config.engines.content;
     const linkAppearances: LinkAppearance[] = [];
     const contentErrors: string[] = [];
+    const a11yEngine = new AccessibilityChecks();
+    const keyboardEngine = new KeyboardChecks();
     const onStateReady = async (state: CourseState, repro: string[]) => {
-      if (!contentOn) return;
-      try {
-        const r = await contentEngine.checkState({ ...ctx, state }, state, repro);
-        persistResults(r);
-        linkAppearances.push(...r.links);
-      } catch (err) {
-        if (controller.signal.aborted) throw err;
-        contentErrors.push(truncateLine((err as Error).message));
+      const guarded = async (fn: () => Promise<void>) => {
+        try {
+          await fn();
+        } catch (err) {
+          if (controller.signal.aborted) throw err;
+          contentErrors.push(truncateLine((err as Error).message));
+        }
+      };
+      if (contentOn) {
+        await guarded(async () => {
+          const r = await contentEngine.checkState({ ...ctx, state }, state, repro);
+          persistResults(r);
+          linkAppearances.push(...r.links);
+        });
       }
+      if (run.config.engines.accessibility) await guarded(async () => persistResults(await a11yEngine.checkState({ ...ctx, state }, state, repro)));
+      if (run.config.engines.keyboard) await guarded(async () => persistResults(await keyboardEngine.journey({ ...ctx, state }, state, repro)));
     };
     const pageUsable = Boolean(out.state) && !out.navigationFailed && !out.outOfScope;
 
@@ -178,6 +199,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
             blocked: () => blocked,
             excludeResourceTypes,
             onStateReady,
+            keyboardPass: run.config.engines.keyboard ? (input) => keyboardEngine.activate(input) : undefined,
           });
           traversal = await engine.explore({ ...ctx, state: out.state }, (state) => store.insertState(state));
           store.insertActions(traversal.actions);

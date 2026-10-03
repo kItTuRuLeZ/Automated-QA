@@ -16,6 +16,8 @@ Every check the application runs has a stable rule ID listed here. Rule IDs neve
 
 ## Severity mapping
 
+axe-core impact → severity (repeatable, documented): `critical` → Critical, `serious` → High, `moderate` → Medium, `minor` → Low. axe `incomplete` results are always Informational manual-review items.
+
 | Situation | Default severity |
 | --- | --- |
 | Course cannot load / initial navigation fails | Critical |
@@ -100,19 +102,14 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A11Y-AXE-* | Each axe-core rule (`A11Y-AXE-<axeRuleId>`) | axe version, rule ID, impact, nodes (selector, HTML snippet sanitized), tags | Every reached state and supported frame | standards_warning | per axe impact/high | 3 | planned | Automated rules cover a subset of WCAG. |
-| A11Y-001 | Image missing `alt` attribute | Element, src | `img` not `aria-hidden` / not `role=presentation` | automated_defect | Medium/high | 3 | planned | Empty `alt=""` is valid for decorative images and is **not** reported here. WCAG 1.1.1. |
-| A11Y-002 | Empty `alt` on likely-informative image | Element, context | `img alt=""` inside link/button with no other name | standards_warning | Medium/medium | 3 | planned | Otherwise empty alt is treated as decorative. |
-| A11Y-003 | Heading level jump | Heading outline | Every state | standards_warning | Low/medium | 3 | planned | Warning, not proof of failure. WCAG 1.3.1 (relevant). |
-| A11Y-004 | Page language missing/invalid | `lang` value | Top document, frames | automated_defect | Medium/high | 3 | planned | WCAG 3.1.1. |
-| A11Y-005 | Control without accessible name | Element, computed name | Interactive elements | automated_defect | Medium/high | 3 | planned | WCAG 4.1.2. |
-| A11Y-006 | Hidden but focusable element | Element, visibility | Focusable elements | standards_warning | Medium/medium | 3 | planned | — |
-| A11Y-007 | Target size below minimum | Bounds | Pointer targets | heuristic_warning | Low/medium | 3 | heuristic | Spacing/inline exceptions require context. WCAG 2.5.8. |
-| A11Y-008 | Content reflow at 320 CSS px / 400% zoom | Overflow measurements, screenshot | Reached states | heuristic_warning | Medium/medium | 3 | heuristic | WCAG 1.4.10. Some content legitimately needs 2-D scroll. |
-| KBD-001 | Keyboard trap detected | Focus sequence | Keyboard journey | automated_defect | High/medium | 3 | planned | WCAG 2.1.2. Bounded journey only. |
-| KBD-002 | Focus indicator not visible | Before/after focus screenshot crop, style diff | Focused elements | heuristic_warning | Medium/medium | 3 | heuristic | WCAG 2.4.7. |
-| KBD-003 | Recognized dialog: focus enters, is contained (if modal), returns on close | Focus sequence | Recognized dialogs | automated_defect | Medium/medium | 3 | planned | Escape required only where the pattern calls for it. |
-| KBD-004 | Control reachable/operable by keyboard | Focus sequence, activation result | Recognized controls | automated_defect | High/medium | 3 | planned | WCAG 2.1.1. |
+| A11Y-ENG | Automated accessibility engine ran on this state | axe-core version, rules evaluated | Every reached state | manual_review | —/— | 3 | implemented | Records that axe-core ran, not that the state is accessible. |
+| A11Y-AXE-* | Each axe-core rule (`A11Y-AXE-<axeRuleId>`), run with tags wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, best-practice | axe version, rule ID, impact, up to 25 nodes per rule per state (selector, sanitized HTML, failure summary), tags | Every reached state, and frames axe can reach | standards_warning (WCAG-tagged), heuristic_warning (best-practice only) | Impact-mapped (below)/high (WCAG), medium (best-practice) | 3 | implemented | Automated rules cover a subset of WCAG. Violations → `failed`; incomplete → `needs_review` (finding type `manual_review`, informational); passes → `passed`; inapplicable → `not_applicable`. Results are grouped per rule and page URL, retaining every affected element and state. Frames axe cannot reach are reported by its `frame-tested` rule, not counted as passes. |
+| A11Y-001..007 | Missing alt, empty alt on informative images, heading jumps, page language, accessible names, hidden focusable elements, target size | — | — | — | — | 3 | covered by axe | Delivered through axe-core rules instead of separate checks: `image-alt` (A11Y-001; `alt=""` is treated as decorative and not reported), `heading-order` (A11Y-003, a heuristic warning, not proof of a WCAG failure), `html-has-lang` / `html-lang-valid` (A11Y-004), `button-name` / `link-name` / `label` / `input-button-name` (A11Y-005), `aria-hidden-focus` (A11Y-006), `target-size` (A11Y-007). A11Y-002 (informative image with empty alt inside a control) is covered by `link-name` / `button-name`. |
+| A11Y-008 | Content reflows at 320 CSS px without horizontal scrolling | Scroll width, overflowing elements | Every reached state | heuristic_warning | Medium/low | 3 | implemented (heuristic) | Viewport simulation, not zoom. Fixed-size stages (for example Storyline) may be flagged; two-dimensional content is allowed by the criterion. WCAG 1.4.10 (relevant). |
+| KBD-001 | Keyboard trap while tabbing | Focus sequence, confirmation attempt (Escape + further Tab) | Reached states without an open dialog | automated_defect | High/medium | 3 | implemented | At most 60 Tab presses per state; reports only a trap that survives Escape and more Tab presses. Frames: focus inside an iframe is not followed. WCAG 2.1.2 (relevant). |
+| KBD-002 | Focus indicator not visible | Computed style focused vs unfocused | Elements focused during the Tab journey | heuristic_warning | Medium/medium | 3 | implemented (heuristic) | Compares outline, shadow, border, background, color, text decoration; not pixels. Subtle or low-contrast indicators need manual review. WCAG 2.4.7 (relevant). |
+| KBD-003 | Recognized dialog: focus enters, is contained (if modal), returns on close | Active element after open, focus sequence while open, active element after close | Dialog openers that worked with the mouse | automated_defect | Medium/medium | 3 | implemented | Closing uses the dialog's own close button; Escape is not required. Containment only for `aria-modal` dialogs. At most 12 keyboard activations per scan. |
+| KBD-004 | Recognized control reachable and operable by keyboard | Focusability, result of Enter then Space | Tabs, expandable sections, dialog openers that worked with the mouse | automated_defect | High/medium | 3 | implemented | Only generic-adapter-recognized controls; at most 12 keyboard activations per scan. WCAG 2.1.1 (relevant). |
 
 ### Layout, responsive, visual (LAY, VIS)
 
@@ -163,6 +160,8 @@ Always listed in reports; never auto-passed.
 | MAN-005 | Link destinations are correct. |
 | MAN-006 | Canvas-rendered and unreached content. |
 | MAN-007 | Color contrast on images, gradients, and video. |
+| MAN-009 | Zoom, text spacing, and orientation (WCAG 1.4.4, 1.4.10, 1.4.12, 1.3.4). |
+| MAN-010 | Time limits, motion, and flashing (WCAG 2.2.x, 2.3.1, 1.4.2). |
 | MAN-008 | Target-LMS completion, resume, score, and certificate behavior (Phase 7). |
 
 ## Capability matrix (summary)
@@ -174,7 +173,7 @@ Always listed in reports; never auto-passed.
 | Links | LNK-001..003, LNK-005 (Phase 2b) | — | — | LNK-004, MAN-005 |
 | Media | MED-001..003, MED-005 (Phase 2b) | — | MED-004 (Phase 2b) | MAN-004 |
 | Text | TXT-001 (Phase 2b) | — | TXT-002 (Phase 2b) | — |
-| Accessibility | — | A11Y-AXE-*, A11Y-001..006, KBD-001, KBD-003, KBD-004 | A11Y-007, A11Y-008, KBD-002 | MAN-001..003, MAN-007 |
+| Accessibility | A11Y-ENG, A11Y-AXE-* (Phase 3), A11Y-001..007 via axe, KBD-001, KBD-003, KBD-004 | — | A11Y-008, KBD-002 | MAN-001..003, MAN-007, MAN-009, MAN-010 |
 | Layout / visual / perf | — | LAY-005, VIS-001 | LAY-001..004, PERF-001 | — |
 | Brand | — | — | BRD-001..003 | — |
 | Package / SCORM / fidelity | — | PKG-*, SCO-*, FID-* | — | MAN-008 |

@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../api';
-import { Empty, ErrorBox, Link, Loading, StatusBadge, duration, formatDate, useLoader } from '../components/ui';
+import { Empty, ErrorBox, Link, Loading, StatusBadge, duration, formatDate, useLoader, TableScroll } from '../components/ui';
 
 const VIEWPORTS = [
   { name: 'desktop', width: 1440, height: 900 },
@@ -37,7 +37,8 @@ export function ProjectPage({ id }: { id: string }) {
           <p>Configure and start a scan above.</p>
         </Empty>
       ) : (
-        <table className="table">
+        <TableScroll label="Scan history">
+<table className="table">
           <caption className="sr-only">Scan history</caption>
           <thead>
             <tr>
@@ -68,6 +69,7 @@ export function ProjectPage({ id }: { id: string }) {
             ))}
           </tbody>
         </table>
+</TableScroll>
       )}
     </section>
   );
@@ -80,6 +82,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [timeoutSec, setTimeoutSec] = useState(30);
   const [viewport, setViewport] = useState('desktop');
   const [explore, setExplore] = useState(true);
+  const [accessibility, setAccessibility] = useState(true);
   const [maxStates, setMaxStates] = useState(25);
   const [maxDepth, setMaxDepth] = useState(4);
   const [terms, setTerms] = useState('');
@@ -105,6 +108,7 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         navigationTimeoutMs: timeoutSec * 1000,
         viewport: VIEWPORTS.find((v) => v.name === viewport),
         explore,
+        accessibility,
         maxStates,
         maxDepth,
         terminology: terms
@@ -176,6 +180,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         <legend>Exploration</legend>
         <label className="checkbox">
           <input type="checkbox" checked={explore} onChange={(e) => setExplore(e.target.checked)} /> Explore course interactions (read-only)
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={accessibility} onChange={(e) => setAccessibility(e.target.checked)} /> Run accessibility and keyboard checks (adds time per screen)
         </label>
         <div className="grid-2">
           <div className="field">

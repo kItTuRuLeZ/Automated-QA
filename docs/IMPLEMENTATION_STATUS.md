@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 2 complete (2a traversal and coverage, 2b links, media, text). **Next phase ready to run: Phase 3.**
+**Current state:** Phase 3 complete (accessibility and keyboard). **Next phase ready to run: Phase 4.**
 
 ## Phase checklist
 
@@ -11,8 +11,8 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 0 | Architecture, scope, and execution plan | ✅ Complete (2026-10-03) |
 | 1 | Working local application and URL scan pipeline | ✅ Complete (2026-10-03) |
 | 2 | Bounded traversal, functional checks, links, media | ✅ Complete (2026-10-03) |
-| 3 | Automated accessibility and keyboard review | ⏭ Next |
-| 4 | Responsive, visual heuristics, performance evidence | Not started |
+| 3 | Automated accessibility and keyboard review | ✅ Complete (2026-10-03) |
+| 4 | Responsive, visual heuristics, performance evidence | ⏭ Next |
 | 5 | Reports, client profiles, retest, standalone V1 | Not started |
 | 6 | HTML5/SCORM package inspection and isolated scans | Not started |
 | 7 | SCORM runtime harness and platform adapters | Not started |
@@ -213,10 +213,59 @@ Fixed after the first scan, each with a regression fixture and test:
 
 Remaining findings on this course: the embedded AI avatar frame (`genx.aptaracorp.com`) fails to load its scripts (404, wrong MIME type) and its HeyGen API call is blocked by CORS; the course video has no caption track; GLOSSARY and RESOURCES failed to open intermittently (a different one on each scan, and both worked on other slides). Controls that work in some states and fail in others are now reported as low-confidence "Inconsistent" review items instead of defects (fixture `inconsistent-control/`). The slide outline menu (`treeitem`s) and player controls such as Settings are not exercised yet; a Storyline adapter (Phase 7) should drive the outline. Scans of this course take about 4 minutes because each state is restored by reloading the player.
 
-## Phase 3 — plan (next)
+## Phase 3 — delivered (accessibility and keyboard)
 
-1. Inject axe-core into each reached state and supported frame; record engine version, rule ID, impact, nodes, tags; map violations/incomplete/passes/inapplicable as in the catalog; deduplicate across states with occurrences.
-2. Missing vs empty alt handled per catalog (A11Y-001/002); heading jumps as warnings; page language, accessible names, hidden focusable elements, target size, reflow at 320 CSS px.
-3. Bounded keyboard journeys (Tab, Shift+Tab, Enter, Space, Escape) with focus sequences; keyboard trap detection; dialog focus entry/containment/return for recognized dialogs; visible focus heuristic.
-4. Manual review checklist in reports; explicit statement that automated checks do not establish compliance.
-5. Accessibility audit of the application's own UI.
+- **axe-core 4.13** (`apps/worker/src/engines/accessibility.ts`): injected into every frame with a context init script (works under a restrictive CSP), run on every reached state with tags wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa, and best-practice. Each rule is a check result per state (`A11Y-AXE-<rule>`): violations → `failed`, incomplete → `needs_review`, passes → `passed`, inapplicable → `not_applicable`; frames axe could not reach are reported by its own `frame-tested` rule, never as passes. Engine version, impact, tags, and up to 25 nodes (selector, sanitized HTML, failure summary) are kept as evidence. Findings are grouped per rule and page URL and keep every affected element and state (capped at 200 occurrences). Impact → severity: critical → Critical, serious → High, moderate → Medium, minor → Low; incomplete → Informational manual review. Best-practice-only rules (heading order, landmarks) are heuristic warnings, not WCAG failures. WCAG criterion numbers come from axe's own tags, not invented.
+- **Keyboard journeys** (`engines/keyboard.ts`): a bounded Tab sequence (≤ 60 presses) on every state records the focus order as evidence. KBD-001 reports a trap only when focus cycles among a small group (or sticks on one element) and survives Escape plus more Tab presses; states with an open dialog are exempt. KBD-002 compares each focused element's computed style with its unfocused style (heuristic). For recognized tabs, expandable sections, and dialog openers whose mouse action worked, the engine restores the state and operates the control by keyboard (Enter, then Space): KBD-004 reports controls that cannot be focused or operated, and KBD-003 checks that a dialog takes focus when opened, keeps it inside when `aria-modal`, and returns it to the opener when closed with its own close button (Escape is not required). At most 12 keyboard activations per scan.
+- **Reflow** (A11Y-008, heuristic): each state is measured at 320 CSS px and the viewport restored.
+- **Manual review checklist** (`packages/core/src/manual-checklist.ts`, `GET /api/manual-checklist`): focus order, screen reader, alt adequacy, caption accuracy, unreached/canvas content, contrast on images, zoom/spacing/orientation, time limits and motion. Shown on every run page with the statement that automated checks do not establish accessibility compliance. (Report export arrives in Phase 5.)
+- **UI**: scan form option "Run accessibility and keyboard checks"; run page "Accessibility and keyboard" card (engine version, rule and execution counts, most serious findings, disclaimer, checklist).
+- **Own interface audit**: `tests/own-ui.accessibility.test.ts` scans the app's own pages with the engine. The first audit found real reflow problems at 320 px (wide tables, long headings, a 320 px grid minimum); fixed by scrolling regions for tables (focusable, labelled), wrapping, and responsive grids. The test now requires zero automated WCAG violations, a passing reflow check, no keyboard trap, and visible focus on the project list, project, and scan pages.
+
+### Commands run (Phase 3)
+
+| Command | Result |
+| --- | --- |
+| `npm install -w @cqa/worker axe-core` | axe-core 4.13.0 |
+| `npm run typecheck`, `npm run build -w @cqa/web` | Passed / built |
+| `npx vitest run tests/accessibility.integration.test.ts` | 15 passed |
+| `npx vitest run tests/own-ui.accessibility.test.ts` | 1 passed (after fixing the UI) |
+| `npx vitest run` (full suite) | **119 passed / 119** in 8 files (about 11 minutes) |
+
+### Acceptance
+
+| Criterion | Result |
+| --- | --- |
+| Known accessibility fixtures trigger expected rules, decorative empty-alt images excluded | Passed (missing alt, unlabeled input, empty button, missing lang, low contrast reported; the `alt=""` and described images are not). |
+| Keyboard tests handle a working dialog and a broken dialog | Passed (working: focus in, contained, returned; broken: not moved in, not returned). |
+| Keyboard trap, focus visibility, mouse-only and click-only controls | Passed (trap fixture fails KBD-001; one of four focus styles flagged; mouse-only and click-only sections fail KBD-004, native button passes). |
+| Canvas and unsupported-frame content disclosed | Passed (COV-003 and COV-002 unchanged with accessibility on). |
+| Reports state that automated checks do not establish full compliance | Passed in the UI (disclaimer and checklist on every run). Exported reports: Phase 5. |
+| The application's own interface is accessible | Passed by the automated bar above; screen-reader and keyboard-only walkthroughs remain on the manual checklist. |
+
+### Known limitations (Phase 3)
+
+- Focus journeys do not follow focus into iframes; frames are tested by axe only where it can reach them.
+- Keyboard activation covers only tabs, expandable sections, and dialog openers the generic adapter recognizes, and is capped at 12 per scan.
+- KBD-002 compares computed styles, so a subtle or low-contrast indicator still looks "visible"; and a custom indicator drawn by a sibling element looks "missing".
+- axe cannot judge color contrast over images, gradients, or video (reported as needs review), logical focus order, screen-reader experience, alt-text quality, or caption accuracy.
+- Reflow is a 320 CSS px viewport simulation, not browser zoom.
+- Accessibility checks add roughly 3–10 seconds per reached state (axe plus up to 60 Tab presses).
+- Some "needs review" findings are broad (for example ARIA references to hidden elements) and may be noisy on authoring-tool output.
+
+### Validation on supplied courses with accessibility on (2026-10-03)
+
+| Sample | Result |
+| --- | --- |
+| Rise 360 share link (4 states) | Color contrast failures (high) and 2 scrollable regions without keyboard access (high), missing level-one heading and landmarks (best-practice warnings), focus not visibly changing on 2 elements (heuristic), and contrast items needing review. Tab journeys found no trap. |
+| Storyline 360 (Protecting Our Planet, 2 states) | The viewport meta tag disables zooming (meta-viewport), content is 640 px wide at 320 px (reflow heuristic, expected for a fixed stage), 3 elements with no visible focus change, ARIA role warnings, and axe could not test 2 frames (reported, not passed). |
+
+These are real automated signals; they still need the manual checklist (the Storyline stage is largely a canvas).
+
+## Phase 4 — plan (next)
+
+1. Run selected reached states at configurable viewports (1440×900, 1366×768, 768×1024, 390×844) and record browser engine and emulation settings; call them simulations.
+2. Capture screenshots after fonts and assets settle (bounded waits); collect overflow, element geometry, computed styles, scroll/clip dimensions, font load errors.
+3. Heuristics with documented exclusions: likely clipped text, unintended horizontal overflow, obscured controls, off-screen dialogs; attach crops and annotated screenshots.
+4. Performance evidence (transfer estimates, largest assets, timings) with unavailable metrics marked; configurable thresholds with provenance.
+5. Baseline screenshot comparison only for matching viewport/browser/state/config; diffs are review signals.

@@ -2,7 +2,7 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProjectId } from '@cqa/shared';
-import { type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
+import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
 export interface AppOptions {
   store: Store;
@@ -59,6 +59,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
 
   app.get('/api/health', async () => ({ ok: true }));
   app.get('/api/rules', async () => allRules());
+  app.get('/api/manual-checklist', async () => ({ disclaimer: ACCESSIBILITY_DISCLAIMER, items: MANUAL_REVIEW_CHECKLIST }));
 
   // ---- projects ----
   app.get('/api/projects', async () => store.listProjects());
@@ -112,6 +113,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       navigationTimeoutMs: input.navigationTimeoutMs,
       viewport,
       explore: input.explore,
+      accessibility: input.accessibility,
       maxStates: input.maxStates,
       maxDepth: input.maxDepth,
     });

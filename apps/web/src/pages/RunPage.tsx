@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CheckResult, Finding } from '@cqa/shared';
 import { api } from '../api';
+import { Accessibility } from '../components/Accessibility';
 import { Coverage } from '../components/Coverage';
 import {
   Empty,
@@ -17,6 +18,7 @@ import {
   duration,
   formatDate,
   useLoader,
+  TableScroll,
 } from '../components/ui';
 
 const active = (s: string) => s === 'queued' || s === 'running';
@@ -154,6 +156,8 @@ export function RunPage({ id }: { id: string }) {
         <FindingsTable findings={findings.data} />
       )}
 
+      <Accessibility run={r} checks={checks.data} findings={findings.data} />
+
       <Coverage run={r} states={r.states} screenshots={r.screenshots} />
 
       <details className="card">
@@ -214,7 +218,8 @@ function Stat({ label, value, hint }: { label: string; value: string | number; h
 
 function FindingsTable({ findings }: { findings: Finding[] }) {
   return (
-    <table className="table">
+    <TableScroll label="Findings, most severe first">
+<table className="table">
       <caption className="sr-only">Findings, most severe first</caption>
       <thead>
         <tr>
@@ -243,12 +248,14 @@ function FindingsTable({ findings }: { findings: Finding[] }) {
         ))}
       </tbody>
     </table>
+</TableScroll>
   );
 }
 
 function ChecksTable({ checks }: { checks: CheckResult[] }) {
   return (
-    <table className="table">
+    <TableScroll label="Check executions">
+<table className="table">
       <caption className="sr-only">Check executions</caption>
       <thead>
         <tr>
@@ -273,5 +280,6 @@ function ChecksTable({ checks }: { checks: CheckResult[] }) {
         ))}
       </tbody>
     </table>
+</TableScroll>
   );
 }

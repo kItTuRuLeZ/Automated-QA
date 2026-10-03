@@ -50,7 +50,7 @@ main:focus { outline: none; }
 
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
 details.card summary { cursor: pointer; }
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 1rem; }
 
 .form .field { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.9rem; }
 label { font-weight: 600; font-size: 0.92rem; }
@@ -126,3 +126,19 @@ input, select, textarea { font: inherit; padding: 0.5rem 0.6rem; border: 1px sol
 .act-failed { color: var(--danger); background: #fdecea; }
 .act-no_observable_change { color: var(--warn); background: #fff4dc; }
 .act-skipped, .act-not_attempted { color: #3b4558; background: #eef0f3; }
+
+.alert-note { background: #eef3ff; border: 1px solid #b8c9f2; color: #1d2f5c; }
+.plain { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.4rem; }
+.manual { margin-top: 1rem; }
+.checklist { display: grid; gap: 0.75rem; padding-left: 1.25rem; }
+
+.table-scroll { overflow-x: auto; margin-bottom: 1rem; }
+.table-scroll .table { margin-bottom: 0; min-width: 36rem; }
+h1, h2, .page-header p { overflow-wrap: anywhere; }
+.page-header { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .container { padding: 1rem; }
+  .kv > div { grid-template-columns: 1fr; gap: 0; }
+  .topbar { flex-wrap: wrap; padding: 0.75rem 1rem; }
+  .stats { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+}

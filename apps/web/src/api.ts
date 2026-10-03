@@ -47,6 +47,7 @@ export const api = {
       navigationTimeoutMs?: number;
       viewport?: { name: string; width: number; height: number };
       explore?: boolean;
+      accessibility?: boolean;
       maxStates?: number;
       maxDepth?: number;
       terminology?: Array<{ term: string; preferred?: string }>;
@@ -60,5 +61,6 @@ export const api = {
   listActions: (runId: string) => request<TraversalAction[]>('GET', `/api/runs/${encodeURIComponent(runId)}/actions`),
   listChecks: (runId: string) => request<CheckResult[]>('GET', `/api/runs/${encodeURIComponent(runId)}/checks`),
   getFinding: (id: string) => request<FindingDetail>('GET', `/api/findings/${encodeURIComponent(id)}`),
+  manualChecklist: () => request<{ disclaimer: string; items: Array<{ id: string; title: string; howToCheck: string; whyManual: string; standards?: string[] }> }>('GET', '/api/manual-checklist'),
   artifactUrl: (id: string) => `/api/artifacts/${encodeURIComponent(id)}`,
 };

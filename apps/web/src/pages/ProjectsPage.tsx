@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../api';
-import { Empty, ErrorBox, Link, Loading, StatusBadge, formatDate, useLoader } from '../components/ui';
+import { Empty, ErrorBox, Link, Loading, StatusBadge, formatDate, useLoader, TableScroll } from '../components/ui';
 
 export function ProjectsPage() {
   const { data, error, reload } = useLoader(() => api.listProjects(), []);
@@ -27,7 +27,8 @@ export function ProjectsPage() {
           <p>Create a project for a published course, then run a scan.</p>
         </Empty>
       ) : (
-        <table className="table">
+        <TableScroll label="Projects">
+<table className="table">
           <caption className="sr-only">Projects</caption>
           <thead>
             <tr>
@@ -59,6 +60,7 @@ export function ProjectsPage() {
             ))}
           </tbody>
         </table>
+</TableScroll>
       )}
     </section>
   );

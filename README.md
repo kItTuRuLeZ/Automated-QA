@@ -2,7 +2,7 @@
 
 Local, evidence-backed QA scanning for published eLearning courses (Rise, Storyline, custom HTML). Core scanning needs no AI service, cloud account, or telemetry.
 
-Status: Phase 2 complete (URL scan, bounded click-through with coverage, links, images and media, placeholder text). See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
+Status: Phase 3 complete (URL scan, bounded click-through with coverage, links, images and media, placeholder text, automated accessibility and keyboard checks). See [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md).
 
 ## Requirements
 
@@ -42,6 +42,8 @@ Tests run real Chromium scans against local fixtures in `fixtures/`; no public w
 Loads the course URL in an isolated Chromium context and records the screenshot, title, sanitized final URL, uncaught exceptions, console errors, failed requests, requests blocked by policy, redirect scope, and navigation timing. Private, loopback, link-local, and other reserved addresses are blocked at submission and again for every connection the browser makes.
 
 With exploration on (the default), it then clicks through recognized tabs, accordions, dialogs, Next/Back controls, and in-scope links, within limits on states, depth, pages, and time. It never submits forms or clicks controls that look destructive, and it reports what it skipped, which frames and canvas areas it could not inspect, and which budgets stopped it.
+
+With accessibility checks on (the default), every reached screen is also tested with axe-core, tabbed through with the keyboard (traps, visible focus), has its dialogs and recognized controls operated by keyboard, and is checked at a 320 px width. A manual review checklist is shown with every scan. Automated results never establish accessibility compliance.
 
 A completed scan means the configured scan finished, not that the course passed QA.
 

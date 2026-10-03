@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Keyboard Controls Fixture</title></head>
+<body>
+  <main>
+    <h1>Controls and keyboard access</h1>
+    <h2><button type="button" id="native" aria-expanded="false" aria-controls="r1">Native section</button></h2>
+    <div id="r1" hidden>Native content.</div>
+    <h2><div role="button" id="no-focus" aria-expanded="false" aria-controls="r2">Mouse-only section</div></h2>
+    <div id="r2" hidden>Mouse-only content.</div>
+    <h2><div role="button" tabindex="0" id="no-keys" aria-expanded="false" aria-controls="r3">Click-only section</div></h2>
+    <div id="r3" hidden>Click-only content.</div>
+  </main>
+  <script>
+    function wire(id, regionId, keys) {
+      var b = document.getElementById(id), r = document.getElementById(regionId);
+      function toggle() { var open = b.getAttribute('aria-expanded') === 'true'; b.setAttribute('aria-expanded', String(!open)); r.hidden = open; }
+      b.addEventListener('click', toggle);
+      if (keys) b.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+    }
+    wire('native', 'r1', false);   // native button: the browser maps Enter/Space to click
+    wire('no-focus', 'r2', false); // not focusable at all
+    wire('no-keys', 'r3', false);  // focusable but ignores keys
+  </script>
+</body>
+</html>

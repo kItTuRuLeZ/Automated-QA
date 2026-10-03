@@ -20,6 +20,7 @@ import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-ht
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
 import { isAbort } from './capture.js';
+import type { KeyboardPassInput } from './keyboard.js';
 import { type NewCheck, type NewFinding, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 
 type Candidate = CandidateAction & { rawHref?: string };
@@ -90,6 +91,8 @@ export class Traversal {
       excludeResourceTypes?: readonly string[];
       /** Called once per reached state while the page shows it (per-state content checks). */
       onStateReady?: (state: CourseState, reproductionSteps: string[]) => Promise<void>;
+      /** Keyboard activation of recognized controls (Phase 3); optional. */
+      keyboardPass?: (input: KeyboardPassInput) => Promise<{ checks: NewCheck[]; findings: NewFinding[] }>;
     },
   ) {}
 
@@ -452,6 +455,44 @@ export class Traversal {
               severity: o.resourceType && ['document', 'script', 'stylesheet'].includes(o.resourceType) ? 'high' : 'medium',
             });
           }
+        }
+      }
+
+      // ---- keyboard activation of controls whose mouse action worked ----
+      if (this.deps.keyboardPass && !stop && timeLeft()) {
+        const worked = runnable.filter((c) => actions.some((a) => a.outcome === 'succeeded' && a.fromStateId === node.state.id && a.locator === c.locator && a.kind === c.kind));
+        if (worked.length) {
+          try {
+            const kb = await this.deps.keyboardPass({
+              page,
+              ctx,
+              state: node.state,
+              repro: describePath(node.path),
+              candidates: worked,
+              restore: () => restore(node),
+              snap,
+              verify: (post, b, a) => this.verify(page, post, b, a),
+            });
+            checks.push(...kb.checks);
+            findings.push(...kb.findings);
+          } catch (err) {
+            if (ctx.signal.aborted) throw err;
+            checks.push(check('KBD-004', 'error', 0, [], { stateId: node.state.id, viewportName, reason: 'engine_error', reasonDetail: truncate((err as Error).message, 200) }));
+          }
+        }
+      }
+    }
+
+    if (this.deps.keyboardPass) {
+      for (const ruleId of ['KBD-003', 'KBD-004'] as const) {
+        if (!checks.some((c) => c.ruleId === ruleId)) {
+          checks.push(
+            check(ruleId, 'not_applicable', 0, [], {
+              stateId: root.state.id,
+              viewportName,
+              reasonDetail: ruleId === 'KBD-003' ? 'No recognized dialog opener worked with the mouse in the states reached.' : 'No recognized tab, expandable section, or dialog opener worked with the mouse in the states reached.',
+            }),
+          );
         }
       }
     }

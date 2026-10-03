@@ -7,3 +7,4 @@ export * from './config.js';
 export * from './rules.js';
 export * from './schemas.js';
 export * from './logger.js';
+export * from './manual-checklist.js';

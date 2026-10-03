@@ -356,14 +356,151 @@ export const TEXT_RULES: readonly RuleDefinition[] = [
   }),
 ];
 
-export const ALL_RULES: readonly RuleDefinition[] = [...PHASE1_RULES, ...TRAVERSAL_RULES, ...LINK_RULES, ...MEDIA_RULES, ...TEXT_RULES];
+/**
+ * Phase 3: accessibility. Individual axe-core rules are reported as
+ * `A11Y-AXE-<axe rule id>` and defined on demand (see `axeRuleDefinition`).
+ * WCAG criteria, severity, and tags come from axe's own metadata.
+ */
+export const ACCESSIBILITY_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'A11Y-ENG',
+    name: 'Automated accessibility engine ran on this state',
+    category: 'accessibility',
+    defaultFindingType: 'manual_review',
+    defaultSeverity: 'informational',
+    defaultConfidence: 'high',
+    phase: 3,
+    applicability: 'Every reached state',
+    evidenceCollected: ['axe-core version', 'Rules evaluated'],
+    limitations: ['Records that axe-core ran, not that the state is accessible. Automated rules cover a subset of WCAG; frames axe could not reach are reported by its frame-tested rule.'],
+  }),
+  rule({
+    id: 'A11Y-008',
+    name: 'Content reflows at 320 CSS pixels without horizontal scrolling',
+    category: 'accessibility',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'medium',
+    defaultConfidence: 'low',
+    capability: 'heuristic',
+    phase: 3,
+    applicability: 'Every reached state',
+    evidenceCollected: ['Scroll width at 320 px', 'Overflowing elements'],
+    limitations: ['Viewport simulation only; no zoom. Content that legitimately needs two-dimensional scrolling (maps, data tables) is allowed by the criterion.', 'Fixed-size stages (for example Storyline) usually scale rather than reflow and may be flagged.'],
+    standards: [{ standard: 'WCAG', criterion: '1.4.10', relation: 'relevant' }],
+  }),
+];
+
+/** Phase 3: bounded keyboard journeys. */
+export const KEYBOARD_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'KBD-001',
+    name: 'No keyboard trap while tabbing',
+    category: 'keyboard',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'medium',
+    phase: 3,
+    applicability: 'Reached states without an open modal dialog',
+    evidenceCollected: ['Focus sequence', 'Confirmation attempt (Escape, further Tab presses)'],
+    limitations: ['Bounded: at most 60 Tab presses per state. Only reports a trap that survives Escape and further Tab presses.'],
+    standards: [{ standard: 'WCAG', criterion: '2.1.2', relation: 'relevant' }],
+  }),
+  rule({
+    id: 'KBD-002',
+    name: 'Focus indicator is visible',
+    category: 'keyboard',
+    defaultFindingType: 'heuristic_warning',
+    defaultSeverity: 'medium',
+    defaultConfidence: 'medium',
+    capability: 'heuristic',
+    phase: 3,
+    applicability: 'Elements that receive focus during the Tab journey',
+    evidenceCollected: ['Computed style of the element focused and unfocused'],
+    limitations: ['Compares computed outline, shadow, border, background, color, and text decoration; it does not look at pixels, so subtle or low-contrast indicators need manual review.'],
+    standards: [{ standard: 'WCAG', criterion: '2.4.7', relation: 'relevant' }],
+  }),
+  rule({
+    id: 'KBD-003',
+    name: 'Dialog moves focus in, keeps it in (when modal), and returns it on close',
+    category: 'keyboard',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'medium',
+    defaultConfidence: 'medium',
+    phase: 3,
+    applicability: 'Recognized dialogs opened from a control',
+    evidenceCollected: ['Active element after opening', 'Focus sequence while open', 'Active element after closing'],
+    limitations: ['Escape is not required of every popup; closing uses the dialog’s own close control. Containment is checked only for aria-modal dialogs.', 'At most 12 keyboard activations per scan.'],
+  }),
+  rule({
+    id: 'KBD-004',
+    name: 'Recognized controls can be reached and operated by keyboard',
+    category: 'keyboard',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'medium',
+    phase: 3,
+    applicability: 'Tabs, expandable sections, and dialog openers whose mouse activation worked',
+    evidenceCollected: ['Focusability', 'Result of pressing Enter or Space'],
+    limitations: ['Only controls the generic adapter recognizes and that worked with the mouse; at most 12 keyboard activations per scan.'],
+    standards: [{ standard: 'WCAG', criterion: '2.1.1', relation: 'relevant' }],
+  }),
+];
+
+export const ALL_RULES: readonly RuleDefinition[] = [
+  ...PHASE1_RULES,
+  ...TRAVERSAL_RULES,
+  ...LINK_RULES,
+  ...MEDIA_RULES,
+  ...TEXT_RULES,
+  ...ACCESSIBILITY_RULES,
+  ...KEYBOARD_RULES,
+];
 
 const BY_ID = new Map(ALL_RULES.map((r) => [r.id, r]));
 
+const AXE_IMPACT_SEVERITY = { critical: 'critical', serious: 'high', moderate: 'medium', minor: 'low' } as const;
+
+/** Severity for an axe impact. Repeatable mapping documented in docs/QA_RULE_CATALOG.md. */
+export function severityForAxeImpact(impact: string | null | undefined): RuleDefinition['defaultSeverity'] {
+  return AXE_IMPACT_SEVERITY[impact as keyof typeof AXE_IMPACT_SEVERITY] ?? 'medium';
+}
+
+/** WCAG success criteria from axe tags such as `wcag111` or `wcag1410`. */
+export function wcagCriteriaFromTags(tags: readonly string[]): string[] {
+  const out: string[] = [];
+  for (const t of tags) {
+    const m = /^wcag(\d)(\d)(\d+)$/.exec(t);
+    if (m) out.push(`${m[1]}.${m[2]}.${m[3]}`);
+  }
+  return out;
+}
+
+/** Definition for one axe-core rule, built from axe's own metadata. */
+export function axeRuleDefinition(axeRuleId: string, meta: { help?: string; impact?: string | null; tags?: readonly string[] } = {}): RuleDefinition {
+  const tags = meta.tags ?? [];
+  const wcag = wcagCriteriaFromTags(tags);
+  return {
+    id: `A11Y-AXE-${axeRuleId}`,
+    name: meta.help ?? axeRuleId,
+    category: 'accessibility',
+    defaultFindingType: wcag.length || tags.some((t) => t.startsWith('wcag')) ? 'standards_warning' : 'heuristic_warning',
+    defaultSeverity: severityForAxeImpact(meta.impact),
+    defaultConfidence: wcag.length ? 'high' : 'medium',
+    capability: 'implemented',
+    phase: 3,
+    applicability: 'Every reached state and frame axe-core can reach',
+    evidenceCollected: ['axe-core version', 'Rule ID', 'Impact', 'Affected nodes', 'Standard tags'],
+    limitations: ['Automated rules cover a subset of WCAG; passing rules do not establish compliance. Untested frames and surfaces are not counted as passed.'],
+    standards: wcag.map((criterion) => ({ standard: 'WCAG' as const, criterion, relation: 'relevant' as const })),
+    engineRuleId: axeRuleId,
+  };
+}
+
 export function getRule(id: RuleId): RuleDefinition {
   const found = BY_ID.get(id);
-  if (!found) throw new Error(`Unknown rule ${id}`);
-  return found;
+  if (found) return found;
+  if (id.startsWith('A11Y-AXE-')) return axeRuleDefinition(id.slice('A11Y-AXE-'.length));
+  throw new Error(`Unknown rule ${id}`);
 }
 
 export function allRules(): readonly RuleDefinition[] {
@@ -378,5 +515,7 @@ export function rulesForEngines(engines: EngineSelection): readonly RuleDefiniti
     ...(engines.links ? LINK_RULES : []),
     ...(engines.media ? MEDIA_RULES : []),
     ...(engines.content ? TEXT_RULES : []),
+    ...(engines.accessibility ? ACCESSIBILITY_RULES : []),
+    ...(engines.keyboard ? KEYBOARD_RULES : []),
   ];
 }

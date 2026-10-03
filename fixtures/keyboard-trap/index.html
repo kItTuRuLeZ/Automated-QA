@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Keyboard Trap Fixture</title></head>
+<body>
+  <main>
+    <h1>A widget that traps the Tab key</h1>
+    <div id="widget">
+      <button type="button" id="w1">Widget one</button>
+      <button type="button" id="w2">Widget two</button>
+    </div>
+    <button type="button">After 1</button><button type="button">After 2</button><button type="button">After 3</button>
+    <button type="button">After 4</button><button type="button">After 5</button><button type="button">After 6</button>
+    <button type="button">After 7</button><button type="button">After 8</button>
+  </main>
+  <script>
+    // Tab on the last widget control wraps to the first; Shift+Tab on the first wraps to the last. Nothing releases focus.
+    var w1 = document.getElementById('w1'), w2 = document.getElementById('w2');
+    w2.addEventListener('keydown', function (e) { if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); w1.focus(); } });
+    w1.addEventListener('keydown', function (e) { if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); w2.focus(); } });
+  </script>
+</body>
+</html>

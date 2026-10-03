@@ -374,7 +374,15 @@ export class Store {
       const existing = this.db.prepare('SELECT data_json FROM findings WHERE run_id = ? AND fingerprint = ?').get(f.runId, f.fingerprint) as { data_json: string } | undefined;
       if (existing) {
         const merged = JSON.parse(existing.data_json) as Finding;
-        merged.occurrences.push(...f.occurrences);
+        const have = new Set(merged.occurrences.map((o) => `${o.location.stateId ?? ''}|${o.location.selector ?? ''}|${o.observed}`));
+        for (const o of f.occurrences) {
+          if (merged.occurrences.length >= 200) break; // cap per finding; counts stay accurate in the finding text
+          const key = `${o.location.stateId ?? ''}|${o.location.selector ?? ''}|${o.observed}`;
+          if (!have.has(key)) {
+            have.add(key);
+            merged.occurrences.push(o);
+          }
+        }
         merged.evidenceIds = [...new Set([...merged.evidenceIds, ...f.evidenceIds])];
         this.db.prepare('UPDATE findings SET data_json = ? WHERE id = ?').run(JSON.stringify(merged), merged.id);
         return merged;

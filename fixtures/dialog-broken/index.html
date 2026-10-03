@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Broken Dialog Fixture</title></head>
+<body>
+  <main>
+    <h1>Dialog with keyboard problems</h1>
+    <button type="button" id="open" aria-haspopup="dialog" aria-controls="dlg">Open notice</button>
+    <button type="button">Other control one</button>
+    <button type="button">Other control two</button>
+    <div role="dialog" id="dlg" aria-modal="true" aria-label="Notice" hidden>
+      <p>Focus is never moved here, never contained, and never returned.</p>
+      <button type="button" id="close">Close</button>
+    </div>
+  </main>
+  <script>
+    var dlg = document.getElementById('dlg');
+    document.getElementById('open').addEventListener('click', function () { dlg.hidden = false; });
+    document.getElementById('close').addEventListener('click', function () { dlg.hidden = true; document.activeElement.blur(); });
+  </script>
+</body>
+</html>

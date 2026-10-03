@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ActionOutcome, CourseState, ScanRun, TraversalAction } from '@cqa/shared';
 import { api } from '../api';
-import { Empty, Loading, useLoader } from './ui';
+import { Empty, Loading, TableScroll, useLoader } from './ui';
 
 const OUTCOME_TEXT: Record<ActionOutcome, string> = {
   succeeded: 'Worked as expected',
@@ -90,7 +90,8 @@ export function Coverage({ run, states, screenshots }: { run: ScanRun; states: C
       {states.length === 0 ? (
         <p className="muted">No states were captured.</p>
       ) : (
-        <table className="table">
+        <TableScroll label="Reached states">
+<table className="table">
           <caption className="sr-only">Reached states</caption>
           <thead>
             <tr>
@@ -126,6 +127,7 @@ export function Coverage({ run, states, screenshots }: { run: ScanRun; states: C
             })}
           </tbody>
         </table>
+</TableScroll>
       )}
 
       {explored && (
@@ -155,7 +157,8 @@ export function Coverage({ run, states, screenshots }: { run: ScanRun; states: C
 
 function ActionsTable({ actions, stateLabel }: { actions: TraversalAction[]; stateLabel: (id?: string) => string }) {
   return (
-    <table className="table">
+    <TableScroll label="Traversal actions">
+<table className="table">
       <caption className="sr-only">Traversal actions</caption>
       <thead>
         <tr>
@@ -182,5 +185,6 @@ function ActionsTable({ actions, stateLabel }: { actions: TraversalAction[]; sta
         ))}
       </tbody>
     </table>
+</TableScroll>
   );
 }

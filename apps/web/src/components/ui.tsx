@@ -136,3 +136,16 @@ export function Link({ to, children, className }: { to: string; children: ReactN
     </a>
   );
 }
+
+/**
+ * Lets a wide data table scroll sideways inside its own region instead of
+ * forcing the whole page to scroll. The region is focusable so keyboard users
+ * can scroll it.
+ */
+export function TableScroll({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="table-scroll" role="region" aria-label={label} tabIndex={0}>
+      {children}
+    </div>
+  );
+}
