@@ -19,6 +19,7 @@ import { TRAVERSAL_RULES, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/
 import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-html.js';
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
+import { isAbort } from './capture.js';
 import { type NewCheck, type NewFinding, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 
 type Candidate = CandidateAction & { rawHref?: string };
@@ -55,6 +56,8 @@ const KIND_PRIORITY: Record<TraversalAction['kind'], number> = {
   navigate: 7,
 };
 const SETTLE_IDLE_MS = 1_500;
+const STABLE_QUIET_MS = 600;
+const STABLE_MAX_MS = 8_000;
 
 /** Which rule judges an action of this kind. */
 function ruleForKind(kind: TraversalAction['kind']): RuleId {
@@ -113,14 +116,26 @@ export class Traversal {
       observed.push({ kind: 'request', text: `${san(r.url())} (HTTP ${r.status()})`, resourceType: r.request().resourceType() });
     });
     page.on('requestfailed', (r) => {
-      if (!collecting || r.isNavigationRequest() || this.deps.blocked().some((b) => b.host === hostOf(r.url()))) return;
+      if (!collecting || r.isNavigationRequest() || isAbort(r.failure()?.errorText) || this.deps.blocked().some((b) => b.host === hostOf(r.url()))) return;
       observed.push({ kind: 'request', text: `${san(r.url())} (${r.failure()?.errorText ?? 'failed'})`, resourceType: r.resourceType() });
     });
 
     const settle = async () => {
       await page.waitForLoadState('load', { timeout: budgets.navigationTimeoutMs }).catch(() => undefined);
       await page.waitForLoadState('networkidle', { timeout: SETTLE_IDLE_MS }).catch(() => undefined);
-      await page.waitForTimeout(150);
+      // SPAs (for example Rise) keep rendering after network idle; wait until visible content stops changing.
+      const stableUntil = Date.now() + STABLE_MAX_MS;
+      let last = '';
+      let stableSince = Date.now();
+      while (Date.now() < stableUntil) {
+        const s = await page.evaluate(snapshotState).catch(() => undefined);
+        const key = s ? strictKey(s) : '';
+        if (key !== last) {
+          last = key;
+          stableSince = Date.now();
+        } else if (Date.now() - stableSince >= STABLE_QUIET_MS && key) break;
+        await page.waitForTimeout(150);
+      }
     };
     const snap = () => page.evaluate(snapshotState);
     const timeLeft = () => this.deps.deadline - Date.now() > 0;

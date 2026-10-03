@@ -150,9 +150,18 @@ A working local application: create a project, configure and validate a URL scan
 - The page receives a tiny `globalThis.__name` shim so serialized helper functions run under `tsx`; it does not affect course behavior.
 - Recognition is pattern-based: custom widgets without ARIA roles/attributes are skipped as ambiguous until a platform adapter (Phase 7) knows them.
 
+### Validation on user-supplied courses (2026-10-03)
+
+| Sample | Result |
+| --- | --- |
+| Storyline HTML5 (`elearning.aptaracorp.com/.../story_html5.html`) | Loaded; only the player's HELP (skipped, not recognized) and EXIT (skipped, unsafe) links were found. The slide area is a 993×624 canvas, disclosed as COV-003. Slide content and player navigation were **not** explored. Needs the Storyline adapter (Phase 7). |
+| Rise 360 (`share.articulate.com/...`) | Lessons reached through the sidebar links (15 states with a 15-state budget). Exposed three problems, all fixed with regression tests: (1) a request the page cancels itself (`net::ERR_ABORTED`) was reported as a failed request; (2) the title, set by script after load, was reported missing; (3) when Rise rendered slowly, discovery ran too early and found no controls. The engine now waits for visible content to stop changing before discovery. Re-scanned twice: consistent, no false findings. A real content issue is visible in the lesson screenshots (a "Note to the GD: Please enhance this screen" reviewer note left in the course); Phase 2b's placeholder check should flag it. |
+
+Product-specific validation status: **Rise — partial** (navigation works; Continue blocks, knowledge checks, and in-lesson interactions not yet exercised). **Storyline — pending** (adapter needed). **Custom HTML — pending** (no sample yet).
+
 ## Phase 2b — plan (next)
 
 1. Link checks (LNK-001..005): collect links from every reached state, normalize and deduplicate, HEAD with bounded GET fallback through the same policy and IP pinning, classify HTTP failure vs 401/403 vs timeout vs unverified destination, never download whole large resources.
 2. Media checks (MED-001..005): broken images after scrolling into view and waiting for lazy loading, `MediaError` and failed media requests, caption track metadata, configurable size warnings.
-3. Placeholder and terminology checks (TXT-001..002) with exclusion lists.
+3. Placeholder and terminology checks (TXT-001..002) with exclusion lists. Include reviewer/production notes such as "Note to the GD", "Note to dev", "[insert …]", "TBD", highlighted comment text, alongside lorem ipsum.
 4. Fixtures: restricted link (401/403), timeout link, HEAD-405-then-GET, redirect chain, lazy image, broken media, placeholder text. Tests and UI updates.

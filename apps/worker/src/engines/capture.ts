@@ -79,6 +79,8 @@ export class InitialCapture implements CaptureProvider {
     page.on('requestfailed', (req) => {
       if (isMain(req)) return;
       if (this.isBlockedByUs(req.url())) return;
+      // Requests cancelled by the page itself (AbortController, route change) are not failures.
+      if (isAbort(req.failure()?.errorText)) return;
       failedRequests.push({ url: san(req.url()), resourceType: req.resourceType(), error: req.failure()?.errorText ?? 'failed' });
     });
     page.on('request', (req) => {
@@ -205,7 +207,7 @@ export class InitialCapture implements CaptureProvider {
     // ---- RUN-005 title, RUN-006 timing ----
     let title: string | undefined;
     if (pageUsable) {
-      title = (await page.title().catch(() => '')).trim();
+      title = await settledTitle(page);
       const titleEv = await ctx.evidence.addEvidence({ kind: 'text_excerpt', caption: 'Document title', data: { title }, stateId, viewportName, capturedAt: nowIso(), redacted: false });
       if (title) {
         checks.push(check('RUN-005', 'passed', 0, [titleEv.id], { stateId, viewportName }));
@@ -391,3 +393,17 @@ function safe<T>(fn: () => T): T | undefined {
   }
 }
 
+
+/** Single-page apps often set the title after load; wait briefly before judging it missing. */
+async function settledTitle(page: Page, timeoutMs = 5_000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const t = (await page.title().catch(() => '')).trim();
+    if (t || Date.now() > deadline) return t;
+    await page.waitForTimeout(250);
+  }
+}
+
+export function isAbort(errorText: string | undefined): boolean {
+  return errorText === 'net::ERR_ABORTED';
+}

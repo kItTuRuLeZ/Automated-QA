@@ -188,3 +188,16 @@ describe('restart recovery and run-time policy', () => {
     }
   });
 });
+
+describe('false-positive regressions found on real courses', () => {
+  it('a title set by script shortly after load is not reported as missing', async () => {
+    const run = await h.waitForTerminal(h.queueScan(`${fx.origin}/late-title/`, { explore: false }).id);
+    expect(h.store.listFindings(run.id).some((f) => f.ruleId === 'RUN-005')).toBe(false);
+    expect(h.store.listStates(run.id)[0]?.title).toBe('Late Title Fixture');
+  });
+
+  it('a request the page cancels itself (net::ERR_ABORTED) is not a failed request', async () => {
+    const run = await h.waitForTerminal(h.queueScan(`${fx.origin}/aborted-fetch/`, { explore: false }).id);
+    expect(h.store.listFindings(run.id).some((f) => f.ruleId === 'RUN-004')).toBe(false);
+  });
+});

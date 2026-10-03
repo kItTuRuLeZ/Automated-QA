@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Aborted Fetch Fixture</title></head>
+<body>
+  <h1>Cancels its own request</h1>
+  <script>
+    var c = new AbortController();
+    fetch('/slow', { signal: c.signal }).catch(function () {});
+    setTimeout(function () { c.abort(); }, 200);
+  </script>
+</body>
+</html>
