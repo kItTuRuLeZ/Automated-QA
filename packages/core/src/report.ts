@@ -9,6 +9,13 @@ import { ACTION_LABEL, type IssueAction, plainFinding } from './plain-language.j
 export interface ReportIssue {
   /** Stable across scans of the same page and problem, so it can be tracked. */
   id: string;
+  /** Rule category (accessibility, links, layout, …). */
+  category: string;
+  /** True for AI-written recommendations; reported separately and never counted with checked results. */
+  advisory: boolean;
+  /** Why the reviewer status is what it is (required for accepted risk and false positive). */
+  statusReason?: string;
+  assignee?: string;
   findingId: string;
   action: IssueAction;
   priority: Severity;
@@ -76,6 +83,26 @@ export interface RunReport {
   baselinesStored: number;
   /** Checks that did not run, grouped by reason (never counted as passed). */
   untested: Array<{ reason: string; count: number }>;
+  /** How the scan was configured, when it ran, and with which tools. */
+  scan: {
+    startedAt?: string;
+    finishedAt?: string;
+    scope: { origins: string[]; pathPrefixes: string[] };
+    budgets: { maxStates: number; maxDepth: number; maxRuntimeSeconds: number };
+    checksEnabled: string[];
+    screenSizes: string[];
+    toolVersions: Array<{ name: string; version: string }>;
+    platform?: string;
+    aiUsed: false;
+  };
+  /** Findings by rule category, grouped by what to do about them. */
+  byCategory: Array<{ category: string; fix: number; check: number; notChecked: number }>;
+  /** Controls and areas the scanner skipped, with the reason. Skipped is not passed. */
+  skippedActions: Array<{ what: string; reason: string; detail?: string }>;
+  /** Checks that hit an error (not a result about the course). */
+  errors: Array<{ rule: string; detail: string }>;
+  /** AI-written recommendations, kept separate from deterministic findings. */
+  advisory: ReportIssue[];
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
   checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number };
 }
@@ -134,7 +161,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
   issues.sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action] || SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority] || a.issue.localeCompare(b.issue));
 
   const bySeverity = Object.fromEntries((Object.keys(SEVERITY_ORDER) as Severity[]).map((s) => [s, 0])) as Record<Severity, number>;
-  for (const i of issues) if (i.action === 'fix') bySeverity[i.priority]++;
+  for (const i of issues) if (i.action === 'fix' && !i.advisory) bySeverity[i.priority]++;
 
   const reasons = new Map<string, number>();
   for (const c of store.listCheckResults(runId)) {
@@ -170,6 +197,38 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       }
     : undefined;
 
+  const engineNames: Array<[keyof typeof run.config.engines, string]> = [
+    ['capture', 'first page'],
+    ['traversal', 'click-through'],
+    ['links', 'links'],
+    ['media', 'images and media'],
+    ['content', 'placeholder text'],
+    ['accessibility', 'accessibility'],
+    ['keyboard', 'keyboard'],
+    ['layout', 'screen sizes and layout'],
+    ['performance', 'page load'],
+    ['visualBaseline', 'baseline comparison'],
+  ];
+  const allChecks = store.listCheckResults(runId);
+  const axeVersion = allChecks.find((c) => c.engineVersion)?.engineVersion;
+  const toolVersions = [...run.toolVersions, ...(axeVersion && !run.toolVersions.some((t) => axeVersion.startsWith(t.name)) ? [{ name: axeVersion.split(' ')[0]!, version: axeVersion.split(' ').slice(1).join(' ') }] : [])];
+  const categories = new Map<string, { fix: number; check: number; notChecked: number }>();
+  for (const i of issues) {
+    if (i.advisory) continue;
+    const c = categories.get(i.category) ?? { fix: 0, check: 0, notChecked: 0 };
+    if (i.action === 'fix') c.fix++;
+    else if (i.action === 'check') c.check++;
+    else c.notChecked++;
+    categories.set(i.category, c);
+  }
+  const skippedActions = [...actions.values()]
+    .filter((a) => a.outcome === 'skipped' || a.outcome === 'not_attempted')
+    .slice(0, 200)
+    .map((a) => ({ what: a.targetDescription, reason: a.reason ?? 'skipped', detail: a.reasonDetail }));
+  const errors = allChecks.filter((c) => c.outcome === 'error').slice(0, 100).map((c) => ({ rule: c.ruleId, detail: c.reasonDetail ?? c.reason ?? 'error' }));
+  const advisory = issues.filter((i) => i.advisory);
+  const core = issues.filter((i) => !i.advisory);
+
   return {
     run: {
       id: run.id,
@@ -181,9 +240,24 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       statusDetail: run.statusDetail,
       browser: run.browser ? `${run.browser.engine} ${run.browser.version}` : undefined,
     },
-    counts: { fix: issues.filter((i) => i.action === 'fix').length, check: issues.filter((i) => i.action === 'check').length, notChecked: issues.filter((i) => i.action === 'not_checked').length, bySeverity },
+    counts: { fix: core.filter((i) => i.action === 'fix').length, check: core.filter((i) => i.action === 'check').length, notChecked: core.filter((i) => i.action === 'not_checked').length, bySeverity },
     screens,
-    issues,
+    issues: core,
+    advisory,
+    scan: {
+      startedAt: run.startedAt,
+      finishedAt: run.finishedAt,
+      scope: { origins: run.config.scope.allowedOrigins, pathPrefixes: run.config.scope.allowedPathPrefixes },
+      budgets: { maxStates: run.config.budgets.maxStates, maxDepth: run.config.budgets.maxDepth, maxRuntimeSeconds: Math.round(run.config.budgets.maxRuntimeMs / 1000) },
+      checksEnabled: engineNames.filter(([k]) => run.config.engines[k]).map(([, label]) => label),
+      screenSizes: run.config.viewports.map((v) => `${v.name} ${v.width}×${v.height}`),
+      toolVersions,
+      platform: run.coverage?.platform,
+      aiUsed: false,
+    },
+    byCategory: [...categories.entries()].map(([category, c]) => ({ category, ...c })).sort((a, b) => b.fix - a.fix || a.category.localeCompare(b.category)),
+    skippedActions,
+    errors,
     viewports,
     performance,
     baselinesStored: store.countBaselines(run.projectId, run.config.target.url ?? ''),
@@ -224,6 +298,10 @@ function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: stri
   const described = [...new Set(f.occurrences.map((o) => o.location.elementDescription ?? o.location.selector).filter((x): x is string => Boolean(x)))];
   return {
     id: stableIssueId(f.fingerprint),
+    category: f.category,
+    advisory: f.type === 'ai_recommendation',
+    statusReason: f.reviewer.reason,
+    assignee: f.reviewer.assignee,
     findingId: f.id,
     action: plain.action,
     priority: f.severityOverride?.to ?? f.severity,

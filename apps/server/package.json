@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "exceljs": "^4.4.0",
-    "fastify": "^5.12.5"
+    "fastify": "^5.12.5",
+    "playwright": "^1.63.0"
   }
 }

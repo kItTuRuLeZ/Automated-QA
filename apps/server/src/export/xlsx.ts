@@ -29,7 +29,7 @@ const MANUAL_STATUS_CHOICES = ['Not started', 'In progress', 'Done', 'Not applic
 const PRIORITY_LABEL: Record<Severity, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', informational: 'Info' };
 const PRIORITY_FILL: Record<Severity, string> = { critical: 'FFF4B6B0', high: 'FFF9D5CF', medium: 'FFFFF0C2', low: 'FFDDE8FF', informational: 'FFEDEFF3' };
 
-const REASON_PLAIN: Record<string, string> = {
+export const REASON_PLAIN: Record<string, string> = {
   budget_states: 'Screen limit reached',
   budget_depth: 'Depth limit reached',
   budget_pages: 'Page limit reached',

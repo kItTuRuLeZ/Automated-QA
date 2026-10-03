@@ -5,6 +5,8 @@ import type { ProjectId } from '@cqa/shared';
 import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
+import { buildHtmlReport } from './export/html.js';
+import { renderPdf } from './export/pdf.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
 export interface AppOptions {
@@ -186,6 +188,37 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get<{ Params: { id: string } }>('/api/runs/:id/report', async (req, reply) => {
     if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply, 'Scan not found.');
     return buildRunReport(store, req.params.id);
+  });
+
+  // One report model, four formats: JSON, self-contained HTML, PDF, and Excel all come from buildRunReport.
+  const reportName = (run: { queuedAt: string; config: { target: { url?: string } } }, ext: string) => `course-qa-${hostSlug(run.config.target.url ?? '')}-${run.queuedAt.slice(0, 10)}.${ext}`;
+
+  app.get<{ Params: { id: string } }>('/api/runs/:id/export.json', async (req, reply) => {
+    const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!run) return notFound(reply, 'Scan not found.');
+    reply.header('Content-Type', 'application/json; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${reportName(run, 'json')}"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), tool: 'Course QA Automation', report: buildRunReport(store, run.id) }, null, 2));
+  });
+
+  app.get<{ Params: { id: string } }>('/api/runs/:id/export.html', async (req, reply) => {
+    const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!run) return notFound(reply, 'Scan not found.');
+    reply.header('Content-Type', 'text/html; charset=utf-8');
+    reply.header('Content-Disposition', `attachment; filename="${reportName(run, 'html')}"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString() }));
+  });
+
+  app.get<{ Params: { id: string } }>('/api/runs/:id/export.pdf', async (req, reply) => {
+    const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    if (!run) return notFound(reply, 'Scan not found.');
+    const pdf = await renderPdf(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString() }));
+    reply.header('Content-Type', 'application/pdf');
+    reply.header('Content-Disposition', `attachment; filename="${reportName(run, 'pdf')}"`);
+    reply.header('Cache-Control', 'no-store');
+    return reply.send(pdf);
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/export.xlsx', async (req, reply) => {

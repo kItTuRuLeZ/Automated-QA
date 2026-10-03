@@ -34,9 +34,20 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
             {r.coverage.budgetsReached.length > 0 && ', and the scan stopped at a limit, so other screens were not looked at'}.
           </p>
         </div>
-        <a className="btn btn-primary" href={`/api/runs/${run.id}/export.xlsx`} download>
-          Download Excel tracker
-        </a>
+        <div className="download-group" role="group" aria-label="Download this report">
+          <a className="btn btn-primary" href={`/api/runs/${run.id}/export.xlsx`} download>
+            Excel tracker
+          </a>
+          <a className="btn" href={`/api/runs/${run.id}/export.html`} download>
+            HTML report
+          </a>
+          <a className="btn" href={`/api/runs/${run.id}/export.pdf`} download>
+            PDF
+          </a>
+          <a className="btn" href={`/api/runs/${run.id}/export.json`} download>
+            JSON
+          </a>
+        </div>
       </div>
 
       <div className="big-counts" role="list">
