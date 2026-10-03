@@ -36,10 +36,10 @@ export const VIEWPORT_PRESETS: readonly Viewport[] = [
 ];
 
 export const DEFAULT_BUDGETS: ScanBudgets = {
-  maxPages: 1,
-  maxStates: 1,
-  maxDepth: 0,
-  maxRuntimeMs: 120_000,
+  maxPages: 10,
+  maxStates: 25,
+  maxDepth: 4,
+  maxRuntimeMs: 300_000,
   navigationTimeoutMs: 30_000,
   actionTimeoutMs: 10_000,
   maxRedirects: 10,
@@ -49,10 +49,10 @@ export const DEFAULT_BUDGETS: ScanBudgets = {
   concurrency: 1,
 };
 
-/** Phase 1 runs capture only; other engines report `not_tested` once they exist. */
-export const PHASE1_ENGINES: EngineSelection = {
+/** Engines available so far: initial capture and bounded traversal. */
+export const DEFAULT_ENGINES: EngineSelection = {
   capture: true,
-  traversal: false,
+  traversal: true,
   links: false,
   media: false,
   content: false,
@@ -63,6 +63,37 @@ export const PHASE1_ENGINES: EngineSelection = {
   visualBaseline: false,
   advisory: false,
 };
+
+/** Accessible-name fragments that mark a control as unsafe to click during read-only exploration. */
+export const DEFAULT_DENIED_NAME_PATTERNS = [
+  'submit',
+  'delete',
+  'remove',
+  'send',
+  'purchase',
+  'buy',
+  'pay',
+  'checkout',
+  'order',
+  'sign out',
+  'log out',
+  'logout',
+  'sign off',
+  'reset',
+  'restart',
+  'unsubscribe',
+  'publish',
+  'confirm',
+  'save',
+  'upload',
+  'download',
+  'print',
+  'exit',
+  'quit',
+  'retake',
+  'retry',
+  'check answer',
+];
 
 export function defaultScopeFor(url: URL): ScanScope {
   const port = url.port ? [Number(url.port)] : [];
@@ -75,16 +106,29 @@ export function buildScanConfig(input: {
   scope?: Partial<ScanScope>;
   navigationTimeoutMs?: number;
   viewport?: Viewport;
+  explore?: boolean;
+  maxStates?: number;
+  maxDepth?: number;
 }): ScanConfig {
   const scope = { ...defaultScopeFor(input.url), ...input.scope };
   return {
     projectId: input.projectId,
     target: { kind: 'url', url: input.url.toString() },
     scope,
-    budgets: { ...DEFAULT_BUDGETS, navigationTimeoutMs: input.navigationTimeoutMs ?? DEFAULT_BUDGETS.navigationTimeoutMs },
+    budgets: {
+      ...DEFAULT_BUDGETS,
+      navigationTimeoutMs: input.navigationTimeoutMs ?? DEFAULT_BUDGETS.navigationTimeoutMs,
+      maxStates: input.maxStates ?? DEFAULT_BUDGETS.maxStates,
+      maxDepth: input.maxDepth ?? DEFAULT_BUDGETS.maxDepth,
+    },
     viewports: [input.viewport ?? DEFAULT_VIEWPORT],
-    engines: PHASE1_ENGINES,
-    actionPolicy: { allowedKinds: ['navigate'], deniedNamePatterns: [], allowFormSubmission: false, followExternalLinks: false },
+    engines: { ...DEFAULT_ENGINES, traversal: input.explore ?? true },
+    actionPolicy: {
+      allowedKinds: ['navigate', 'select_tab', 'expand', 'open_dialog', 'close_dialog', 'next', 'back'],
+      deniedNamePatterns: DEFAULT_DENIED_NAME_PATTERNS,
+      allowFormSubmission: false,
+      followExternalLinks: false,
+    },
     redaction: DEFAULT_REDACTION,
     configVersion: 1,
   };

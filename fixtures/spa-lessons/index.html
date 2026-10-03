@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>SPA Lessons Fixture</title></head>
+<body>
+  <main>
+    <h1 id="lesson-title"></h1>
+    <p id="lesson-body"></p>
+    <nav aria-label="Lesson navigation">
+      <button type="button" id="back">Back</button>
+      <button type="button" id="next">Next</button>
+    </nav>
+  </main>
+  <script>
+    var lessons = [
+      { title: 'Lesson 1: Welcome', body: 'Welcome to the course.' },
+      { title: 'Lesson 2: Basics', body: 'The basic ideas.' },
+      { title: 'Lesson 3: Summary', body: 'What you learned.' }
+    ];
+    function current() {
+      var m = location.hash.match(/^#\/lessons\/(\d+)/);
+      return m ? Math.min(Math.max(Number(m[1]), 1), lessons.length) : 1;
+    }
+    function render() {
+      var n = current();
+      document.getElementById('lesson-title').textContent = lessons[n - 1].title;
+      document.getElementById('lesson-body').textContent = lessons[n - 1].body;
+      document.getElementById('back').disabled = n === 1;
+      document.getElementById('next').disabled = n === lessons.length;
+    }
+    document.getElementById('next').addEventListener('click', function () { location.hash = '#/lessons/' + (current() + 1); });
+    document.getElementById('back').addEventListener('click', function () { location.hash = '#/lessons/' + (current() - 1); });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>

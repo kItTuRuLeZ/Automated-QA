@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Unsafe Actions Fixture</title></head>
+<body>
+  <h1>Controls that must not be clicked</h1>
+  <form action="/unsafe-actions/submitted" method="post">
+    <label>Answer <input name="answer"></label>
+    <button>Send answer</button>
+  </form>
+  <button type="button" id="delete" onclick="document.title = 'DELETED'">Delete my progress</button>
+  <button type="button" id="buy" onclick="document.title = 'PURCHASED'">Buy certificate</button>
+  <button type="button" id="hint" onclick="document.getElementById('h').hidden = false">Show hint</button>
+  <p id="h" hidden>Hint text.</p>
+</body>
+</html>

@@ -34,6 +34,16 @@ export async function startFixtureServer(): Promise<FixtureServer> {
     const url = new URL(req.url ?? '/', 'http://fixture');
     if (url.pathname === '/redirect/in') return void res.writeHead(302, { Location: '/healthy/' }).end();
     if (url.pathname === '/redirect/out') return void res.writeHead(302, { Location: `${otherOrigin}/landing` }).end();
+    if (url.pathname === '/iframe/') {
+      return void res
+        .writeHead(200, { 'Content-Type': 'text/html' })
+        .end(
+          `<!doctype html><html lang="en"><title>Iframe Fixture</title><h1>Embedded frames</h1>` +
+            `<iframe id="external" title="External widget" src="${otherOrigin}/landing"></iframe>` +
+            `<iframe id="blocked" title="Blocked widget" src="http://169.254.169.254/widget"></iframe>` +
+            `<iframe id="local" title="Local frame" src="/healthy/"></iframe></html>`,
+        );
+    }
     if (url.pathname === '/http-404') return void res.writeHead(404, { 'Content-Type': 'text/html' }).end('<!doctype html><title>Not found</title><h1>404</h1>');
     if (url.pathname === '/slow') {
       pending.add(res);

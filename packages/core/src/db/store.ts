@@ -21,6 +21,7 @@ import type {
   ScanRunId,
   Severity,
   ToolVersion,
+  TraversalAction,
 } from '@cqa/shared';
 import { CHECK_OUTCOMES, FINDING_TYPES, SEVERITIES } from '@cqa/shared';
 import { newId, nowIso } from '../fingerprint.js';
@@ -279,15 +280,29 @@ export class Store {
 
   // ---- results ----
 
+  /** Inserts or replaces a state (the traversal engine refines the initial state captured earlier). */
   insertState(state: CourseState): void {
     this.db
-      .prepare('INSERT INTO course_states (id, run_id, url, title, signature, depth, viewport_name, data_json, captured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .prepare('INSERT OR REPLACE INTO course_states (id, run_id, url, title, signature, depth, viewport_name, data_json, captured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .run(state.id, state.runId, state.url, state.title ?? null, state.signature, state.depth, state.viewportName, JSON.stringify(state), state.capturedAt);
   }
 
   listStates(runId: string): CourseState[] {
     return (this.db.prepare('SELECT data_json FROM course_states WHERE run_id = ? ORDER BY captured_at').all(runId) as Array<{ data_json: string }>).map(
       (r) => JSON.parse(r.data_json) as CourseState,
+    );
+  }
+
+  insertActions(actions: readonly TraversalAction[]): void {
+    const stmt = this.db.prepare('INSERT INTO traversal_actions (id, run_id, seq, kind, from_state_id, to_state_id, outcome, reason, data_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    this.db.transaction(() => {
+      actions.forEach((a, i) => stmt.run(a.id, a.runId, i, a.kind, a.fromStateId, a.toStateId ?? null, a.outcome, a.reason ?? null, JSON.stringify(a)));
+    })();
+  }
+
+  listActions(runId: string): TraversalAction[] {
+    return (this.db.prepare('SELECT data_json FROM traversal_actions WHERE run_id = ? ORDER BY seq').all(runId) as Array<{ data_json: string }>).map(
+      (r) => JSON.parse(r.data_json) as TraversalAction,
     );
   }
 

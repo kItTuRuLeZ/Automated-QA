@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Tabs Fixture</title></head>
+<body>
+  <h1>Tabs</h1>
+  <div role="tablist" aria-label="Working tabs">
+    <button role="tab" id="tab-a" aria-selected="true" aria-controls="panel-a">Overview</button>
+    <button role="tab" id="tab-b" aria-selected="false" aria-controls="panel-b">Details</button>
+    <button role="tab" id="tab-c" aria-selected="false" aria-controls="panel-c">Resources</button>
+  </div>
+  <div role="tabpanel" id="panel-a">Overview content.</div>
+  <div role="tabpanel" id="panel-b" hidden>Details content.</div>
+  <div role="tabpanel" id="panel-c" hidden>Resources content.</div>
+
+  <h2>Broken tabs</h2>
+  <div role="tablist" aria-label="Broken tabs">
+    <button role="tab" id="btab-a" aria-selected="true" aria-controls="bpanel-a">Intro</button>
+    <button role="tab" id="btab-b" aria-selected="false" aria-controls="bpanel-b">Broken tab</button>
+  </div>
+  <div role="tabpanel" id="bpanel-a">Intro content.</div>
+  <div role="tabpanel" id="bpanel-b" hidden>Never shown.</div>
+
+  <script>
+    document.querySelectorAll('[aria-label="Working tabs"] [role="tab"]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        document.querySelectorAll('[aria-label="Working tabs"] [role="tab"]').forEach(function (t) {
+          t.setAttribute('aria-selected', String(t === tab));
+          document.getElementById(t.getAttribute('aria-controls')).hidden = t !== tab;
+        });
+      });
+    });
+    // The broken tab list has no click handler.
+  </script>
+</body>
+</html>

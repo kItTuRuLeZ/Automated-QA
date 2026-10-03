@@ -105,7 +105,16 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     if (input.allowedOrigins?.length) scope.allowedOrigins = [...new Set([target.url.origin, ...input.allowedOrigins])];
     if (input.allowedPathPrefixes?.length) scope.allowedPathPrefixes = input.allowedPathPrefixes;
     const viewport = input.viewport ? { ...input.viewport, deviceScaleFactor: 1, isMobile: input.viewport.width < 768, hasTouch: input.viewport.width < 768 } : undefined;
-    const config = buildScanConfig({ projectId: project.id as ProjectId, url: target.url, scope, navigationTimeoutMs: input.navigationTimeoutMs, viewport });
+    const config = buildScanConfig({
+      projectId: project.id as ProjectId,
+      url: target.url,
+      scope,
+      navigationTimeoutMs: input.navigationTimeoutMs,
+      viewport,
+      explore: input.explore,
+      maxStates: input.maxStates,
+      maxDepth: input.maxDepth,
+    });
     // Pre-check scope and resolved destination; denied targets are never queued.
     const decision = await policy.validateTarget(target.url.toString(), config.scope);
     if (!decision.ok) return reply.code(422).send({ error: decision.detail, reason: decision.reason, ruleId: 'NET-001' });
@@ -118,7 +127,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const screenshots = store
       .listEvidenceByKind(run.id, 'screenshot')
       .filter((e) => e.artifactId)
-      .map((e) => ({ artifactId: e.artifactId, caption: e.caption, viewportName: e.viewportName }));
+      .map((e) => ({ artifactId: e.artifactId, caption: e.caption, viewportName: e.viewportName, stateId: e.stateId }));
     return { ...run, summary: store.summarizeRun(run.id), states: store.listStates(run.id), screenshots };
   });
 
@@ -141,6 +150,11 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get<{ Params: { id: string } }>('/api/runs/:id/findings', async (req, reply) => {
     if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply);
     return store.listFindings(req.params.id);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/runs/:id/actions', async (req, reply) => {
+    if (!isOpaqueId(req.params.id) || !store.getRun(req.params.id)) return notFound(reply);
+    return store.listActions(req.params.id);
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/checks', async (req, reply) => {

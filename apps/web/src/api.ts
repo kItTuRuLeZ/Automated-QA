@@ -1,11 +1,11 @@
-import type { CheckResult, CourseState, Evidence, Finding, Project, RunSummary, ScanRun } from '@cqa/shared';
+import type { CheckResult, CourseState, Evidence, Finding, Project, RunSummary, ScanRun, TraversalAction } from '@cqa/shared';
 
 export interface ProjectListItem extends Project {
   runCount: number;
   lastRun?: { id: string; status: ScanRun['status']; queuedAt: string };
 }
 export type RunWithSummary = ScanRun & { summary: RunSummary };
-export type RunDetail = RunWithSummary & { states: CourseState[]; screenshots: Array<{ artifactId: string; caption: string; viewportName?: string }> };
+export type RunDetail = RunWithSummary & { states: CourseState[]; screenshots: Array<{ artifactId: string; caption: string; viewportName?: string; stateId?: string }> };
 export interface FindingDetail {
   finding: Finding;
   evidence: Evidence[];
@@ -40,12 +40,22 @@ export const api = {
   listRuns: (projectId: string) => request<RunWithSummary[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/runs`),
   createScan: (
     projectId: string,
-    input: { url: string; allowedOrigins?: string[]; allowedPathPrefixes?: string[]; navigationTimeoutMs?: number; viewport?: { name: string; width: number; height: number } },
+    input: {
+      url: string;
+      allowedOrigins?: string[];
+      allowedPathPrefixes?: string[];
+      navigationTimeoutMs?: number;
+      viewport?: { name: string; width: number; height: number };
+      explore?: boolean;
+      maxStates?: number;
+      maxDepth?: number;
+    },
   ) => request<ScanRun>('POST', `/api/projects/${encodeURIComponent(projectId)}/scans`, input),
   getRun: (id: string) => request<RunDetail>('GET', `/api/runs/${encodeURIComponent(id)}`),
   cancelRun: (id: string) => request<{ status: ScanRun['status'] }>('POST', `/api/runs/${encodeURIComponent(id)}/cancel`, {}),
   deleteRun: (id: string) => request<void>('DELETE', `/api/runs/${encodeURIComponent(id)}`),
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
+  listActions: (runId: string) => request<TraversalAction[]>('GET', `/api/runs/${encodeURIComponent(runId)}/actions`),
   listChecks: (runId: string) => request<CheckResult[]>('GET', `/api/runs/${encodeURIComponent(runId)}/checks`),
   getFinding: (id: string) => request<FindingDetail>('GET', `/api/findings/${encodeURIComponent(id)}`),
   artifactUrl: (id: string) => `/api/artifacts/${encodeURIComponent(id)}`,

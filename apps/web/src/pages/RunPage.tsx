@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { CheckResult, Finding } from '@cqa/shared';
 import { api } from '../api';
+import { Coverage } from '../components/Coverage';
 import {
   Empty,
   ErrorBox,
@@ -135,7 +136,7 @@ export function RunPage({ id }: { id: string }) {
               <dd>{r.browser ? `${r.browser.engine} ${r.browser.version}` : '—'}</dd>
             </div>
           </dl>
-          {r.screenshots.map((shot) => (
+          {r.screenshots.filter((shot) => shot.stateId === screenshot.id).slice(0, 1).map((shot) => (
             <figure className="screenshot" key={shot.artifactId}>
               <img src={api.artifactUrl(shot.artifactId)} alt="Screenshot of the initial course page as captured by the scanner" loading="lazy" />
               <figcaption>{shot.caption}</figcaption>
@@ -152,6 +153,8 @@ export function RunPage({ id }: { id: string }) {
       ) : (
         <FindingsTable findings={findings.data} />
       )}
+
+      <Coverage run={r} states={r.states} screenshots={r.screenshots} />
 
       <details className="card">
         <summary>

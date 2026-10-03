@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Modal Fixture</title>
+<style>[role="dialog"] { position: fixed; inset: 20% 20%; background: #fff; border: 2px solid #333; padding: 1rem; }</style>
+</head>
+<body>
+  <h1>Dialogs</h1>
+  <button type="button" id="open-good" aria-haspopup="dialog" aria-controls="dlg-good">Open glossary</button>
+  <button type="button" id="open-broken" aria-haspopup="dialog" aria-controls="dlg-never">Open help</button>
+  <button type="button" id="open-sticky" aria-haspopup="dialog" aria-controls="dlg-sticky">Open notice</button>
+
+  <div role="dialog" id="dlg-good" aria-modal="true" aria-labelledby="dlg-good-title" hidden>
+    <h2 id="dlg-good-title">Glossary</h2>
+    <p>Terms used in this course.</p>
+    <button type="button" id="close-good">Close</button>
+  </div>
+  <div role="dialog" id="dlg-never" aria-modal="true" aria-label="Help" hidden><p>Never opens.</p></div>
+  <div role="dialog" id="dlg-sticky" aria-modal="true" aria-labelledby="dlg-sticky-title" hidden>
+    <h2 id="dlg-sticky-title">Notice</h2>
+    <button type="button" id="close-sticky">Close</button>
+  </div>
+  <script>
+    function wire(openId, dlgId, closeId, closes) {
+      document.getElementById(openId).addEventListener('click', function () { document.getElementById(dlgId).hidden = false; });
+      if (closeId && closes) document.getElementById(closeId).addEventListener('click', function () { document.getElementById(dlgId).hidden = true; });
+    }
+    wire('open-good', 'dlg-good', 'close-good', true);
+    wire('open-sticky', 'dlg-sticky', 'close-sticky', false); // close button does nothing
+    // open-broken has no handler.
+  </script>
+</body>
+</html>

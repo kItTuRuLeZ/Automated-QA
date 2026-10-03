@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 1 complete. **Next phase ready to run: Phase 2.**
+**Current state:** Phase 2a (traversal and coverage) complete. **Next: Phase 2b (links, media, text checks).**
 
 ## Phase checklist
 
@@ -10,7 +10,7 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | --- | --- | --- |
 | 0 | Architecture, scope, and execution plan | ✅ Complete (2026-10-03) |
 | 1 | Working local application and URL scan pipeline | ✅ Complete (2026-10-03) |
-| 2 | Bounded traversal, functional checks, links, media | ⏭ Next |
+| 2 | Bounded traversal, functional checks, links, media | 🟡 2a complete (2026-10-03); 2b next |
 | 3 | Automated accessibility and keyboard review | Not started |
 | 4 | Responsive, visual heuristics, performance evidence | Not started |
 | 5 | Reports, client profiles, retest, standalone V1 | Not started |
@@ -108,11 +108,51 @@ A working local application: create a project, configure and validate a URL scan
 - Server and worker run TypeScript through `tsx` (no compiled bundle).
 - npm 11 reports `esbuild` install scripts as not yet approved (`npm approve-scripts`); builds and tests work without it.
 
-## Phase 2 — plan (next)
+## Phase 2a — delivered (traversal and coverage)
 
-1. State signatures (URL, lesson ID where observable, open dialogs, selected tabs, normalized DOM hash) and a bounded traversal engine with loop prevention and state restoration.
-2. Generic HTML adapter (safe links, tabs, accordions, dialogs, Next/Back) with expected postconditions; unsafe-action deny list (COV-001).
-3. Coverage: inaccessible frames (COV-002), canvas surfaces (COV-003), budgets (COV-004), state/action graph in UI.
-4. Link checks (LNK-001..005) through the same policy and pinning; HEAD with bounded GET fallback.
-5. Media checks (MED-001..005) with scroll/wait for lazy content; placeholder/terminology (TXT-001..002) with exclusions.
-6. Fixtures and tests per TEST_STRATEGY Phase 2 rows. Consider splitting into 2a (traversal) and 2b (links/media/text).
+- **State signatures** (`apps/worker/src/adapters/dom-scripts.ts`): URL without query (hash kept for SPA routes), lesson ID from hash routes or `data-lesson-id`, open dialogs, selected tabs, expanded sections, and a hash of visible text. Replay verification accepts a strict match or a structural match (same everything except text hash).
+- **Generic HTML adapter** (`adapters/generic-html.ts`): recognizes ARIA tabs, disclosure buttons, `<details>`, dialog openers (`aria-haspopup="dialog"` or `aria-controls` to a dialog), close controls inside dialogs, Next/Back controls, in-scope links (including hash routes). Each action carries machine-checkable postconditions (`PostconditionCheck` in `packages/shared`). Disabled, already-selected, and already-expanded controls are not attempted. Modal dialogs restrict discovery to their contents.
+- **Unsafe-action policy**: form submit buttons, `submit`/`reset`/`file` inputs, and names matching the deny list (submit, delete, send, buy, pay, order, sign out, reset, save, download, exit, retake, check answer, …) are skipped as `unsafe_action`. Unrecognized controls are skipped as `ambiguous_action`, never clicked blindly.
+- **Traversal engine** (`engines/traversal.ts`): breadth-first, restores each state by reloading the target and replaying its action path, detects loops by signature, explores in-page interactions before links, and stops at max states, max depth, max pages, or the runtime budget. Results: NAV-001 (tabs/accordions/dialog openers), NAV-002 (Next/Back/links with no change, inconclusive), NAV-003 (dialog close), uncaught exceptions and failed requests triggered by an action (RUN-002/RUN-004 with the action path as reproduction steps), and a screenshot per new state.
+- **Coverage**: COV-001 (skipped actions), COV-002 (frames out of scope, blocked, or not yet explored), COV-003 (canvas surfaces), COV-004 (budgets). Run is `partial` when a budget is reached or a transition fails. Coverage summary stored on the run.
+- **Storage/API**: migration 2 adds `traversal_actions`; `GET /api/runs/:id/actions`; scan input accepts `explore`, `maxStates`, `maxDepth`.
+- **UI**: New Scan has an Exploration section (toggle, max states, max depth). Run page has a Coverage section: summary, states table with per-state screenshots, actions table filtered by Problems / Attempted / Skipped / All.
+
+### Commands run (Phase 2a)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed, exit 0 |
+| `npm run build -w @cqa/web` | Built |
+| `npx vitest run` | **85 passed / 85** (adds 11 traversal tests with real Chromium) |
+| `npx vitest run tests/traversal.integration.test.ts` after reordering | 11 passed |
+| Manual: UI scan of the W3C APG tabs example (`maxStates` 8, `maxDepth` 1) | Partial (state budget), states table with screenshots, COV-001 for a form submit button, COV-002 for an embedded third-party frame, COV-004 budget finding. It revealed that site links were explored before the tabs; fixed by ordering in-page interactions first, then re-verified with a harness run: all three tabs and the disclosure were exercised and passed before any link. |
+
+### Acceptance (Phase 2 rows covered by 2a)
+
+| Criterion | Result |
+| --- | --- |
+| SPA lessons produce expected coverage | Passed (lessons 1–3 recorded via hash routes; disabled Next/Back not attempted). |
+| Accordion, tab, modal fixtures produce expected results | Passed (working controls pass; dead tab, dead section, dead dialog opener → NAV-001; dead close → NAV-003). |
+| Navigation loop terminates | Passed (cycling Next returns to a known state; no budget hit). |
+| Inaccessible iframe disclosed | Passed (out-of-scope, policy-blocked, and in-scope-but-unexplored frames each reported; never counted as passed). |
+| Scan budgets stop exploration predictably | Passed (max states 2 → exactly 2 states, partial, COV-004; max depth 1 → no state deeper than 1). |
+| Unsafe actions skipped with reasons | Passed (submit, delete, buy skipped as unsafe; "Show hint" skipped as ambiguous; page state proves none were clicked). |
+| Findings have actionable reproduction paths | Passed (NAV findings list open URL + each replayed action + the failing action + expected result, with a screenshot). |
+| Restricted link, lazy image, broken media fixtures | **Pending: Phase 2b.** |
+
+### Known limitations (Phase 2a)
+
+- Controls inside frames are not explored yet; in-scope frames are disclosed as `not_implemented` (COV-002).
+- Restoring a state replays its whole path from a fresh load, so deep paths cost time. Content that changes on every load (timers, random order) can make restoration fail; this is reported as a failed transition, not hidden.
+- The same broken control is retried in each state where it appears; findings merge by fingerprint (one finding, several occurrences) but each attempt is a separate check execution.
+- A lesson reached by URL hash (for example `#/lessons/1`) and the same lesson at the bare URL are distinct states, because their URLs differ.
+- The page receives a tiny `globalThis.__name` shim so serialized helper functions run under `tsx`; it does not affect course behavior.
+- Recognition is pattern-based: custom widgets without ARIA roles/attributes are skipped as ambiguous until a platform adapter (Phase 7) knows them.
+
+## Phase 2b — plan (next)
+
+1. Link checks (LNK-001..005): collect links from every reached state, normalize and deduplicate, HEAD with bounded GET fallback through the same policy and IP pinning, classify HTTP failure vs 401/403 vs timeout vs unverified destination, never download whole large resources.
+2. Media checks (MED-001..005): broken images after scrolling into view and waiting for lazy loading, `MediaError` and failed media requests, caption track metadata, configurable size warnings.
+3. Placeholder and terminology checks (TXT-001..002) with exclusion lists.
+4. Fixtures: restricted link (401/403), timeout link, HEAD-405-then-GET, redirect chain, lazy image, broken media, placeholder text. Tests and UI updates.

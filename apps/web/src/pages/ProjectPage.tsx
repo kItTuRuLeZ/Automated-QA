@@ -79,6 +79,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
   const [prefixes, setPrefixes] = useState('');
   const [timeoutSec, setTimeoutSec] = useState(30);
   const [viewport, setViewport] = useState('desktop');
+  const [explore, setExplore] = useState(true);
+  const [maxStates, setMaxStates] = useState(25);
+  const [maxDepth, setMaxDepth] = useState(4);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -99,6 +102,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
         allowedPathPrefixes: lines(prefixes),
         navigationTimeoutMs: timeoutSec * 1000,
         viewport: VIEWPORTS.find((v) => v.name === viewport),
+        explore,
+        maxStates,
+        maxDepth,
       });
       onQueued(run.id);
     } catch (err) {
@@ -112,8 +118,9 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
     <form className="card form" onSubmit={submit} aria-labelledby="new-scan-heading">
       <h2 id="new-scan-heading">New scan</h2>
       <p className="muted">
-        Phase 1 captures the initial page: screenshot, title, final URL, JavaScript exceptions, console errors, failed requests, and load timing. Private, loopback, and reserved
-        network addresses are blocked.
+        Captures the initial page (screenshot, title, final URL, JavaScript exceptions, console errors, failed requests, load timing), then optionally explores recognized
+        tabs, accordions, dialogs, Next/Back controls, and in-scope links without submitting forms or clicking unsafe controls. Private, loopback, and reserved network
+        addresses are blocked.
       </p>
       <div className="field">
         <label htmlFor="s-url">Course URL</label>
@@ -151,6 +158,22 @@ function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; d
           </select>
         </div>
       </div>
+      <fieldset className="fieldset">
+        <legend>Exploration</legend>
+        <label className="checkbox">
+          <input type="checkbox" checked={explore} onChange={(e) => setExplore(e.target.checked)} /> Explore course interactions (read-only)
+        </label>
+        <div className="grid-2">
+          <div className="field">
+            <label htmlFor="s-states">Maximum states</label>
+            <input id="s-states" type="number" min={1} max={200} required disabled={!explore} value={maxStates} onChange={(e) => setMaxStates(Number(e.target.value))} />
+          </div>
+          <div className="field">
+            <label htmlFor="s-depth">Maximum depth (actions from the start)</label>
+            <input id="s-depth" type="number" min={0} max={10} required disabled={!explore} value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
+          </div>
+        </div>
+      </fieldset>
       {error && (
         <p className="alert alert-error" role="alert">
           {error}

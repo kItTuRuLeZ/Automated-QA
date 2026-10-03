@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Canvas Fixture</title></head>
+<body>
+  <h1>Canvas-rendered interaction</h1>
+  <canvas id="stage" width="640" height="360"></canvas>
+  <script>
+    var ctx = document.getElementById('stage').getContext('2d');
+    ctx.fillStyle = '#2563eb'; ctx.fillRect(0, 0, 640, 360);
+    ctx.fillStyle = '#fff'; ctx.font = '24px sans-serif'; ctx.fillText('Click the correct answer', 40, 60);
+  </script>
+</body>
+</html>

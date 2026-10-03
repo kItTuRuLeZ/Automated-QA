@@ -189,9 +189,27 @@ export interface TraversalAction {
   outcome: ActionOutcome;
   /** Why the action was skipped or not attempted. */
   reason?: ReasonCode;
+  reasonDetail?: string;
+  /** Machine-checkable postconditions the adapter declares; all must hold. */
+  postconditions?: PostconditionCheck[];
+  /** For link navigation: the sanitized destination. */
+  href?: string;
   durationMs?: number;
   adapter: string;
 }
+
+/**
+ * An observable result an adapter expects from an action. The traversal
+ * engine evaluates these; adapters never mark their own actions as passed.
+ */
+export type PostconditionCheck =
+  | { type: 'attribute_equals'; locator: string; attribute: string; value: string }
+  | { type: 'property_true'; locator: string; property: string }
+  | { type: 'visible'; locator: string }
+  | { type: 'hidden'; locator: string }
+  | { type: 'dialog_count_increases' }
+  | { type: 'signature_changes' }
+  | { type: 'url_changes' };
 
 export interface Project {
   id: ProjectId;

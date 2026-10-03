@@ -14,7 +14,7 @@ export interface Harness {
   tmpRoot: string;
   worker?: WorkerLoop;
   startWorker(): WorkerLoop;
-  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number }): ScanRun;
+  queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; maxStates?: number; maxDepth?: number; allowedOrigins?: string[] }): ScanRun;
   waitForTerminal(runId: string, timeoutMs?: number): Promise<ScanRun>;
   close(): Promise<void>;
 }
@@ -46,7 +46,15 @@ export function createHarness(policyOptions: PolicyOptions = {}): Harness {
     },
     queueScan(url, opts = {}) {
       project ??= store.createProject({ name: 'Fixture project' }).id;
-      const config = buildScanConfig({ projectId: project, url: new URL(url), navigationTimeoutMs: opts.navigationTimeoutMs ?? 10_000 });
+      const config = buildScanConfig({
+        projectId: project,
+        url: new URL(url),
+        navigationTimeoutMs: opts.navigationTimeoutMs ?? 10_000,
+        explore: opts.explore,
+        maxStates: opts.maxStates,
+        maxDepth: opts.maxDepth,
+        scope: opts.allowedOrigins ? { allowedOrigins: [new URL(url).origin, ...opts.allowedOrigins] } : undefined,
+      });
       if (opts.maxRuntimeMs) config.budgets.maxRuntimeMs = opts.maxRuntimeMs;
       return store.createRun(config, url);
     },

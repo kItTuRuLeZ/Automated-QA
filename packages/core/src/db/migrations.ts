@@ -116,4 +116,22 @@ CREATE TABLE findings (
 CREATE INDEX idx_findings_run ON findings(run_id);
 `,
   },
+  {
+    version: 2,
+    name: 'traversal_actions',
+    sql: `
+CREATE TABLE traversal_actions (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  from_state_id TEXT NOT NULL,
+  to_state_id TEXT,
+  outcome TEXT NOT NULL,
+  reason TEXT,
+  data_json TEXT NOT NULL
+);
+CREATE INDEX idx_actions_run ON traversal_actions(run_id, seq);
+`,
+  },
 ];

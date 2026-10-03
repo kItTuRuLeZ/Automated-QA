@@ -61,13 +61,13 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Evidence | Applicability | Type | Sev/Conf | Ph | Cap | Limitations |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| NAV-001 | Recognized control produces its expected postcondition (tab selects panel, accordion expands, dialog opens, Next advances) | Action path, before/after state signature, screenshots | Adapter-recognized controls | automated_defect | High/medium | 2 | planned | Only for controls whose expected result the adapter defines; otherwise NAV-002. |
-| NAV-002 | Action produced no observable change | Action, before/after signature | Attempted actions | manual_review | Low/low | 2 | planned | Inconclusive, never labelled broken automatically. |
-| NAV-003 | Dialog can be closed | Action path | Recognized dialogs | automated_defect | Medium/medium | 2 | planned | Close mechanism must be recognized. |
-| COV-001 | Unsafe or ambiguous action skipped | Element, reason | Discovered actions | manual_review | Informational/high | 2 | planned | — |
-| COV-002 | Inaccessible frame (cross-origin/sandboxed/blocked) | Frame URL (sanitized), reason | Every state | manual_review | Informational/high | 2 | planned | Content inside is unverified. |
-| COV-003 | Canvas/unsupported rendering surface detected | Canvas size, location, screenshot | Every state | manual_review | Informational/high | 2 | planned | DOM checks cannot inspect canvas content (e.g. parts of Storyline). |
-| COV-004 | Scan budget reached (pages, states, depth, time) | Budget, counts | Run | manual_review | Informational/high | 2 | planned | Remaining states unverified. |
+| NAV-001 | Recognized control produces its expected postcondition (tab selects panel, accordion expands, dialog opens, Next advances) | Action path, before/after state signature, screenshots | Adapter-recognized controls | automated_defect | High/medium | 2 | implemented | Only for controls whose expected result the adapter defines; otherwise NAV-002. |
+| NAV-002 | Action produced no observable change | Action, before/after signature | Attempted actions | manual_review | Low/low | 2 | implemented | Inconclusive, never labelled broken automatically. |
+| NAV-003 | Dialog can be closed | Action path | Recognized dialogs | automated_defect | Medium/medium | 2 | implemented | Close mechanism must be recognized. |
+| COV-001 | Unsafe or ambiguous action skipped | Element, reason | Discovered actions | manual_review | Informational/high | 2 | implemented | — |
+| COV-002 | Inaccessible frame (cross-origin/sandboxed/blocked) | Frame URL (sanitized), reason | Every state | manual_review | Informational/high | 2 | implemented | Content inside is unverified. |
+| COV-003 | Canvas/unsupported rendering surface detected | Canvas size, location, screenshot | Every state | manual_review | Informational/high | 2 | implemented | DOM checks cannot inspect canvas content (e.g. parts of Storyline). |
+| COV-004 | Scan budget reached (pages, states, depth, time) | Budget, counts | Run | manual_review | Informational/high | 2 | implemented | Remaining states unverified. |
 
 ### Links (LNK)
 
@@ -170,7 +170,7 @@ Always listed in reports; never auto-passed.
 | Area | Implemented | Planned (deterministic) | Heuristic | Manual |
 | --- | --- | --- | --- | --- |
 | Load / runtime / network | RUN-001..006, NET-001..003 (Phase 1) | — | RUN-003 | — |
-| Traversal & coverage | — | NAV-001, NAV-003, COV-001..004 | NAV-002 (inconclusive) | MAN-006 |
+| Traversal & coverage | NAV-001..003, COV-001..004 (Phase 2a) | — | NAV-002 (inconclusive) | MAN-006 |
 | Links | — | LNK-001..003, LNK-005 | — | LNK-004, MAN-005 |
 | Media | — | MED-001..003, MED-005 | MED-004 | MAN-004 |
 | Text | — | TXT-001 | TXT-002 | — |

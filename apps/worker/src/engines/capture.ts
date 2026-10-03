@@ -13,11 +13,10 @@ import type {
   Severity,
   StateId,
 } from '@cqa/shared';
-import { type NetworkPolicy, PHASE1_RULES, fingerprint, getRule, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
+import { type NetworkPolicy, PHASE1_RULES, fingerprint, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
+import { type NewCheck, type NewFinding, capitalize, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
 
-type NewCheck = EngineResult['checkResults'][number];
-type NewFinding = EngineResult['findings'][number];
 
 export interface CaptureOutput extends EngineResult {
   state?: CourseState;
@@ -64,6 +63,8 @@ export class InitialCapture implements CaptureProvider {
     page.on('console', (msg) => {
       if (msg.type() !== 'error') return;
       const loc = msg.location();
+      // Chromium logs a console error for every request our policy blocked; those are NET-002, not course errors.
+      if (loc.url && this.isBlockedByUs(loc.url)) return;
       consoleErrors.push({ text: sanitizeText(msg.text(), redaction), location: loc.url ? `${san(loc.url)}:${loc.lineNumber}` : undefined, at: nowIso() });
     });
     let mainRequest: Request | undefined;
@@ -382,85 +383,11 @@ export class InitialCapture implements CaptureProvider {
   }
 }
 
-function check(
-  ruleId: RuleId,
-  outcome: CheckOutcome,
-  durationMs: number,
-  evidenceIds: EvidenceId[],
-  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number },
-): NewCheck {
-  const c: NewCheck = { ruleId, outcome, durationMs, evidenceIds, executedAt: nowIso() };
-  if (extra.stateId) c.stateId = extra.stateId;
-  if (extra.viewportName) c.viewportName = extra.viewportName;
-  if (extra.reason) c.reason = extra.reason;
-  if (extra.reasonDetail) c.reasonDetail = extra.reasonDetail;
-  if (extra.itemsEvaluated !== undefined) c.itemsEvaluated = extra.itemsEvaluated;
-  return c;
-}
-
-function finding(
-  ruleId: RuleId,
-  location: FindingLocation,
-  f: {
-    title: string;
-    observed: string;
-    expected: string;
-    evidenceIds: EvidenceId[];
-    reproductionSteps: string[];
-    remediation: string;
-    targetKey?: string;
-    severity?: Severity;
-  },
-): NewFinding {
-  const rule = getRule(ruleId);
-  return {
-    ruleId,
-    category: rule.category,
-    type: rule.defaultFindingType,
-    severity: f.severity ?? rule.defaultSeverity,
-    confidence: rule.defaultConfidence,
-    title: f.title,
-    location,
-    occurrences: [{ location, checkResultIds: [], evidenceIds: f.evidenceIds, observed: f.observed }],
-    observed: f.observed,
-    expected: f.expected,
-    evidenceIds: f.evidenceIds,
-    reproductionSteps: f.reproductionSteps,
-    remediation: f.remediation,
-    standards: rule.standards,
-    fingerprint: fingerprint({ ruleId, url: location.url, stateKey: 'initial', targetKey: f.targetKey }),
-  } satisfies Omit<Finding, 'id' | 'runId' | 'reviewer' | 'createdAt'>;
-}
-
-function dedupe<T>(items: T[], key: (t: T) => string): T[] {
-  const seen = new Map<string, T>();
-  for (const i of items) if (!seen.has(key(i))) seen.set(key(i), i);
-  return [...seen.values()];
-}
-
-function hostOf(url: string): string {
-  try {
-    const h = new URL(url).hostname;
-    return h.startsWith('[') ? h.slice(1, -1) : h;
-  } catch {
-    return '';
-  }
-}
-
 function safe<T>(fn: () => T): T | undefined {
   try {
     return fn();
   } catch {
     return undefined;
   }
-}
-
-function truncate(s: string, n: number): string {
-  const line = s.split('\n')[0] ?? '';
-  return line.length > n ? `${line.slice(0, n - 1)}…` : line;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 

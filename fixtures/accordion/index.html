@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Accordion Fixture</title></head>
+<body>
+  <h1>Accordion</h1>
+  <h2><button type="button" id="acc-1" aria-expanded="false" aria-controls="region-1">Section one</button></h2>
+  <div id="region-1" hidden>Section one content.</div>
+  <h2><button type="button" id="acc-2" aria-expanded="false" aria-controls="region-2">Broken section</button></h2>
+  <div id="region-2" hidden>Never shown.</div>
+  <details id="more"><summary>More information</summary><p>Details content.</p></details>
+  <script>
+    document.getElementById('acc-1').addEventListener('click', function () {
+      var open = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!open));
+      document.getElementById('region-1').hidden = open;
+    });
+    // acc-2 intentionally has no handler.
+  </script>
+</body>
+</html>
