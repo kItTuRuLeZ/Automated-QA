@@ -156,3 +156,14 @@ describe('defects must reproduce', () => {
     expect(checks.find((c) => c.ruleId === 'NAV-001')?.reasonDetail).toContain('second attempt');
   });
 });
+
+describe('inconsistent controls', () => {
+  it('a control that works in one state but fails in another is a low-confidence review item, not a defect', async () => {
+    const { findings, checks } = await scan('inconsistent-control/');
+    const notes = ruleFindings(findings, 'NAV-001').filter((f) => f.title.includes('Notes'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ type: 'manual_review', confidence: 'low', severity: 'low' });
+    expect(notes[0]?.title).toMatch(/^Inconsistent:/);
+    expect(checks.some((c) => c.ruleId === 'NAV-001' && c.outcome === 'failed')).toBe(false);
+  });
+});

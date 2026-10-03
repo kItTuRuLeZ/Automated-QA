@@ -410,7 +410,7 @@ export class Traversal {
               targetKey: cand.targetDescription,
             }, { selector: cand.locator, elementDescription: cand.targetDescription });
           } else {
-            checks.push(check(ruleId, 'failed', duration, ev, { stateId: node.state.id, viewportName }));
+            checks.push(check(ruleId, 'failed', duration, ev, { stateId: node.state.id, viewportName, reasonDetail: controlKeyOf(cand) }));
             addFinding(ruleId, node, {
               title: ruleId === 'NAV-003' ? `Dialog did not close with ${cand.targetDescription}` : `${capitalizeFirst(cand.targetDescription)} did not work as expected`,
               observed: `After activating ${cand.targetDescription}, the expected result was not observed within ${POST_TIMEOUT_MS} ms, on two separate attempts.`,
@@ -453,6 +453,28 @@ export class Traversal {
             });
           }
         }
+      }
+    }
+
+    // A control that worked in other states but not here is inconsistent rather than proven broken
+    // (often timing in animated players): downgrade to a manual-review item instead of a defect.
+    const controlKey = (description?: string, locator?: string) => `${description ?? ''}|${locator ?? ''}`;
+    const workedSomewhere = new Set(actions.filter((a) => a.outcome === 'succeeded').map((a) => controlKey(a.targetDescription, a.locator)));
+    for (const f of findings) {
+      if ((f.ruleId === 'NAV-001' || f.ruleId === 'NAV-003') && workedSomewhere.has(controlKey(f.location.elementDescription, f.location.selector))) {
+        f.type = 'manual_review';
+        f.severity = 'low';
+        f.confidence = 'low';
+        f.title = `Inconsistent: ${f.title}`;
+        f.observed += ' The same control worked in other states of this scan, so this may be timing rather than a defect. Confirm manually.';
+      }
+    }
+    for (const c of checks) {
+      if ((c.ruleId === 'NAV-001' || c.ruleId === 'NAV-003') && c.outcome === 'failed' && c.reasonDetail && workedSomewhere.has(c.reasonDetail)) {
+        c.outcome = 'needs_review';
+        c.reasonDetail = `Inconsistent: ${c.reasonDetail.split('|')[0]} worked in other states.`;
+      } else if (c.outcome === 'failed' && c.reasonDetail?.includes('|')) {
+        c.reasonDetail = undefined;
       }
     }
 
@@ -611,4 +633,8 @@ function budgetLabel(r: ReasonCode): string {
 
 function capitalizeFirst(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function controlKeyOf(a: { targetDescription: string; locator?: string }): string {
+  return `${a.targetDescription}|${a.locator ?? ''}`;
 }

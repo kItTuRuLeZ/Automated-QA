@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Inconsistent Control Fixture</title></head>
+<body>
+  <h1>A control that works in one state but not another</h1>
+  <h2><button type="button" id="notes" aria-expanded="false" aria-controls="notes-region">Notes</button></h2>
+  <div id="notes-region" hidden>Notes content.</div>
+  <h2><button type="button" id="lock" aria-expanded="false" aria-controls="lock-region">Settings</button></h2>
+  <div id="lock-region" hidden>While this is open, Notes stops responding.</div>
+  <script>
+    function toggle(btn, region) {
+      var open = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!open));
+      region.hidden = open;
+    }
+    document.getElementById('notes').addEventListener('click', function () {
+      if (document.getElementById('lock').getAttribute('aria-expanded') === 'true') return;
+      toggle(this, document.getElementById('notes-region'));
+    });
+    document.getElementById('lock').addEventListener('click', function () { toggle(this, document.getElementById('lock-region')); });
+  </script>
+</body>
+</html>
