@@ -27,8 +27,33 @@ import { CHECK_OUTCOMES, FINDING_TYPES, SEVERITIES } from '@cqa/shared';
 import type { ClientProfile, ReviewerStatus } from '@cqa/shared';
 import { newId, nowIso } from '../fingerprint.js';
 import { MIGRATIONS } from './migrations.js';
+import type { PackageInspection } from '../package/inspect.js';
 
 export type Db = Database.Database;
+
+export interface CoursePackage {
+  id: string;
+  projectId: string;
+  name: string;
+  originalFilename: string;
+  sizeBytes: number;
+  sha256: string;
+  inspection: PackageInspection;
+  createdAt: string;
+}
+interface PackageRow {
+  id: string;
+  project_id: string;
+  name: string;
+  original_filename: string;
+  size_bytes: number;
+  sha256: string;
+  inspection_json: string;
+  created_at: string;
+}
+function toPackage(r: PackageRow): CoursePackage {
+  return { id: r.id, projectId: r.project_id, name: r.name, originalFilename: r.original_filename, sizeBytes: r.size_bytes, sha256: r.sha256, inspection: JSON.parse(r.inspection_json) as PackageInspection, createdAt: r.created_at };
+}
 
 export interface WorkflowRow {
   status: ReviewerStatus;
@@ -461,6 +486,32 @@ export class Store {
   getFinding(id: string): Finding | undefined {
     const r = this.db.prepare('SELECT data_json, run_id FROM findings WHERE id = ?').get(id) as { data_json: string; run_id: string } | undefined;
     return r ? withWorkflow(this.workflowFor(r.run_id))(JSON.parse(r.data_json) as Finding) : undefined;
+  }
+
+  // ---- course packages ----
+
+  insertPackage(p: CoursePackage): void {
+    this.db
+      .prepare('INSERT INTO course_packages (id, project_id, name, original_filename, size_bytes, sha256, kind, inspection_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(p.id, p.projectId, p.name, p.originalFilename, p.sizeBytes, p.sha256, p.inspection.kind, JSON.stringify(p.inspection), p.createdAt);
+  }
+
+  getPackage(id: string): CoursePackage | undefined {
+    const r = this.db.prepare('SELECT * FROM course_packages WHERE id = ?').get(id) as PackageRow | undefined;
+    return r ? toPackage(r) : undefined;
+  }
+
+  listPackages(projectId: string): CoursePackage[] {
+    return (this.db.prepare('SELECT * FROM course_packages WHERE project_id = ? ORDER BY created_at DESC').all(projectId) as PackageRow[]).map(toPackage);
+  }
+
+  listPackageIds(projectId?: string): string[] {
+    const rows = projectId ? this.db.prepare('SELECT id FROM course_packages WHERE project_id = ?').all(projectId) : this.db.prepare('SELECT id FROM course_packages').all();
+    return (rows as Array<{ id: string }>).map((r) => r.id);
+  }
+
+  deletePackage(id: string): boolean {
+    return this.db.prepare('DELETE FROM course_packages WHERE id = ?').run(id).changes > 0;
   }
 
   // ---- client profiles ----

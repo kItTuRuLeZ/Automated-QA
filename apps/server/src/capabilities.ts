@@ -46,9 +46,10 @@ export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
       : { id: 'local-targets', name: 'Scanning courses on this computer', status: 'blocked', detail: 'Off. Private and loopback addresses are blocked. To scan the sample course pack offline, an administrator can allow exact 127.0.0.1 ports (see docs/SETUP.md).' },
     { id: 'retention', name: 'Automatic clean-up of old scans', status: opts.retentionDays ? 'available' : 'unavailable', detail: opts.retentionDays ? `Scans older than ${opts.retentionDays} days are deleted at start-up, except the latest scan of each course and scans that hold a visual baseline.` : 'Off. Scans are kept until you delete them or run "npm run retention".' },
     { id: 'backup', name: 'Backup and restore', status: 'available', detail: 'Command line: "npm run backup" and "npm run restore -- <file>". There is no button for it in the app.' },
+    { id: 'packages', name: 'Course package upload (ZIP)', status: 'available', detail: 'Inspects SCORM 1.2, SCORM 2004, and HTML5 ZIPs without running them, then scans them from a separate local address with outside requests blocked. Scans run the course’s own JavaScript in a browser on this computer, not in a container, so only scan packages you are willing to run.' },
     { id: 'multi-user', name: 'Shared use by a team, sign-in', status: 'not_included', detail: 'This version runs on one computer for one person and is bound to that computer only. Shared hosting needs sign-in first and is not built.' },
-    { id: 'docker-worker', name: 'Containerized scan worker', status: 'not_included', detail: 'Not built. Scans run in a Chromium process on this computer.' },
+    { id: 'docker-worker', name: 'Containerized scan worker', status: 'not_included', detail: 'Not built. Scans, including scans of uploaded packages, run in a Chromium process on this computer under your account.' },
     { id: 'ai', name: 'AI recommendations', status: 'not_included', detail: 'Not included. No AI service is used for any result, and there is nowhere to enter an AI key.' },
-    { id: 'scorm', name: 'SCORM and LMS behaviour', status: 'not_included', detail: 'Not checked. Package and LMS checks are a later phase.' },
+    { id: 'scorm', name: 'SCORM and LMS behaviour', status: 'not_included', detail: 'Not checked. Package files are inspected statically, but SCORM tracking, completion, and resume behaviour are not run or tested, and nothing here shows how a particular LMS will behave.' },
   ];
 }

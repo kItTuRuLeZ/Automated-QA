@@ -25,7 +25,7 @@ A local web app that scans a published course URL, clicks through what it can re
 - Shared use by a team, sign-in, hosting (the app is bound to loopback; shared hosting needs authentication first).
 - Containerized worker.
 - AI recommendations (no AI is used, and there is nowhere to enter a key).
-- SCORM/LMS behaviour, package upload and inspection, storyboard fidelity comparison (later phases).
+- SCORM/LMS behaviour (tracking, completion, resume) and storyboard fidelity comparison (later phases). Package upload and static inspection are in (Phase 6); the scan of an uploaded package is not isolated in a container.
 - Authenticated courses (anything behind a sign-in cannot be scanned; a Review 360 link, for example, needs sign-in and is unusable).
 - Real devices, screen readers, or browsers other than Chromium.
 - Importing Excel status changes back into the app (the workbook is a one-way export; status is changed in the app).

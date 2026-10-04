@@ -12,7 +12,7 @@ Every check the application runs has a stable rule ID listed here. Rule IDs neve
 
 **Severity:** Critical / High / Medium / Low / Informational. **Confidence:** `high` / `medium` / `low`.
 
-**Capability status:** `implemented`, `planned`, `heuristic` (implemented or planned as a heuristic), `manual` (review task, not automated). The status column shows `implemented` once a rule ships; otherwise the planned capability kind.
+**Capability status:** `implemented`, `implemented`, `heuristic` (implemented or implemented as a heuristic), `manual` (review task, not automated). The status column shows `implemented` once a rule ships; otherwise the implemented capability kind.
 
 ## Severity mapping
 
@@ -135,10 +135,10 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 
 | ID | Check | Ph | Cap |
 | --- | --- | --- | --- |
-| PKG-001 | Archive rejected (limits, traversal, symlink, duplicate, encrypted) | 6 | planned |
-| PKG-002 | `imsmanifest.xml` well-formed | 6 | planned |
-| PKG-003 | Declared SCORM version detected | 6 | planned |
-| PKG-004 | Launch file resolves | 6 | planned |
+| PKG-001 | Archive rejected (limits, traversal, symlink, duplicate, encrypted) | 6 | implemented |
+| PKG-002 | `imsmanifest.xml` well-formed | 6 | implemented |
+| PKG-003 | Declared SCORM version detected | 6 | implemented |
+| PKG-004 | Launch file resolves | 6 | implemented |
 | PKG-005 | Missing local reference / case mismatch | 6 | planned |
 | PKG-006 | External dependency declared or requested | 6 | planned |
 | PKG-007 | Multiple organizations/SCOs — scan selection disclosed | 6 | planned |

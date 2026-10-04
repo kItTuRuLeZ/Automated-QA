@@ -169,3 +169,5 @@ a.btn { text-decoration: none; display: inline-block; }
 .download-group { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .issue-status { margin: 0.5rem 0; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
 .issue-status input { max-width: 14rem; }
+.topbar nav a { color: #fff; text-decoration: underline; }
+.topbar nav { margin-left: auto; }

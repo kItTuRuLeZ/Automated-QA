@@ -1,4 +1,4 @@
-import { ArtifactStore, NetworkPolicy, parseLocalTargets, Store, createLogger, openDatabase, resolveDataPaths } from '@cqa/core';
+import { ArtifactStore, NetworkPolicy, PACKAGE_PORT, parseLocalTargets, Store, createLogger, openDatabase, resolveDataPaths } from '@cqa/core';
 import { startWorker } from './worker.js';
 
 const log = createLogger('worker');
@@ -11,7 +11,7 @@ const store = new Store(openDatabase(paths.dbFile));
 const artifacts = new ArtifactStore(paths.artifacts, store);
 
 // Production policy: no exemptions. Private, loopback, and reserved destinations are denied.
-const worker = startWorker({ store, artifacts, policy: new NetworkPolicy({ exemptAddresses: localTargets.exemptions }), tmpRoot: paths.tmp, log });
+const worker = startWorker({ store, artifacts, policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }] }), tmpRoot: paths.tmp, log });
 log.info({ dataDir: paths.root }, 'worker started');
 
 const shutdown = async () => {

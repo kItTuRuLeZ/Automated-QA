@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 5 complete (V1 release candidate for local use). Next: optional hosting phase, or Phase 6 (package inspection).
+**Current state:** Phase 6 complete (package upload, static inspection, restricted-origin scans; no container isolation). Next: Phase 7 (SCORM runtime harness), the optional hosting phase, or a container worker.
 
 ## Phase checklist
 
@@ -14,7 +14,7 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 3 | Automated accessibility and keyboard review | ✅ Complete (2026-10-03) |
 | 4 | Responsive, visual heuristics, performance evidence | ✅ Complete (2026-10-03) |
 | 5 | Reports, client profiles, retest, standalone V1 | ✅ Complete (2026-10-04) |
-| 6 | HTML5/SCORM package inspection and isolated scans | Not started |
+| 6 | HTML5/SCORM package inspection and package scans | ✅ Complete (2026-10-04), without container isolation (see limitations) |
 | 7 | SCORM runtime harness and platform adapters | Not started |
 | 8 | Optional AI-assisted review (only on explicit request) | Not started |
 | 9 | Storyboard-to-course fidelity comparison | Not started |
@@ -372,3 +372,28 @@ Requested: Storyline courses are a fixed-size stage and not responsive, so they 
 - Rise and Storyline validation is partial; older Storyline, Captivate, and other custom HTML are pending (see RELEASE_V1.md).
 - Excel status is a one-way export. Brand checks run at the primary screen size only. Backup, restore, and retention have no buttons in the app.
 - Shared hosting, sign-in, and a containerized worker are not built.
+
+## Phase 6 — delivered (package upload, inspection, restricted-origin scans)
+
+- **Safe upload** (`packages/core/src/package/archive.ts`): limits on compressed size, expanded size, entry count, per-entry and overall ratio, and extraction time, all checked from the ZIP directory before anything is inflated; rejects traversal, absolute, backslash, drive-letter, empty-segment paths, symlinks, exact and letter-case duplicates, encrypted entries, ZIP64; verifies extracted sizes against the directory; writes nothing for a rejected archive.
+- **Static inspection** (`package/inspect.ts`): well-formed XML (DTD/ENTITY refused), declared SCORM version from schema version and namespaces, organizations/items/resources/dependencies, `xml:base`, launch resolution, missing and wrongly-cased references (manifest and HTML), outside websites found in package text, inventory. Rules PKG-001..007. Explicitly not schema validation.
+- **Selection**: several lessons or organizations require an explicit choice (no silent first-SCO scan); each chosen lesson is its own scan, and every scan records which lessons were and were not scanned (PKG-007).
+- **Isolation as built**: separate loopback origin for extracted files (own port, read-only, exact letter case, no cookies); scope-only network policy with outside sites blocked unless allowed per scan; the package server's port is the single fixed exemption; links to other websites are not requested. Package code cannot reach the app's port (tested with a stand-in app that records hits).
+- **Reports**: static results are labelled "Static package check" and kept apart from runtime findings; the report has a Package section (name, lesson scanned, contents, outside sites).
+- **UI**: upload and list on the project page; package page with checks, contents, lesson picker, allowed outside sites, and an acknowledgement before scanning.
+- Migration 6 `course_packages`; `CQA_PACKAGE_PORT`; upload of a fixed version can replace a package and keeps its id so issue history lines up.
+
+### Commands run (Phase 6)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npx vitest run tests/packages.static.test.ts tests/packages.integration.test.ts` | 26 passed (archive attacks, manifest cases, uploads, selection, runtime scan with blocked outside request and unreachable app, server rules) |
+
+### Known limitations (Phase 6)
+
+- **No container**: the scan runs the package's JavaScript in Chromium on this computer under your account (browser sandbox on). The security model required a container for untrusted packages; it is not built, so each scan needs an explicit acknowledgement and the risk is documented in SECURITY_MODEL.md.
+- Packages in one project share the package origin, so one could fetch another's files over HTTP.
+- Validated only against generated fixtures; no real SCORM export (Rise, Storyline, Captivate) has been uploaded yet. Treat results on real exports as unverified until samples are supplied.
+- Sequencing/navigation rules in the manifest are not evaluated; there is no SCORM runtime (Phase 7), so tracking, completion, and resume are untested.
+- Backup does not include uploaded packages.

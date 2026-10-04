@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AboutPage } from './pages/AboutPage';
 import { FindingPage } from './pages/FindingPage';
+import { PackagePage } from './pages/PackagePage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
@@ -20,6 +21,7 @@ function Page({ route }: { route: string }) {
   const [, section, id] = route.split('/');
   if (section === 'projects' && id) return <ProjectPage id={id} />;
   if (section === 'runs' && id) return <RunPage id={id} />;
+  if (section === 'packages' && id) return <PackagePage id={id} />;
   if (section === 'about') return <AboutPage />;
   if (section === 'profiles') return <ProfilesPage />;
   if (section === 'findings' && id) return <FindingPage id={id} />;

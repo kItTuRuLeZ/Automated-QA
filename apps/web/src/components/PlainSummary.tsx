@@ -140,6 +140,17 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
           This is a retest of <a href={`#/runs/${run.retestOfRunId}`}>an earlier scan</a>. Issue statuses were updated from it: Verified means it was marked fixed, was not found, and its check passed on the same screen at the same screen size. Not retested means that could not be confirmed.
         </p>
       )}
+      {r.package && (
+        <div className="card">
+          <h3>Package: {r.package.name}</h3>
+          <p>
+            Lesson scanned: <strong>{r.package.launchTitle ?? 'unknown'}</strong>
+            {r.package.launchPoints > 1 ? ` (one of ${r.package.launchPoints} launch points; the package checks say which others were not scanned)` : ''}
+            {r.package.inventory ? ` · ${r.package.inventory.files} files` : ''}. Outside websites referenced: {r.package.externalDependencies.length ? r.package.externalDependencies.map((d) => d.host).join(', ') : 'none found'}.
+          </p>
+          <p className="help">Items marked "Static package check" were read from the package files; no code was run for them. Everything else was observed in the browser.</p>
+        </div>
+      )}
       <div className="big-counts" role="list">
         <Count label="To fix" value={r.counts.fix} tone="fix" />
         <Count label="Check by hand" value={r.counts.check} tone="check" />
@@ -170,7 +181,7 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
                 <li key={i.id}>
                   <div className="issue-top">
                     <SeverityBadge severity={i.priority} />
-                    <strong>{i.issue}</strong>
+                    <strong>{i.issue}</strong>{i.source === 'static' && <span className="muted"> Static package check</span>}
                     <span className="muted mono">{i.id}</span>
                     {i.viewports.length > 0 && <span className="muted">at {i.viewports.join(', ')}</span>}
                   </div>

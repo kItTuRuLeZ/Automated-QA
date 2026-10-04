@@ -1,5 +1,6 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../api';
+import { PackagesPanel } from '../components/Packages';
 import { Empty, ErrorBox, Link, Loading, StatusBadge, duration, formatDate, useLoader, TableScroll } from '../components/ui';
 
 const VIEWPORTS = [
@@ -28,6 +29,8 @@ export function ProjectPage({ id }: { id: string }) {
           {p.description && <p className="muted">{p.description}</p>}
         </div>
       </div>
+
+      <PackagesPanel projectId={id} />
 
       <NewScanForm projectId={id} defaultUrl={p.courseUrl ?? ''} onQueued={(runId) => (window.location.hash = `/runs/${runId}`)} />
 

@@ -137,6 +137,20 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
     row.alignment = { vertical: 'top', wrapText: true };
   }
 
+  // Package facts (static, from the uploaded files) for package scans.
+  const pk = report.courses.filter((c) => c.latest.package);
+  if (pk.length) {
+    r += 1;
+    ws.getCell(`A${r}`).value = 'Package (read from the uploaded files; no code was run for these facts)';
+    ws.getCell(`A${r}`).font = { bold: true };
+    for (const c of pk) {
+      const p = c.latest.package!;
+      r += 1;
+      ws.addRow([safeCell(p.name), safeCell(`${p.launchTitle ?? ''}${p.inventory ? ` · ${p.inventory.files} files, ${(p.inventory.bytes / 1048576).toFixed(1)} MB` : ''} · outside sites: ${p.externalDependencies.map((d) => d.host).join(', ') || 'none found'}`)]);
+      r = ws.rowCount;
+    }
+  }
+
   // Screen sizes and page-load conditions for each course's latest scan.
   r += 1;
   const sized = report.courses.filter((c) => c.latest.viewports?.length);

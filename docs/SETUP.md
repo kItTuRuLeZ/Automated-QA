@@ -58,7 +58,14 @@ The setting accepts only loopback address and port pairs. Anything else, includi
 | `CQA_DATA_DIR` | `./data` | Where the database and screenshots are stored |
 | `CQA_PORT` | `4317` | Port for the app (loopback only) |
 | `CQA_ALLOW_LOCAL_TARGETS` | unset | Comma-separated `127.0.0.1:port` pairs that may be scanned (offline sample pack) |
+| `CQA_PACKAGE_PORT` | `4318` | Port of the separate local address that serves uploaded course packages |
 | `CQA_RETENTION_DAYS` | unset | If set, scans older than this many days are deleted at start-up |
+
+## Course packages (ZIP uploads)
+
+On a project page, **Course packages** accepts a ZIP (SCORM 1.2, SCORM 2004, or plain HTML5). It is checked and inspected without running anything. If it has several lessons, you choose which to scan; lessons you do not choose are reported as not scanned. A scan opens the package from `http://127.0.0.1:4318` (a different address from the app), blocks requests to other websites unless you allow them, and asks you to confirm because the package's own JavaScript runs in a browser on this computer. Upload a fixed version as a replacement to keep issue history lining up.
+
+Limits: 250 MB upload, 1 GB expanded, 20,000 files, 100:1 expansion. Backups include the database and screenshots but **not** uploaded packages; upload them again after a restore.
 
 ## Backup and restore
 

@@ -124,6 +124,8 @@ export interface ScanTarget {
   /** For `package` targets (Phase 6): uploaded package reference and chosen launch entry. */
   packageId?: string;
   launchEntry?: string;
+  /** Display name of the uploaded package. */
+  packageName?: string;
 }
 
 /** Engines selected for a run. Unselected engines yield `not_tested` with reason, never `passed`. */
@@ -157,6 +159,8 @@ export interface ScanConfig {
   mediaThresholds: MediaThresholds;
   /** Absent on scans made before Phase 4. */
   layout?: LayoutSettings;
+  /** Do not request links to other websites (set for uploaded packages, which must not make outside requests). */
+  skipExternalLinks?: boolean;
   profileId?: ProfileId;
   /** Copy of the profile settings used for this scan, so the report stays true if the profile is edited later. */
   profile?: ProfileSnapshot;

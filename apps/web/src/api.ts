@@ -26,9 +26,11 @@ export interface RunReport {
     thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
   };
   baselinesStored: number;
+  package?: { name: string; launchTitle?: string; launchPoints: number; kind?: string; scormVersionDeclared?: string; inventory?: { files: number; bytes: number }; externalDependencies: Array<{ host: string }>; available: boolean };
   issues: Array<{
     id: string;
     findingId: string;
+    source: 'static' | 'runtime';
     action: 'fix' | 'check' | 'not_checked';
     priority: Severity;
     issue: string;
@@ -66,6 +68,24 @@ export interface ProfileView extends Omit<ProfileForm, 'brand' | 'viewports' | '
   updatedAt: string;
   brand: Omit<ProfileForm['brand'], 'source'> & { provenance?: { note?: string } };
   presets?: { viewports: string[]; thresholds: ProfileForm['thresholds'] };
+}
+
+export interface PackageView {
+  id: string;
+  projectId: string;
+  name: string;
+  originalFilename: string;
+  sizeBytes: number;
+  createdAt: string;
+  inspection: {
+    kind: 'scorm12' | 'scorm2004' | 'scorm_unknown' | 'html5';
+    scormVersionDeclared?: string;
+    inventory: { files: number; bytes: number; byType: Array<{ type: string; files: number; bytes: number }>; largest: Array<{ path: string; bytes: number }> };
+    launchChoices: Array<{ key: string; title: string; path: string }>;
+    externalDependencies: Array<{ host: string; urls: string[] }>;
+    issues: Array<{ ruleId: string; outcome: 'passed' | 'failed' | 'needs_review' | 'not_applicable' | 'not_tested'; title?: string; detail: string }>;
+    limits: string[];
+  };
 }
 
 export class ApiError extends Error {
@@ -122,6 +142,16 @@ export const api = {
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
   setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
   capabilities: () => request<Array<{ id: string; name: string; status: 'available' | 'blocked' | 'unavailable' | 'not_included'; detail: string }>>('GET', '/api/capabilities'),
+  listPackages: (projectId: string) => request<PackageView[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/packages`),
+  getPackage: (id: string) => request<PackageView>('GET', `/api/packages/${encodeURIComponent(id)}`),
+  uploadPackage: async (projectId: string, file: File) => {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/packages?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'X-QA-Request': '1', 'Content-Type': 'application/zip' }, body: file });
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new ApiError(data.error ?? `Upload failed (${res.status})`, res.status);
+    return data as unknown as PackageView;
+  },
+  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[] }) =>
+    request<{ runs: ScanRun[]; scanned: string[]; notScanned: string[] }>('POST', `/api/packages/${encodeURIComponent(id)}/scans`, input),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),
   createProfile: (input: ProfileForm) => request<ProfileView>('POST', '/api/profiles', input),

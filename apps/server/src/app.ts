@@ -1,4 +1,4 @@
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProfileId, ProjectId } from '@cqa/shared';
@@ -6,6 +6,7 @@ import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCou
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { type CapabilityOptions, buildCapabilities } from './capabilities.js';
+import { registerPackageRoutes } from './packages.js';
 import { buildHtmlReport } from './export/html.js';
 import { renderPdf } from './export/pdf.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
@@ -23,6 +24,8 @@ export interface AppOptions {
   logger?: boolean;
   /** What the About page reports; the server entry point fills these from its settings. */
   capabilities?: CapabilityOptions;
+  /** Where uploaded packages live and the port of the separate origin that serves them. Package routes are off without it. */
+  packages?: { dir: string; port: number };
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -51,7 +54,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.url.startsWith('/api/')) {
       if (req.headers['x-qa-request'] !== '1') return reply.code(403).send({ error: 'Missing X-QA-Request header.' });
       const ct = req.headers['content-type'] ?? '';
-      if (req.method !== 'DELETE' && !ct.startsWith('application/json')) return reply.code(415).send({ error: 'Content-Type must be application/json.' });
+      const isUpload = req.method === 'POST' && /^\/api\/projects\/[^/]+\/packages(\?|$)/.test(req.url) && ct.startsWith('application/zip');
+      if (req.method !== 'DELETE' && !isUpload && !ct.startsWith('application/json')) return reply.code(415).send({ error: 'Content-Type must be application/json.' });
     }
   });
   app.addHook('onSend', async (_req, reply, payload) => {
@@ -92,8 +96,10 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     if (!isOpaqueId(req.params.id)) return notFound(reply);
     const runs = store.listRuns(req.params.id);
     if (runs.some((r) => r.status === 'running' || r.status === 'queued')) return reply.code(409).send({ error: 'Cancel active scans before deleting the project.' });
+    const packageIds = store.listPackageIds(req.params.id);
     if (!store.deleteProject(req.params.id)) return notFound(reply);
     for (const r of runs) artifacts.deleteRunArtifacts(r.id);
+    if (opts.packages) for (const id of packageIds) rmSync(path.join(opts.packages.dir, id), { recursive: true, force: true });
     return reply.code(204).send();
   });
 
@@ -128,6 +134,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     if (!isOpaqueId(req.params.id) || !store.deleteProfile(req.params.id)) return notFound(reply, 'Client profile not found.');
     return reply.code(204).send();
   });
+
+  if (opts.packages) registerPackageRoutes(app, { store, policy, packagesDir: opts.packages.dir, packagePort: opts.packages.port });
 
   // ---- scans ----
   app.post<{ Params: { id: string } }>('/api/projects/:id/scans', async (req, reply) => {

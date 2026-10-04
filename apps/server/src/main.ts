@@ -1,7 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ArtifactStore, NetworkPolicy, parseLocalTargets, SERVER_HOST, SERVER_PORT, Store, WEB_DEV_PORT, createLogger, openDatabase, resolveDataPaths, sweepRetention } from '@cqa/core';
+import { ArtifactStore, NetworkPolicy, PACKAGE_PORT, parseLocalTargets, SERVER_HOST, SERVER_PORT, Store, WEB_DEV_PORT, createLogger, openDatabase, resolveDataPaths, sweepRetention } from '@cqa/core';
 import { buildApp } from './app.js';
+import { createPackageServer } from './package-server.js';
 
 const log = createLogger('server');
 const paths = resolveDataPaths();
@@ -24,10 +25,11 @@ const hosts = [`${SERVER_HOST}:${SERVER_PORT}`, `localhost:${SERVER_PORT}`, `${S
 const app = buildApp({
   store,
   artifacts,
-  policy: new NetworkPolicy({ exemptAddresses: localTargets.exemptions }),
+  policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }] }),
   allowedHosts: hosts,
   allowedOrigins: hosts.map((h) => `http://${h}`),
   webDist: path.resolve(here, '../../web/dist'),
+  packages: { dir: paths.packages, port: PACKAGE_PORT },
   capabilities: { localTargets: localTargets.exemptions, retentionDays },
 });
 
@@ -35,7 +37,13 @@ const app = buildApp({
 await app.listen({ host: SERVER_HOST, port: SERVER_PORT });
 log.info({ url: `http://${SERVER_HOST}:${SERVER_PORT}`, dataDir: paths.root }, 'server listening');
 
+// The restricted origin for uploaded packages: a different port from the app, loopback only, read-only.
+const packageServer = createPackageServer({ root: paths.packages, port: PACKAGE_PORT });
+await new Promise<void>((resolve, reject) => packageServer.once('error', reject).listen(PACKAGE_PORT, SERVER_HOST, resolve));
+log.info({ url: `http://${SERVER_HOST}:${PACKAGE_PORT}` }, 'package server listening (separate origin)');
+
 const shutdown = async () => {
+  packageServer.close();
   await app.close();
   store.db.close();
   process.exit(0);

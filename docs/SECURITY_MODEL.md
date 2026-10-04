@@ -71,7 +71,7 @@ A disposable browser context is **not** a security boundary.
 | Mode | When | Controls | Limitations |
 | --- | --- | --- | --- |
 | A: local process | Default, Phases 1–5 (public/published URLs) | Chromium sandbox, egress proxy, no Node execution of course code, temp dirs per run, run under the user account | Shares the user's filesystem permissions and network namespace; a browser sandbox escape would not be contained. Documented in UI "About/Security". |
-| B: Docker container | Required before scanning uploaded packages (Phase 6); optional earlier | Non-root user, read-only root FS, only `data/tmp/<run>` and `data/artifacts/<run>` mounted writable, dropped capabilities, no host network, egress allowed only through the policy (network namespace with proxy/firewall rules), CPU/memory limits | Requires Docker Desktop/WSL on Windows. |
+| B: Docker container | **Not built.** Planned before packages from untrusted sources are scanned; optional earlier | Non-root user, read-only root FS, only `data/tmp/<run>` and `data/artifacts/<run>` mounted writable, dropped capabilities, no host network, egress allowed only through the policy (network namespace with proxy/firewall rules), CPU/memory limits | Requires Docker Desktop/WSL on Windows. |
 
 Filesystem and network restrictions of each mode are tested (see TEST_STRATEGY).
 
@@ -85,6 +85,13 @@ Default deny: form submission, `type=submit` buttons, elements whose name/label 
 - State-changing endpoints require `Content-Type: application/json` and a custom header (`X-QA-Request: 1`), which a cross-origin page cannot send without a CORS preflight; CORS is not enabled.
 - No endpoint fetches or proxies arbitrary URLs for the UI.
 - Shared or network deployment requires authentication and authorization first (future work).
+
+## Uploaded packages as built (Phase 6)
+
+- **Static inspection never runs course code**: the ZIP is validated from its directory first (compressed size, expanded size, entry count, per-entry and overall expansion ratio, extraction time; absolute, `..`, backslash, drive-letter, empty-segment, and NUL paths; symbolic links; exact and letter-case duplicates; encryption; ZIP64), extracted only to a fresh folder with every path re-checked, and extracted sizes are compared with what the directory claimed. Rejected uploads leave no files. XML with a DOCTYPE or ENTITY is refused rather than parsed.
+- **Separate origin**: extracted files are served by a second server on its own loopback port (`CQA_PACKAGE_PORT`, default 4318), read-only, only under `/p/<package id>/`, no cookies, exact letter case, `nosniff`, `Cross-Origin-Resource-Policy: same-origin`, Host checked. The app and its API are on a different port, so package pages cannot use the app's origin or storage.
+- **Network**: package scans use the scope-only subrequest policy. The package server's port is the one fixed exception to the private-address block (added in code, not configurable); the app's port is not exempt, so a package script that fetches the app's API is blocked by the egress proxy and shows up as a blocked request. Outside sites are blocked unless the person allows them for that scan; links to other websites are not requested at all.
+- **Residual risk (read this)**: the scan executes the package's JavaScript in Chromium on this computer under your account, with the browser sandbox on but **without a container**. A browser sandbox escape would not be contained. The UI asks for an explicit acknowledgement for every package scan. Packages in one project share the package origin, so one uploaded package could read another's files over HTTP. Scan only packages you are willing to run, or wait for the container worker.
 
 ## Uploads (Phase 6 summary)
 

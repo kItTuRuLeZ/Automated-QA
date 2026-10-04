@@ -17,3 +17,5 @@ export * from './profile.js';
 export * from './backup.js';
 export * from './retention.js';
 export * from './net/local-targets.js';
+export * from './package/archive.js';
+export * from './package/inspect.js';

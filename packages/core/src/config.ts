@@ -8,6 +8,8 @@ export interface DataPaths {
   root: string;
   dbFile: string;
   artifacts: string;
+  /** Uploaded course packages: the original ZIP and its extracted files, one folder per package. */
+  packages: string;
   tmp: string;
 }
 
@@ -17,14 +19,16 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 /** Resolves and creates the data directory layout. `CQA_DATA_DIR` overrides the default `<repo>/data`. */
 export function resolveDataPaths(root = process.env.CQA_DATA_DIR ?? path.join(REPO_ROOT, 'data')): DataPaths {
   const abs = path.resolve(root);
-  const paths = { root: abs, dbFile: path.join(abs, 'qa.sqlite'), artifacts: path.join(abs, 'artifacts'), tmp: path.join(abs, 'tmp') };
-  for (const dir of [paths.root, paths.artifacts, paths.tmp]) mkdirSync(dir, { recursive: true });
+  const paths = { root: abs, dbFile: path.join(abs, 'qa.sqlite'), artifacts: path.join(abs, 'artifacts'), packages: path.join(abs, 'packages'), tmp: path.join(abs, 'tmp') };
+  for (const dir of [paths.root, paths.artifacts, paths.packages, paths.tmp]) mkdirSync(dir, { recursive: true });
   return paths;
 }
 
 export const SERVER_HOST = '127.0.0.1';
 export const SERVER_PORT = Number(process.env.CQA_PORT ?? 4317);
 export const WEB_DEV_PORT = 5317;
+/** Port of the separate, restricted origin that serves extracted course packages (never the app's own port). */
+export const PACKAGE_PORT = Number(process.env.CQA_PACKAGE_PORT ?? 4318);
 
 export const DEFAULT_VIEWPORT: Viewport = { name: 'desktop', width: 1440, height: 900, deviceScaleFactor: 1, isMobile: false, hasTouch: false };
 

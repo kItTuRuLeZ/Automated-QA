@@ -191,4 +191,22 @@ CREATE TABLE client_profiles (
 );
 `,
   },
+  {
+    version: 6,
+    name: 'course_packages',
+    sql: `
+CREATE TABLE course_packages (
+  id TEXT PRIMARY KEY,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  original_filename TEXT NOT NULL,
+  size_bytes INTEGER NOT NULL,
+  sha256 TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  inspection_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX idx_course_packages_project ON course_packages(project_id, created_at);
+`,
+  },
 ];

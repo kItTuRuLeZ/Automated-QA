@@ -11,6 +11,8 @@ export interface ReportIssue {
   id: string;
   /** Rule category (accessibility, links, layout, …). */
   category: string;
+  /** `static` for results read from a package's files (no code was run); `runtime` for everything observed in the browser. */
+  source: 'static' | 'runtime';
   /** True for AI-written recommendations; reported separately and never counted with checked results. */
   advisory: boolean;
   /** Why the reviewer status is what it is (required for accepted risk and false positive). */
@@ -72,6 +74,19 @@ export interface ReportPerformance {
   thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
 }
 
+export interface ReportPackage {
+  name: string;
+  /** Which lesson (launch point) this scan opened. */
+  launchTitle?: string;
+  launchPoints: number;
+  kind?: string;
+  scormVersionDeclared?: string;
+  inventory?: { files: number; bytes: number; byType: Array<{ type: string; files: number; bytes: number }>; largest: Array<{ path: string; bytes: number }> };
+  externalDependencies: Array<{ host: string; urls: string[] }>;
+  /** Whether the uploaded package still exists; its inventory is gone with it. */
+  available: boolean;
+}
+
 export interface RunReport {
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
@@ -97,6 +112,8 @@ export interface RunReport {
     /** Client profile used for this scan, if any (a person's settings, not built-in rules). */
     profile?: { name: string; brandSource?: string; rulesSwitchedOff: Array<{ ruleId: string; reason: string }>; severityChanges: Array<{ ruleId: string; severity: string; reason: string }> };
   };
+  /** Present for scans of an uploaded package: what it contains, kept apart from what the browser observed. */
+  package?: ReportPackage;
   /** Findings by rule category, grouped by what to do about them. */
   byCategory: Array<{ category: string; fix: number; check: number; notChecked: number }>;
   /** Controls and areas the scanner skipped, with the reason. Skipped is not passed. */
@@ -261,6 +278,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
         ? { name: run.config.profile.name, brandSource: run.config.profile.brand.provenance?.note, rulesSwitchedOff: run.config.profile.ruleExclusions, severityChanges: run.config.profile.severityOverrides.map((o) => ({ ruleId: o.ruleId, severity: o.severity, reason: o.reason })) }
         : undefined,
     },
+    package: packageSection(store, run),
     byCategory: [...categories.entries()].map(([category, c]) => ({ category, ...c })).sort((a, b) => b.fix - a.fix || a.category.localeCompare(b.category)),
     skippedActions,
     errors,
@@ -305,6 +323,7 @@ function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: stri
   return {
     id: stableIssueId(f.fingerprint),
     category: f.category,
+    source: f.category === 'package' ? 'static' : 'runtime',
     advisory: f.type === 'ai_recommendation',
     statusReason: f.reviewer.reason,
     assignee: f.reviewer.assignee,
@@ -428,4 +447,21 @@ export function reportForCourse(report: ProjectReport, course: string): ProjectR
   const courses = report.courses.filter((c) => c.targetUrl === course);
   if (courses.length === 0) return undefined;
   return { ...report, courses, issues: report.issues.filter((i) => i.course === course) };
+}
+
+function packageSection(store: Store, run: ScanRun): ReportPackage | undefined {
+  const t = run.config.target;
+  if (t.kind !== 'package') return undefined;
+  const pkg = t.packageId ? store.getPackage(t.packageId) : undefined;
+  const choice = pkg?.inspection.launchChoices.find((c) => c.key === t.launchEntry);
+  return {
+    name: pkg?.name ?? t.packageName ?? 'Uploaded package',
+    launchTitle: choice?.title ?? t.launchEntry,
+    launchPoints: pkg?.inspection.launchChoices.length ?? 0,
+    kind: pkg?.inspection.kind,
+    scormVersionDeclared: pkg?.inspection.scormVersionDeclared,
+    inventory: pkg?.inspection.inventory,
+    externalDependencies: (pkg?.inspection.externalDependencies ?? []).map((d) => ({ host: d.host, urls: d.urls })),
+    available: Boolean(pkg),
+  };
 }

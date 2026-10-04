@@ -314,9 +314,9 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     let linkCoverage: EngineResult['coverage'] = [];
     if (run.config.engines.links && pageUsable) {
       const checker = new LinkChecker(deps.policy, run.config);
-      const policyLinks = applyLinkPolicy(linkAppearances, profile?.linkPolicy, targetUrl);
+      const policyLinks = applyLinkPolicy(linkAppearances, run.config.skipExternalLinks ? { checkExternalLinks: false, excludedUrlPatterns: profile?.linkPolicy.excludedUrlPatterns ?? [] } : profile?.linkPolicy, targetUrl);
       const lr = await checker.checkAll(policyLinks.kept, sink, run.id);
-      if (policyLinks.skipped) lr.checkResults?.push?.({ ruleId: 'LNK-001', outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `${policyLinks.skipped} link(s) were not checked because of the link policy in client profile "${profile?.name}".`, durationMs: 0, evidenceIds: [], executedAt: nowIso() } as never);
+      if (policyLinks.skipped) lr.checkResults?.push?.({ ruleId: 'LNK-001', outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `${policyLinks.skipped} link(s) were not requested: ${run.config.skipExternalLinks ? 'uploaded packages are not allowed to make outside requests' : `the link policy in client profile "${profile?.name}" excludes them`}.`, durationMs: 0, evidenceIds: [], executedAt: nowIso() } as never);
       persistResults(lr);
       linkCoverage = lr.coverage;
     }
