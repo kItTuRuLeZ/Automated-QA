@@ -1,5 +1,6 @@
 import type { CourseState, Finding, ReviewerStatus, ScanRun, Severity, TraversalAction } from '@cqa/shared';
 import type { Store } from './db/store.js';
+import { SCORM_LMS_CHECKLIST } from './manual-checklist.js';
 import { ACTION_LABEL, type IssueAction, plainFinding } from './plain-language.js';
 
 /**
@@ -87,6 +88,15 @@ export interface ReportPackage {
   available: boolean;
 }
 
+export interface ReportScorm {
+  version: '1.2' | '2004';
+  /** Always "test harness": these are not results from an LMS. */
+  source: string;
+  sessions: Array<{ name: string; kind: 'journey' | 'resume'; stepsTotal: number; stepsRun: number; stepFailure?: string; callCount: number; finalStatus: string; outcomes: Array<{ rule: string; outcome: string }> }>;
+  limitations: string[];
+  lmsChecklist: Array<{ id: string; title: string; howToCheck: string }>;
+}
+
 export interface RunReport {
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
@@ -114,6 +124,8 @@ export interface RunReport {
   };
   /** Present for scans of an uploaded package: what it contains, kept apart from what the browser observed. */
   package?: ReportPackage;
+  /** Present for SCORM package scans: what the test harness saw. Kept apart from static package checks and browser findings. */
+  scorm?: ReportScorm;
   /** Findings by rule category, grouped by what to do about them. */
   byCategory: Array<{ category: string; fix: number; check: number; notChecked: number }>;
   /** Controls and areas the scanner skipped, with the reason. Skipped is not passed. */
@@ -279,6 +291,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
         : undefined,
     },
     package: packageSection(store, run),
+    scorm: scormSection(store, run),
     byCategory: [...categories.entries()].map(([category, c]) => ({ category, ...c })).sort((a, b) => b.fix - a.fix || a.category.localeCompare(b.category)),
     skippedActions,
     errors,
@@ -463,5 +476,29 @@ function packageSection(store: Store, run: ScanRun): ReportPackage | undefined {
     inventory: pkg?.inspection.inventory,
     externalDependencies: (pkg?.inspection.externalDependencies ?? []).map((d) => ({ host: d.host, urls: d.urls })),
     available: Boolean(pkg),
+  };
+}
+
+function scormSection(store: Store, run: ScanRun): ReportScorm | undefined {
+  const settings = run.config.scorm;
+  if (!run.config.engines.scorm || !settings) return undefined;
+  const sessions: ReportScorm['sessions'] = [];
+  for (const e of store.listEvidenceByKind(run.id, 'scorm_api_call')) {
+    const sum = (e.data as { summary?: ReportScorm['sessions'][number] } | undefined)?.summary;
+    if (sum) sessions.push({ name: sum.name, kind: sum.kind, stepsTotal: sum.stepsTotal, stepsRun: sum.stepsRun, stepFailure: sum.stepFailure, callCount: sum.callCount, finalStatus: sum.finalStatus, outcomes: sum.outcomes });
+  }
+  const v = settings.version === '1.2' ? 'SCORM 1.2' : 'SCORM 2004';
+  return {
+    version: settings.version,
+    source: 'Test harness, not an LMS',
+    sessions,
+    limitations: [
+      `These results come from a built-in ${v} test harness. They show what the course does when a ${v} API is present. They do not show how any LMS will behave, and nothing here is an LMS compatibility result.`,
+      'The harness implements a documented part of the data model; calls to other standard elements are listed as not tested.',
+      'It does not evaluate sequencing or navigation rules, does not move between lessons, and does not decide pass or fail from a mastery score. It tests one lesson per scan.',
+      `Resume is tested only when the course sets its exit value to "suspend". A new attempt keeps nothing but what ${v === 'SCORM 1.2' ? 'that version retains (status and score)' : 'the data model defines'}, and the course returning to the right screen needs a person to confirm.`,
+      'Journeys are scripted by the person; a journey that could not be carried out is reported as not tested, never as a pass.',
+    ],
+    lmsChecklist: SCORM_LMS_CHECKLIST.map((i) => ({ id: i.id, title: i.title, howToCheck: i.howToCheck })),
   };
 }

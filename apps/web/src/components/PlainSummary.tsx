@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Severity } from '@cqa/shared';
 import { api } from '../api';
-import { ErrorBox, Loading, SEVERITY_LABEL, SeverityBadge, useLoader } from './ui';
+import { ErrorBox, Loading, SEVERITY_LABEL, SeverityBadge, TableScroll, useLoader } from './ui';
 import type { ScanRun } from '@cqa/shared';
 
 export const STATUS_LABEL: Record<string, string> = {
@@ -149,6 +149,52 @@ export function PlainSummary({ run, isActive }: { run: ScanRun; isActive: boolea
             {r.package.inventory ? ` · ${r.package.inventory.files} files` : ''}. Outside websites referenced: {r.package.externalDependencies.length ? r.package.externalDependencies.map((d) => d.host).join(', ') : 'none found'}.
           </p>
           <p className="help">Items marked "Static package check" were read from the package files; no code was run for them. Everything else was observed in the browser.</p>
+        </div>
+      )}
+      {r.scorm && (
+        <div className="card">
+          <h3>SCORM {r.scorm.version} test harness: {r.scorm.source}</h3>
+          <p>{r.scorm.limitations[0]}</p>
+          <TableScroll label="Test harness sessions">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">Session</th>
+                  <th scope="col">Steps carried out</th>
+                  <th scope="col">API calls</th>
+                  <th scope="col">Recorded at the end</th>
+                </tr>
+              </thead>
+              <tbody>
+                {r.scorm.sessions.map((x) => (
+                  <tr key={x.name}>
+                    <th scope="row">{x.name}</th>
+                    <td>
+                      {x.stepsRun} of {x.stepsTotal}
+                      {x.stepFailure ? ` (${x.stepFailure})` : ''}
+                    </td>
+                    <td>{x.callCount}</td>
+                    <td>{x.finalStatus}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+          <ul className="help">
+            {r.scorm.limitations.slice(1).map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+          <details>
+            <summary>Only your LMS can show these ({r.scorm.lmsChecklist.length})</summary>
+            <ol>
+              {r.scorm.lmsChecklist.map((i) => (
+                <li key={i.id}>
+                  <strong>{i.title}</strong>. {i.howToCheck}
+                </li>
+              ))}
+            </ol>
+          </details>
         </div>
       )}
       <div className="big-counts" role="list">

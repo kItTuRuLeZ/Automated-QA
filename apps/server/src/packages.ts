@@ -26,7 +26,30 @@ import {
 export const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 const MAX_LAUNCHES = 25;
 
+const Step = z.object({
+  action: z.enum(['click', 'fill', 'select', 'press', 'wait']),
+  target: z.string().trim().max(300).optional(),
+  value: z.string().max(300).optional(),
+  ms: z.number().int().min(0).max(10_000).optional(),
+});
+const Expectation = z.object({
+  status: z.enum(['passed', 'completed', 'failed', 'incomplete', 'browsed', 'not attempted']).optional(),
+  completion: z.enum(['completed', 'incomplete', 'not attempted', 'unknown']).optional(),
+  success: z.enum(['passed', 'failed', 'unknown']).optional(),
+  scoreMin: z.number().min(-1000).max(1000).optional(),
+  scoreMax: z.number().min(-1000).max(1000).optional(),
+  mustReportScore: z.boolean().optional(),
+});
+const ScormInput = z.object({
+  /** Run the SCORM test harness. On by default for SCORM 1.2 and 2004 packages. */
+  enabled: z.boolean().optional(),
+  checkResume: z.boolean().optional(),
+  observeSeconds: z.number().min(0).max(15).optional(),
+  journeys: z.array(z.object({ name: z.string().trim().min(1).max(80), steps: z.array(Step).max(60), expect: Expectation.optional() })).max(6).optional(),
+});
+
 const PackageScanInput = z.object({
+  scorm: ScormInput.optional(),
   /** Launch keys from the package's list, or "all". Required when the package has more than one. */
   launch: z.union([z.literal('all'), z.array(z.string().max(512)).min(1).max(MAX_LAUNCHES)]).optional(),
   /** The scan runs the package's own JavaScript in a browser on this computer; the person must say they understand. */
@@ -227,6 +250,12 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
     else return bad(reply, `This package has ${choices.length} launch points. Choose which to scan, or choose all. Lessons you do not choose are reported as not scanned.`, { ruleId: 'PKG-007', choices });
     if (chosen.length > MAX_LAUNCHES) return bad(reply, `At most ${MAX_LAUNCHES} lessons can be scanned at once.`, { ruleId: 'PKG-007' });
 
+    const kind = pkg.inspection.kind;
+    const wantsScorm = input.scorm?.enabled ?? (kind === 'scorm12' || kind === 'scorm2004');
+    if (wantsScorm && kind !== 'scorm12' && kind !== 'scorm2004') {
+      return bad(reply, kind === 'html5' ? 'This is a plain HTML5 package, so there is no SCORM API to test.' : 'The SCORM version of this package could not be determined, so the matching test API is unknown. Fix the manifest, or scan without the SCORM test.', { ruleId: 'PKG-003' });
+    }
+    const scormVersion: '1.2' | '2004' | undefined = wantsScorm ? (kind === 'scorm12' ? '1.2' : '2004') : undefined;
     const origin = `http://127.0.0.1:${deps.packagePort}`;
     const runs: ScanRun[] = [];
     for (const c of chosen) {
@@ -252,6 +281,18 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         maxDepth: input.maxDepth,
       });
       config.target = { kind: 'package', url, packageId: pkg.id, launchEntry: c.key, packageName: pkg.name };
+      if (scormVersion) {
+        config.engines.scorm = scormVersion;
+        config.scorm = {
+          version: scormVersion,
+          journeys: input.scorm?.journeys ?? [],
+          checkResume: input.scorm?.checkResume ?? true,
+          observeSeconds: input.scorm?.observeSeconds ?? 4,
+          launchData: c.dataFromLms,
+          masteryScore: c.masteryScore,
+          hasSequencing: pkg.inspection.hasSequencing,
+        };
+      }
       config.skipExternalLinks = true;
       const decision = await policy.validateTarget(url, config.scope);
       if (!decision.ok) return reply.code(422).send({ error: decision.detail, reason: decision.reason, ruleId: 'NET-001' });

@@ -72,3 +72,16 @@ export const MANUAL_REVIEW_CHECKLIST: readonly ManualReviewItem[] = [
 /** Statement shown wherever accessibility results appear. */
 export const ACCESSIBILITY_DISCLAIMER =
   'Automated checks find a subset of accessibility problems. A clean automated result does not mean the course is accessible or compliant with WCAG or any other standard. The manual review list below always applies.';
+
+/**
+ * What only the target LMS can show. The test harness is not an LMS, so none
+ * of these are answered by a scan; they are listed with every SCORM scan.
+ */
+export const SCORM_LMS_CHECKLIST: readonly ManualReviewItem[] = [
+  { id: 'LMS-001', title: 'Completion is recorded in the LMS', howToCheck: 'Take the course to the end in your LMS and confirm the learner record shows completed (and passed or failed if the course is scored).', whyManual: 'The harness records what the course sends; only your LMS decides what it stores and shows.' },
+  { id: 'LMS-002', title: 'Resume returns to the right place', howToCheck: 'Leave the course part-way, reopen it from the LMS, and confirm it returns to the same screen with progress intact.', whyManual: 'Whether your LMS hands back the bookmark, and whether the course lands on the right screen, depends on the LMS and the course together.' },
+  { id: 'LMS-003', title: 'Attempts and retakes behave as intended', howToCheck: 'Finish the course, then reopen it. Confirm a new attempt starts (or does not) the way your LMS settings say, and scores are kept or replaced as intended.', whyManual: 'Attempt handling is LMS configuration the harness does not model.' },
+  { id: 'LMS-004', title: 'Score and pass mark', howToCheck: 'Complete a passing and a failing attempt. Confirm the LMS shows the right score and applies the pass mark you expect.', whyManual: 'The harness does not compute pass or fail from a mastery score; your LMS may.' },
+  { id: 'LMS-005', title: 'Certificates and other triggers', howToCheck: 'Confirm certificates, notifications, or learning-path unlocks fire when the learner completes or passes.', whyManual: 'These are LMS features outside the course package.' },
+  { id: 'LMS-006', title: 'Browser, window, and exit behaviour in your LMS', howToCheck: 'Launch from the LMS in the browsers your learners use. Close the window and use the course Exit button, and confirm progress is kept both ways.', whyManual: 'Pop-up, frame, and unload behaviour differ between LMSes and browsers.' },
+];

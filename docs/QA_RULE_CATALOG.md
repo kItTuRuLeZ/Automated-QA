@@ -142,7 +142,8 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 | PKG-005 | Missing local reference / case mismatch | 6 | planned |
 | PKG-006 | External dependency declared or requested | 6 | planned |
 | PKG-007 | Multiple organizations/SCOs — scan selection disclosed | 6 | planned |
-| SCO-001..n | SCORM 1.2 / 2004 lifecycle, commit, resume, status/score transitions (separate rule sets per version) | 7 | planned |
+| SCO12-001..008 | SCORM 1.2 harness: API found and initialized; lifecycle order; Finish before leaving; values saved; API errors; lesson status reported; bookmark and resume; recorded tracking matches the expected settings (per journey) | 7 | heuristic (harness results, not LMS results) |
+| SCO04-001..008 | SCORM 2004 harness: same eight checks with the 2004 API (`API_1484_11`, Initialize/Terminate), error codes, vocabularies, and separate completion and success status | 7 | heuristic (harness results, not LMS results) |
 | FID-001..n | Storyboard text match / omission / alteration / unverified | 9 | planned |
 
 Detailed columns are added when each phase begins.

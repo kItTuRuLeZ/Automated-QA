@@ -166,6 +166,7 @@ export function buildHtmlReport(r: RunReport, opts: HtmlReportOptions = {}): str
   <ol>${MANUAL_REVIEW_CHECKLIST.map((m) => `<li><b>${esc(m.title)}</b> (${esc(m.id)})<br>${esc(m.howToCheck)}<br><span class="small muted">Why manual: ${esc(m.whyManual)}</span></li>`).join('')}</ol>
 </section>
 ${r.package ? packageHtml(r.package) : ''}
+${r.scorm ? scormHtml(r.scorm) : ''}
 <section id="details" aria-labelledby="h-det">
   <h2 id="h-det">Scan details and totals</h2>
   <p><span class="label">Scope:</span> ${esc(r.scan.scope.origins.join(', '))}${r.scan.scope.pathPrefixes.length ? ` under ${esc(r.scan.scope.pathPrefixes.join(', '))}` : ''}. <span class="label">Limits:</span> up to ${r.scan.budgets.maxStates} screens, ${r.scan.budgets.maxDepth} clicks deep, ${r.scan.budgets.maxRuntimeSeconds} s. <span class="label">Checks on:</span> ${esc(r.scan.checksEnabled.join(', '))}. <span class="label">Screen sizes:</span> ${esc(r.scan.screenSizes.join(', '))}.${r.scan.platform === 'storyline' ? ' Storyline output was recognized (fixed-size stage).' : ''}</p>
@@ -205,5 +206,16 @@ function packageHtml(p: NonNullable<RunReport['package']>): string {
   <p><span class="label">Package:</span> ${esc(p.name)}${p.kind ? ` (${esc(p.kind === 'scorm12' ? 'SCORM 1.2' : p.kind === 'scorm2004' ? 'SCORM 2004' : p.kind === 'html5' ? 'plain HTML5' : 'unrecognized SCORM')}${p.scormVersionDeclared ? `, schema version ${esc(p.scormVersionDeclared)}` : ''})` : ''}. <span class="label">Lesson scanned:</span> ${esc(p.launchTitle ?? 'unknown')}${p.launchPoints > 1 ? ` (one of ${p.launchPoints} launch points; see the package checks for which others were not scanned)` : ''}.</p>
   ${inv ? `<p><span class="label">Contents:</span> ${inv.files} files, ${mb(inv.bytes)}. Largest: ${inv.largest.slice(0, 4).map((l) => `${esc(l.path)} (${mb(l.bytes)})`).join(', ')}.</p>` : '<p class="muted">The uploaded package has since been deleted, so its contents are not listed.</p>'}
   <p><span class="label">Outside websites referenced:</span> ${p.externalDependencies.length ? esc(p.externalDependencies.map((d) => d.host).join(', ')) : 'none found in the package text'}. A scan blocks outside requests unless they were allowed, and lists what was blocked. Items marked "Static package check" came from the package's files; no code was run for them.</p>
+</section>`;
+}
+
+function scormHtml(sc: NonNullable<RunReport['scorm']>): string {
+  return `<section id="scorm" aria-labelledby="h-scorm">
+  <h2 id="h-scorm">SCORM ${esc(sc.version)} test harness results</h2>
+  <p><b>${esc(sc.source)}.</b> ${esc(sc.limitations[0] ?? '')}</p>
+  <table><caption class="muted small" style="text-align:left">Sessions run</caption><thead><tr><th>Session</th><th>Steps</th><th>API calls</th><th>Recorded at the end</th></tr></thead><tbody>${sc.sessions.map((x) => `<tr><td>${esc(x.name)}</td><td>${x.stepsRun} of ${x.stepsTotal}${x.stepFailure ? ` (${esc(x.stepFailure)})` : ''}</td><td>${x.callCount}</td><td>${esc(x.finalStatus)}</td></tr>`).join('')}</tbody></table>
+  <ul class="small">${sc.limitations.slice(1).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+  <h3>Only your LMS can show</h3>
+  <ol>${sc.lmsChecklist.map((i) => `<li><b>${esc(i.title)}</b> (${esc(i.id)})<br>${esc(i.howToCheck)}</li>`).join('')}</ol>
 </section>`;
 }

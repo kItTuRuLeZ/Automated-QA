@@ -50,6 +50,6 @@ export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
     { id: 'multi-user', name: 'Shared use by a team, sign-in', status: 'not_included', detail: 'This version runs on one computer for one person and is bound to that computer only. Shared hosting needs sign-in first and is not built.' },
     { id: 'docker-worker', name: 'Containerized scan worker', status: 'not_included', detail: 'Not built. Scans, including scans of uploaded packages, run in a Chromium process on this computer under your account.' },
     { id: 'ai', name: 'AI recommendations', status: 'not_included', detail: 'Not included. No AI service is used for any result, and there is nowhere to enter an AI key.' },
-    { id: 'scorm', name: 'SCORM and LMS behaviour', status: 'not_included', detail: 'Not checked. Package files are inspected statically, but SCORM tracking, completion, and resume behaviour are not run or tested, and nothing here shows how a particular LMS will behave.' },
+    { id: 'scorm', name: 'SCORM test harness (not an LMS)', status: 'available', detail: 'A built-in stand-in for the LMS side of SCORM 1.2 and SCORM 2004 checks what a course sends: start, saving, errors, status, bookmark, and your own pass/fail journeys. It is not an LMS, does not evaluate sequencing, and tests one lesson per scan. Nothing it shows says how a particular LMS will behave.' },
   ];
 }

@@ -144,6 +144,49 @@ export interface EngineSelection {
   advisory: boolean;
   /** Brand checks (BRD-*). Only on when the profile has user-supplied brand values. */
   brand?: boolean;
+  /** SCORM test harness for this scan, and which version's API it provides (set only for SCORM packages). */
+  scorm?: '1.2' | '2004';
+}
+
+/** One scripted action in a journey the person wrote. Targets are Playwright locators: `text=Start` or a CSS selector like `#next`. */
+export interface ScormJourneyStep {
+  action: 'click' | 'fill' | 'select' | 'press' | 'wait';
+  target?: string;
+  value?: string;
+  ms?: number;
+}
+
+/** What the person expects the course to have recorded after a journey. Every field is optional and user-supplied. */
+export interface ScormExpectation {
+  /** SCORM 1.2 `cmi.core.lesson_status`. */
+  status?: 'passed' | 'completed' | 'failed' | 'incomplete' | 'browsed' | 'not attempted';
+  /** SCORM 2004 `cmi.completion_status`. */
+  completion?: 'completed' | 'incomplete' | 'not attempted' | 'unknown';
+  /** SCORM 2004 `cmi.success_status`. */
+  success?: 'passed' | 'failed' | 'unknown';
+  /** Raw score bounds (1.2 and 2004) the recorded score must fall within. */
+  scoreMin?: number;
+  scoreMax?: number;
+  mustReportScore?: boolean;
+}
+
+export interface ScormJourney {
+  name: string;
+  steps: ScormJourneyStep[];
+  expect?: ScormExpectation;
+}
+
+export interface ScormSettings {
+  version: '1.2' | '2004';
+  journeys: ScormJourney[];
+  /** Reopen the course after a suspended session and check it asks for its bookmark. */
+  checkResume: boolean;
+  /** Seconds to let the course run after loading before leaving (journey steps run first). */
+  observeSeconds: number;
+  launchData?: string;
+  masteryScore?: string;
+  /** The manifest has sequencing rules, which the harness does not evaluate. */
+  hasSequencing?: boolean;
 }
 
 export interface ScanConfig {
@@ -161,6 +204,7 @@ export interface ScanConfig {
   layout?: LayoutSettings;
   /** Do not request links to other websites (set for uploaded packages, which must not make outside requests). */
   skipExternalLinks?: boolean;
+  scorm?: ScormSettings;
   profileId?: ProfileId;
   /** Copy of the profile settings used for this scan, so the report stays true if the profile is edited later. */
   profile?: ProfileSnapshot;

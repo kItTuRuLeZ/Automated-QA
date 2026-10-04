@@ -26,6 +26,7 @@ export interface RunReport {
     thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
   };
   baselinesStored: number;
+  scorm?: { version: '1.2' | '2004'; source: string; sessions: Array<{ name: string; kind: string; stepsTotal: number; stepsRun: number; stepFailure?: string; callCount: number; finalStatus: string }>; limitations: string[]; lmsChecklist: Array<{ id: string; title: string; howToCheck: string }> };
   package?: { name: string; launchTitle?: string; launchPoints: number; kind?: string; scormVersionDeclared?: string; inventory?: { files: number; bytes: number }; externalDependencies: Array<{ host: string }>; available: boolean };
   issues: Array<{
     id: string;
@@ -150,7 +151,7 @@ export const api = {
     if (!res.ok) throw new ApiError(data.error ?? `Upload failed (${res.status})`, res.status);
     return data as unknown as PackageView;
   },
-  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[] }) =>
+  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
     request<{ runs: ScanRun[]; scanned: string[]; notScanned: string[] }>('POST', `/api/packages/${encodeURIComponent(id)}/scans`, input),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),

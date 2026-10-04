@@ -14,6 +14,8 @@ export interface ManifestItem {
   title: string;
   resourceId?: string;
   children: ManifestItem[];
+  dataFromLms?: string;
+  masteryScore?: string;
 }
 export interface ManifestOrganization {
   id: string;
@@ -50,6 +52,10 @@ export interface LaunchChoice {
   title: string;
   path: string;
   suffix?: string;
+  /** `adlcp:datafromlms` on the item, handed to the course as launch data. */
+  dataFromLms?: string;
+  /** SCORM 1.2 `adlcp:masteryscore` on the item. */
+  masteryScore?: string;
 }
 
 export interface PackageInspection {
@@ -64,6 +70,8 @@ export interface PackageInspection {
   /** What a scan can start from. More than one means the person must choose. */
   launchChoices: LaunchChoice[];
   externalDependencies: Array<{ host: string; urls: string[]; referencedFrom: string[] }>;
+  /** The manifest contains sequencing rules. They are listed but never evaluated. */
+  hasSequencing?: boolean;
   issues: PackageIssue[];
   /** Always printed with the results. */
   limits: string[];
@@ -251,6 +259,7 @@ function parseManifest(raw: string, result: PackageInspection, lookup: (rel: str
         : { ruleId: 'PKG-003', outcome: 'passed', detail: `Declared as ${kind === 'scorm12' ? 'SCORM 1.2' : 'SCORM 2004'}${schemaVersion ? ` (schema version "${schemaVersion}")` : ' by its namespaces'}. Declaring a version does not prove the content behaves that way at run time.` },
   );
 
+  result.hasSequencing = /<(\w+:)?sequencing[\s>]/i.test(raw);
   const manifestBase = attr(manifest, 'base') ?? '';
 
   // Resources.
@@ -317,7 +326,7 @@ function parseManifest(raw: string, result: PackageInspection, lookup: (rel: str
     kids(node, 'item').map((it) => {
       const ref = attr(it, 'identifierref');
       if (ref && !known.has(ref)) missingRefs.push({ ruleId: 'PKG-005', outcome: 'failed', title: `Item "${text(kids(it, 'title')[0]) || attr(it, 'identifier')}" points to a missing resource`, detail: `identifierref "${ref}" is not defined in the manifest's resources.` });
-      return { id: attr(it, 'identifier') ?? '', title: text(kids(it, 'title')[0]) || attr(it, 'identifier') || '(untitled)', resourceId: ref, children: parseItems(it) };
+      return { id: attr(it, 'identifier') ?? '', title: text(kids(it, 'title')[0]) || attr(it, 'identifier') || '(untitled)', resourceId: ref, children: parseItems(it), dataFromLms: text(kids(it, 'datafromlms')[0] ?? kids(it, 'dataFromLMS')[0]) || undefined, masteryScore: text(kids(it, 'masteryscore')[0]) || undefined };
     });
   for (const o of kids(orgsNode, 'organization')) {
     const id = attr(o, 'identifier') ?? '';
@@ -336,7 +345,7 @@ function parseManifest(raw: string, result: PackageInspection, lookup: (rel: str
         const key = res.id;
         if (!seenKeys.has(key)) {
           seenKeys.add(key);
-          choices.push({ key, title: result.organizations.length > 1 ? `${it.title} (${org.title})` : it.title, path: res.launchPath, suffix: res.launchSuffix });
+          choices.push({ key, title: result.organizations.length > 1 ? `${it.title} (${org.title})` : it.title, path: res.launchPath, suffix: res.launchSuffix, dataFromLms: it.dataFromLms, masteryScore: it.masteryScore });
         }
       }
       collect(it.children, org);

@@ -6,7 +6,9 @@ import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSumm
 import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
+import { harnessInitScript } from './adapters/scorm-harness.js';
 import { BrandChecks } from './engines/brand.js';
+import { runScormScenarios } from './engines/scorm.js';
 import { LinkChecker } from './engines/links.js';
 import { AccessibilityChecks } from './engines/accessibility.js';
 import { KeyboardChecks } from './engines/keyboard.js';
@@ -152,6 +154,10 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     await context.addInitScript({ content: 'globalThis.__name ??= (fn) => fn;' });
     // axe-core is injected into every frame before page scripts run (also works under a restrictive CSP).
     if (run.config.engines.accessibility) await context.addInitScript({ content: axeSource() });
+    // SCORM packages get a test API in the exploring browser too, so the course behaves as it would in an LMS while it is clicked through.
+    if (run.config.engines.scorm && run.config.scorm) {
+      await context.addInitScript({ content: harnessInitScript({ version: run.config.scorm.version, learner: { id: 'cqa-test-learner', name: 'Test Learner' }, restore: {}, entry: 'ab-initio', launchData: run.config.scorm.launchData, masteryScore: run.config.scorm.masteryScore, priorTotalSeconds: 0 }) });
+    }
     const page = await context.newPage();
     const userAgent = await page.evaluate(() => navigator.userAgent).catch(() => '');
     const browserInfo: BrowserInfo = { engine: 'chromium', version: browser.version(), userAgent, headless: true };
@@ -307,6 +313,16 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
       } catch (err) {
         if (controller.signal.aborted) throw err;
         contentErrors.push(`Viewport checks failed: ${truncateLine((err as Error).message)}`);
+      }
+    }
+
+    // ---- SCORM test harness scenarios (fresh contexts; results describe the harness, not an LMS) ----
+    if (run.config.engines.scorm && run.config.scorm && pageUsable) {
+      try {
+        await runScormScenarios({ browser, run, targetUrl, settings: run.config.scorm, ctx, persist: persistResults, deadline: runStartedAt + run.config.budgets.maxRuntimeMs });
+      } catch (err) {
+        if (controller.signal.aborted) throw err;
+        contentErrors.push(`SCORM harness failed: ${truncateLine((err as Error).message)}`);
       }
     }
 

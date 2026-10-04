@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 6 complete (package upload, static inspection, restricted-origin scans; no container isolation). Next: Phase 7 (SCORM runtime harness), the optional hosting phase, or a container worker.
+**Current state:** Phase 7 complete (SCORM 1.2 and 2004 test harness; results are harness results, not LMS results). Next: a container worker, the optional hosting phase, Phase 8 (AI, only on request), or Phase 9 (storyboard fidelity).
 
 ## Phase checklist
 
@@ -15,7 +15,7 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 4 | Responsive, visual heuristics, performance evidence | ✅ Complete (2026-10-03) |
 | 5 | Reports, client profiles, retest, standalone V1 | ✅ Complete (2026-10-04) |
 | 6 | HTML5/SCORM package inspection and package scans | ✅ Complete (2026-10-04), without container isolation (see limitations) |
-| 7 | SCORM runtime harness and platform adapters | Not started |
+| 7 | SCORM runtime harness and platform adapters | ✅ Harness complete (2026-10-04); Rise/Storyline adapters not built (no real exports supplied) |
 | 8 | Optional AI-assisted review (only on explicit request) | Not started |
 | 9 | Storyboard-to-course fidelity comparison | Not started |
 
@@ -397,3 +397,27 @@ Requested: Storyline courses are a fixed-size stage and not responsive, so they 
 - Validated only against generated fixtures; no real SCORM export (Rise, Storyline, Captivate) has been uploaded yet. Treat results on real exports as unverified until samples are supplied.
 - Sequencing/navigation rules in the manifest are not evaluated; there is no SCORM runtime (Phase 7), so tracking, completion, and resume are untested.
 - Backup does not include uploaded packages.
+
+## Phase 7 — delivered (SCORM runtime harness)
+
+- **Two separate harnesses** (`apps/worker/src/adapters/scorm-harness.ts`): SCORM 1.2 (`API`, `LMS*` methods, `cmi.core.*`) and SCORM 2004 (`API_1484_11`, plain method names, separate completion and success status). Each validates calls against a documented subset of its data model and returns that version's error codes (lifecycle, read-only, write-only, type, range, not-initialized, unimplemented). A lookup for the other version's API object is recorded but never answered. Interactions and objectives are accepted in order with field checks. Standard elements not implemented return the version's "not implemented" error and are listed separately, never counted as course errors.
+- **Lifecycle and persistence**: initialize/finish/commit rules per version; committed state is what survives (status, score, location, suspend data); finishing saves and accumulates total time. Resume restores committed values with entry=resume, only when the course set exit to suspend. A new attempt in 1.2 keeps status and score.
+- **Capture**: every call is logged with its state and error, streamed to the worker so it survives page navigation. Learner values and bookmark contents are redacted in logs and evidence; the learner is a fake test learner.
+- **Scenarios** (`engines/scorm.ts`): each person-written journey (click, fill, select, press, wait with Playwright targets) runs in a fresh context with fresh learner state; the page is then navigated away to exercise unload; resume is a reopened session. Pass and fail are separate journeys, each compared with expected tracking the person supplied. A journey that cannot be carried out is not tested, never a pass.
+- **Rules**: SCO12-001..008 and SCO04-001..008 (separate sets), all heuristic, with the harness limits in the rule text. Evidence kind `scorm_api_call` holds the call log.
+- **Report/UI**: a "SCORM test harness: not an LMS" section kept apart from static package checks and browser findings, the harness limits, and a six-item "only your LMS can show" checklist (completion, resume, attempts, score and pass mark, certificates, browser/exit behaviour). The package page has the journey editor.
+- **Disclosed, not hidden**: manifest sequencing is detected and reported as not evaluated; one lesson per scan; no pass/fail from mastery score; no actual-LMS compatibility claim anywhere.
+
+### Commands run (Phase 7)
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npx vitest run tests/scorm-harness.test.ts tests/scorm.integration.test.ts` | 20 passed (13 data-model/lifecycle unit tests for both versions; 7 browser tests: good 1.2 course with pass/fail/resume journeys, wrong-API course, bookmark without suspend, bookmark never read, expectation mismatch and unrunnable journey, 2004 errors and separate statuses, refusal and sequencing disclosure) |
+
+### Known limitations (Phase 7)
+
+- Validated only on generated courses. No real Rise or Storyline export has been run, so no Rise or Storyline adapter exists and real-world behaviour of those tools is unverified. Canvas or script-driven interactions are not reached unless a journey can click them.
+- Implements a subset of each data model (see the harness source); comments, learner preferences (2004), and `adl.nav` are not implemented.
+- Passing the harness does not mean the course works in an LMS. Multi-SCO sequencing, attempts, and mastery-score logic are not modelled.
+- The scan still runs course code without a container (see Phase 6 limitations).

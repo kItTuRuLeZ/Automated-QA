@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError, api } from '../api';
+import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi } from '../components/ScormJourneys';
 import { ErrorBox, Loading, TableScroll, useLoader } from '../components/ui';
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
@@ -13,6 +14,8 @@ export function PackagePage({ id }: { id: string }) {
   const [allowed, setAllowed] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [harness, setHarness] = useState(true);
+  const [journeys, setJourneys] = useState<JourneyDraft[]>([emptyJourney('Pass journey'), emptyJourney('Fail journey'), emptyJourney('Leave part-way')]);
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading />;
@@ -24,8 +27,16 @@ export function PackagePage({ id }: { id: string }) {
   const start = async () => {
     setBusy(true);
     setProblem(undefined);
+    const scormVersion = ins.kind === 'scorm12' ? '1.2' : ins.kind === 'scorm2004' ? '2004' : undefined;
+    const parsed = scormVersion && harness ? journeysToApi(journeys, scormVersion) : { journeys: [], problems: [] as string[] };
+    if (parsed.problems.length) {
+      setProblem(parsed.problems.join(' '));
+      setBusy(false);
+      return;
+    }
     try {
       const res = await api.scanPackage(p.id, {
+        scorm: scormVersion ? { enabled: harness, journeys: parsed.journeys } : undefined,
         launch: effective.length === choices.length && choices.length > 1 ? 'all' : effective,
         acknowledgeLocalExecution: ack,
         allowedExternalOrigins: allowed.split('\n').map((x) => x.trim()).filter(Boolean),
@@ -131,6 +142,17 @@ export function PackagePage({ id }: { id: string }) {
                   Pick all
                 </button>
               </fieldset>
+            )}
+            {(ins.kind === 'scorm12' || ins.kind === 'scorm2004') && (
+              <>
+                <label className="checkbox">
+                  <input type="checkbox" checked={harness} onChange={(e) => setHarness(e.target.checked)} /> Also run the {ins.kind === 'scorm12' ? 'SCORM 1.2' : 'SCORM 2004'} test harness
+                </label>
+                <p className="help">
+                  A built-in stand-in for the LMS side of SCORM: it checks what the course sends (start, saving, errors, status, bookmark) and records every call. It is not your LMS, does not run sequencing, and tests one lesson per scan. Nothing it shows says how your LMS will behave.
+                </p>
+                {harness && <ScormJourneys version={ins.kind === 'scorm12' ? '1.2' : '2004'} value={journeys} onChange={setJourneys} />}
+              </>
             )}
             <div className="field">
               <label htmlFor="pkg-allowed">Outside websites the package may load from (optional, one per line)</label>
