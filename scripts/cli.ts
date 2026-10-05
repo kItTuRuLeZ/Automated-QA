@@ -4,13 +4,19 @@ import { ArtifactStore, BackupError, SERVER_HOST, SERVER_PORT, Store, createBack
 
 const [command, ...rest] = process.argv.slice(2);
 
-function appIsRunning(): Promise<boolean> {
+function portOpen(host: string): Promise<boolean> {
   return new Promise((resolve) => {
-    const s = net.connect({ host: SERVER_HOST, port: SERVER_PORT });
+    const s = net.connect({ host, port: SERVER_PORT });
     s.once('connect', () => (s.destroy(), resolve(true)));
     s.once('error', () => resolve(false));
     s.setTimeout(800, () => (s.destroy(), resolve(false)));
   });
+}
+
+// In LAN demo mode the app listens on CQA_LAN_HOST instead of loopback, so check there too.
+async function appIsRunning(): Promise<boolean> {
+  const lanHost = process.env.CQA_LAN_HOST?.trim();
+  return (await portOpen(SERVER_HOST)) || (lanHost ? await portOpen(lanHost) : false);
 }
 
 async function main(): Promise<number> {
@@ -29,7 +35,7 @@ async function main(): Promise<number> {
       return 2;
     }
     if (await appIsRunning()) {
-      console.error(`The app appears to be running on ${SERVER_HOST}:${SERVER_PORT}. Stop it first, then restore.`);
+      console.error(`The app appears to be running on port ${SERVER_PORT}. Stop it first, then restore.`);
       return 1;
     }
     const r = restoreBackup(file);

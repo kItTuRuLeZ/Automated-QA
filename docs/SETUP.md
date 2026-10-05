@@ -24,7 +24,7 @@ npm run browsers:install
 npm start
 ```
 
-Open <http://127.0.0.1:4317>. Use `127.0.0.1`, not `localhost`. The app listens on this computer only. Data (database and screenshots) is stored in `./data`; set `CQA_DATA_DIR` to put it elsewhere.
+Open <http://127.0.0.1:4317>. Use `127.0.0.1`, not `localhost`. The app listens on this computer only. To show it to others on your local network, see the optional [LAN demo mode](LAN_DEMO.md). Data (database and screenshots) is stored in `./data`; set `CQA_DATA_DIR` to put it elsewhere.
 
 **About this installation** (link at the top of the app) lists what works, what is blocked, and what is not included in this version.
 
@@ -56,7 +56,9 @@ The setting accepts only loopback address and port pairs. Anything else, includi
 | Setting | Default | What it does |
 | --- | --- | --- |
 | `CQA_DATA_DIR` | `./data` | Where the database and screenshots are stored |
-| `CQA_PORT` | `4317` | Port for the app (loopback only) |
+| `CQA_PORT` | `4317` | Port for the app (loopback only, unless LAN demo mode is on) |
+| `CQA_LAN_HOST` | unset | Turns on LAN demo mode: the app listens only on this private IPv4 address of this computer, with sign-in. See [LAN_DEMO.md](LAN_DEMO.md) |
+| `CQA_LAN_PASSWORD` | unset | Shared demo password for LAN demo mode (12 characters or more); required when `CQA_LAN_HOST` is set |
 | `CQA_ALLOW_LOCAL_TARGETS` | unset | Comma-separated `127.0.0.1:port` pairs that may be scanned (offline sample pack) |
 | `CQA_PACKAGE_PORT` | `4318` | Port of the separate local address that serves uploaded course packages |
 | `CQA_RETENTION_DAYS` | unset | If set, scans older than this many days are deleted at start-up |

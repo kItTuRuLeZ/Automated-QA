@@ -1,7 +1,9 @@
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ArtifactStore, NetworkPolicy, PACKAGE_PORT, parseLocalTargets, SERVER_HOST, SERVER_PORT, Store, WEB_DEV_PORT, createLogger, openDatabase, resolveDataPaths, sweepRetention } from '@cqa/core';
 import { buildApp } from './app.js';
+import { type LanMode, resolveLanMode } from './lan.js';
 import { createPackageServer } from './package-server.js';
 
 const log = createLogger('server');
@@ -21,7 +23,18 @@ if (retentionDays) {
 }
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-const hosts = [`${SERVER_HOST}:${SERVER_PORT}`, `localhost:${SERVER_PORT}`, `${SERVER_HOST}:${WEB_DEV_PORT}`, `localhost:${WEB_DEV_PORT}`];
+// Optional LAN demo mode (CQA_LAN_HOST + CQA_LAN_PASSWORD), off by default; see docs/LAN_DEMO.md.
+// It changes only where the app itself listens. The package server below stays on loopback.
+let lan: LanMode | undefined;
+try {
+  lan = resolveLanMode(process.env, os.networkInterfaces(), SERVER_PORT);
+} catch (err) {
+  log.error((err as Error).message);
+  process.exit(1);
+}
+const appHost = lan?.host ?? SERVER_HOST;
+// LAN mode accepts exactly one Host and Origin: the configured address and port. Loopback mode is unchanged.
+const hosts = lan ? [`${lan.host}:${lan.port}`] : [`${SERVER_HOST}:${SERVER_PORT}`, `localhost:${SERVER_PORT}`, `${SERVER_HOST}:${WEB_DEV_PORT}`, `localhost:${WEB_DEV_PORT}`];
 const app = buildApp({
   store,
   artifacts,
@@ -30,12 +43,14 @@ const app = buildApp({
   allowedOrigins: hosts.map((h) => `http://${h}`),
   webDist: path.resolve(here, '../../web/dist'),
   packages: { dir: paths.packages, port: PACKAGE_PORT },
-  capabilities: { localTargets: localTargets.exemptions, retentionDays },
+  capabilities: { localTargets: localTargets.exemptions, retentionDays, lanUrl: lan ? `http://${lan.host}:${lan.port}` : undefined },
+  auth: lan ? { password: lan.password } : undefined,
 });
 
-// Bound to loopback only. Network exposure requires authentication first (future work).
-await app.listen({ host: SERVER_HOST, port: SERVER_PORT });
-log.info({ url: `http://${SERVER_HOST}:${SERVER_PORT}`, dataDir: paths.root }, 'server listening');
+// Loopback only by default. In LAN mode, only the one configured LAN address, and every request must be signed in.
+await app.listen({ host: appHost, port: SERVER_PORT });
+if (lan) log.warn({ url: `http://${lan.host}:${lan.port}`, dataDir: paths.root }, 'LAN demo mode: app listening on the local network, sign-in required (not reachable on 127.0.0.1)');
+else log.info({ url: `http://${SERVER_HOST}:${SERVER_PORT}`, dataDir: paths.root }, 'server listening');
 
 // The restricted origin for uploaded packages: a different port from the app, loopback only, read-only.
 const packageServer = createPackageServer({ root: paths.packages, port: PACKAGE_PORT });

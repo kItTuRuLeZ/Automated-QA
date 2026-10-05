@@ -85,6 +85,7 @@ Default deny: form submission, `type=submit` buttons, elements whose name/label 
 - State-changing endpoints require `Content-Type: application/json` and a custom header (`X-QA-Request: 1`), which a cross-origin page cannot send without a CORS preflight; CORS is not enabled.
 - No endpoint fetches or proxies arbitrary URLs for the UI.
 - Shared or network deployment requires authentication and authorization first (future work).
+- Optional LAN demo mode ([LAN_DEMO.md](LAN_DEMO.md)): only the app listens on one configured private IPv4 address of this computer (never `0.0.0.0`, loopback, link-local, or public), the `Host`/`Origin` allow-list becomes exactly that address and port, and every request (UI, API, uploads, reports, artifacts) needs a session from a shared password. The Host/Origin, `Sec-Fetch-Site`, and CSRF-header checks run before sign-in. Sessions are random 256-bit tokens in an `HttpOnly; SameSite=Strict` cookie, kept in memory (hashed) with a 12-hour lifetime; repeated wrong passwords lock out the client address. The package server, worker, and scan network policy are unchanged and stay on loopback. Plain HTTP, one shared password, no per-user authorization: a demo on a trusted network, not a deployment.
 
 ## Uploaded packages as built (Phase 6)
 

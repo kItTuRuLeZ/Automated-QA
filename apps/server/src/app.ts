@@ -6,6 +6,7 @@ import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCou
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { type CapabilityOptions, buildCapabilities } from './capabilities.js';
+import { type LanAuthOptions, registerLanAuth } from './lan.js';
 import { registerPackageRoutes } from './packages.js';
 import { buildHtmlReport } from './export/html.js';
 import { renderPdf } from './export/pdf.js';
@@ -26,6 +27,8 @@ export interface AppOptions {
   capabilities?: CapabilityOptions;
   /** Where uploaded packages live and the port of the separate origin that serves them. Package routes are off without it. */
   packages?: { dir: string; port: number };
+  /** LAN demo mode only: sign-in required for every page, API call, upload, and report. Off (undefined) for the default loopback mode. */
+  auth?: LanAuthOptions;
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -58,6 +61,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       if (req.method !== 'DELETE' && !isUpload && !ct.startsWith('application/json')) return reply.code(415).send({ error: 'Content-Type must be application/json.' });
     }
   });
+  // Runs after the guard above, so a request must pass the Host/Origin checks before it reaches sign-in.
+  if (opts.auth) registerLanAuth(app, opts.auth);
   app.addHook('onSend', async (_req, reply, payload) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
