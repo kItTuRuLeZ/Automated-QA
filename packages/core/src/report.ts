@@ -84,6 +84,9 @@ export interface ReportPackage {
   scormVersionDeclared?: string;
   inventory?: { files: number; bytes: number; byType: Array<{ type: string; files: number; bytes: number }>; largest: Array<{ path: string; bytes: number }> };
   externalDependencies: Array<{ host: string; urls: string[] }>;
+  /** Hosts found only in the authoring tool's own player code or on its vendor's domains. */
+  runtimeReferenceCount?: number;
+  authoringTool?: { tool: 'rise' | 'storyline'; product: string; version?: string; facts: Array<{ label: string; value: string }>; scenarios: string[]; adapterVersion: string; defaultJourney?: { name: string } };
   /** Whether the uploaded package still exists; its inventory is gone with it. */
   available: boolean;
 }
@@ -475,6 +478,8 @@ function packageSection(store: Store, run: ScanRun): ReportPackage | undefined {
     scormVersionDeclared: pkg?.inspection.scormVersionDeclared,
     inventory: pkg?.inspection.inventory,
     externalDependencies: (pkg?.inspection.externalDependencies ?? []).map((d) => ({ host: d.host, urls: d.urls })),
+    runtimeReferenceCount: pkg?.inspection.runtimeReferences?.length,
+    authoringTool: pkg?.inspection.authoringTool && (({ tool, product, version, facts, scenarios, adapterVersion, defaultJourney }) => ({ tool, product, version, facts, scenarios, adapterVersion, defaultJourney: defaultJourney && { name: defaultJourney.name } }))(pkg.inspection.authoringTool),
     available: Boolean(pkg),
   };
 }

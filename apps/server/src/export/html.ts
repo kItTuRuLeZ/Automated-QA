@@ -204,9 +204,15 @@ function packageHtml(p: NonNullable<RunReport['package']>): string {
   return `<section id="package" aria-labelledby="h-pkg">
   <h2 id="h-pkg">Package</h2>
   <p><span class="label">Package:</span> ${esc(p.name)}${p.kind ? ` (${esc(p.kind === 'scorm12' ? 'SCORM 1.2' : p.kind === 'scorm2004' ? 'SCORM 2004' : p.kind === 'html5' ? 'plain HTML5' : 'unrecognized SCORM')}${p.scormVersionDeclared ? `, schema version ${esc(p.scormVersionDeclared)}` : ''})` : ''}. <span class="label">Lesson scanned:</span> ${esc(p.launchTitle ?? 'unknown')}${p.launchPoints > 1 ? ` (one of ${p.launchPoints} launch points; see the package checks for which others were not scanned)` : ''}.</p>
+  ${p.authoringTool ? authoringHtml(p.authoringTool) : ''}
   ${inv ? `<p><span class="label">Contents:</span> ${inv.files} files, ${mb(inv.bytes)}. Largest: ${inv.largest.slice(0, 4).map((l) => `${esc(l.path)} (${mb(l.bytes)})`).join(', ')}.</p>` : '<p class="muted">The uploaded package has since been deleted, so its contents are not listed.</p>'}
   <p><span class="label">Outside websites referenced:</span> ${p.externalDependencies.length ? esc(p.externalDependencies.map((d) => d.host).join(', ')) : 'none found in the package text'}. A scan blocks outside requests unless they were allowed, and lists what was blocked. Items marked "Static package check" came from the package's files; no code was run for them.</p>
 </section>`;
+}
+
+function authoringHtml(a: NonNullable<NonNullable<RunReport['package']>['authoringTool']>): string {
+  return `<p><span class="label">Made with:</span> ${esc(a.product)}${a.version ? ` (build ${esc(a.version)})` : ''}. ${a.facts.map((f) => `<span class="label">${esc(f.label)}:</span> ${esc(f.value)}`).join('. ')}${a.facts.length ? '.' : ''}
+  <span class="muted">Recognized from the package's own files by the ${esc(a.tool === 'rise' ? 'Rise' : 'Storyline')} adapter, version ${esc(a.adapterVersion)}. Scenarios it can run without a written journey: ${a.scenarios.map(esc).join('; ')}. It does not read inside canvas or script-drawn content, and the settings shown are what the export file states, not what an LMS will do.</span></p>`;
 }
 
 function scormHtml(sc: NonNullable<RunReport['scorm']>): string {

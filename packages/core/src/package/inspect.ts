@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { type AuthoringToolInfo, detectAuthoringTool } from './authoring.js';
 
 /**
  * Static inspection of an extracted package. Nothing here runs course code.
@@ -70,6 +71,10 @@ export interface PackageInspection {
   /** What a scan can start from. More than one means the person must choose. */
   launchChoices: LaunchChoice[];
   externalDependencies: Array<{ host: string; urls: string[]; referencedFrom: string[] }>;
+  /** Addresses found only in a recognized authoring tool's own player/driver code, or on the tool vendor's domains. */
+  runtimeReferences?: Array<{ host: string; urls: string[]; referencedFrom: string[] }>;
+  /** The authoring tool that exported the package, when recognized. */
+  authoringTool?: AuthoringToolInfo;
   /** The manifest contains sequencing rules. They are listed but never evaluated. */
   hasSequencing?: boolean;
   issues: PackageIssue[];
@@ -156,7 +161,8 @@ export function inspectPackage(root: string): PackageInspection {
     largest: [...files].sort((a, b) => b.bytes - a.bytes).slice(0, 8).map((f) => ({ path: f.rel, bytes: f.bytes })),
   };
 
-  const result: PackageInspection = { kind: 'html5', inventory, organizations: [], resources: [], launchChoices: [], externalDependencies: [], issues: [], limits: LIMITS };
+  const result: PackageInspection = { kind: 'html5', inventory, organizations: [], resources: [], launchChoices: [], externalDependencies: [], runtimeReferences: [], issues: [], limits: LIMITS };
+  result.authoringTool = detectAuthoringTool(root, files);
   result.issues.push({ ruleId: 'PKG-001', outcome: 'passed', detail: 'The archive passed the size, entry-count, path, symbolic-link, duplicate, and encryption checks.' });
 
   // Case-insensitive lookup of one file reference: exact, case-mismatch, or missing.
@@ -215,11 +221,17 @@ export function inspectPackage(root: string): PackageInspection {
 
   result.issues.push(...missingRefs);
   scanTextFiles(root, files, result, lookup);
+  if (result.authoringTool) delete result.authoringTool.contentText;
   if (!result.issues.some((i) => i.ruleId === 'PKG-005')) result.issues.push({ ruleId: 'PKG-005', outcome: 'passed', detail: 'Every local file the manifest and launch pages refer to was found with matching letter case.' });
+  const tool = result.authoringTool;
+  const runtimeNote =
+    tool && result.runtimeReferences?.length
+      ? ` A further ${result.runtimeReferences?.length} address(es) appear only in ${tool.product}'s own player and SCORM driver code or on the vendor's domains (licence and help links, telemetry, media services); they are listed separately, still blocked during a scan, and reported then if the player actually requests them.`
+      : '';
   result.issues.push(
     result.externalDependencies.length
-      ? { ruleId: 'PKG-006', outcome: 'needs_review', title: `Package refers to ${result.externalDependencies.length} outside website(s)`, detail: `Found addresses on: ${result.externalDependencies.map((d) => d.host).join(', ')}. A scan blocks these unless you allow them, and says what was blocked.` }
-      : { ruleId: 'PKG-006', outcome: 'passed', detail: 'No outside web addresses were found in the package text. Addresses built in code at run time cannot be seen this way.' },
+      ? { ruleId: 'PKG-006', outcome: 'needs_review', title: `Package refers to ${result.externalDependencies.length} outside website(s)`, detail: `Found addresses on: ${result.externalDependencies.map((d) => d.host).join(', ')}. A scan blocks these unless you allow them, and says what was blocked.${runtimeNote}` }
+      : { ruleId: 'PKG-006', outcome: 'passed', detail: `No outside web addresses were found in the course's own files.${runtimeNote} Addresses built in code at run time cannot be seen this way.` },
   );
   if (result.launchChoices.length === 0 && !result.issues.some((i) => i.ruleId === 'PKG-004')) {
     result.issues.push({ ruleId: 'PKG-004', outcome: 'failed', title: 'No launchable lesson found', detail: 'No resource in the manifest resolves to a file that can be opened.' });
@@ -372,6 +384,22 @@ function parseManifest(raw: string, result: PackageInspection, lookup: (rel: str
 /** Finds outside addresses and local references that point nowhere, in the package's own text files. */
 function scanTextFiles(root: string, files: Array<{ rel: string; bytes: number }>, result: PackageInspection, lookup: (rel: string) => { state: 'ok' | 'case' | 'missing'; actual?: string }): void {
   const ext = new Map<string, { urls: Set<string>; from: Set<string> }>();
+  const tool = result.authoringTool;
+  const inRuntime = (rel: string) => !!tool?.runtimePaths.some((p) => (p.endsWith('/') ? rel.startsWith(p) : rel === p));
+  const vendor = (host: string) => !!tool?.vendorHosts.some((v) => host === v || host.endsWith(`.${v}`));
+  const addUrls = (body: string, from: string) => {
+    for (const m of body.matchAll(/https?:\/\/([A-Za-z0-9.-]+)(?::\d+)?[^\s"'<>)\\]*/g)) {
+      const host = m[1]!.toLowerCase();
+      if (host === 'www.w3.org' || host === 'www.adlnet.org' || host === 'www.imsglobal.org' || host === 'www.imsproject.org' || host === 'purl.org' || host === 'ltsc.ieee.org') continue; // namespace and schema identifiers, not fetched
+      if (/^(localhost|127\.|0\.0\.0\.0)/.test(host) || !host.includes('.')) continue;
+      // Fragments of addresses assembled in code ("https://360.${domain}") and reserved example names are not destinations.
+      if (!/^[a-z0-9-]+(\.[a-z0-9-]+)*\.[a-z]{2,}$/.test(host) || /^example\.(com|org|net)$|\.(invalid|test|example|localhost)$/.test(host)) continue;
+      const cur = ext.get(host) ?? { urls: new Set<string>(), from: new Set<string>() };
+      if (cur.urls.size < 5) cur.urls.add(m[0].slice(0, 160));
+      cur.from.add(from);
+      ext.set(host, cur);
+    }
+  };
   const missing = new Map<string, string[]>();
   const caseMismatch = new Map<string, { actual: string; from: string[] }>();
   let looked = 0;
@@ -385,15 +413,7 @@ function scanTextFiles(root: string, files: Array<{ rel: string; bytes: number }
     } catch {
       continue;
     }
-    for (const m of body.matchAll(/https?:\/\/([A-Za-z0-9.-]+)(?::\d+)?[^\s"'<>)\\]*/g)) {
-      const host = m[1]!.toLowerCase();
-      if (host === 'www.w3.org' || host === 'www.adlnet.org' || host === 'www.imsglobal.org' || host === 'www.imsproject.org' || host === 'purl.org' || host === 'ltsc.ieee.org') continue; // namespace and schema identifiers, not fetched
-      if (/^(localhost|127\.|0\.0\.0\.0)/.test(host) || !host.includes('.')) continue;
-      const cur = ext.get(host) ?? { urls: new Set<string>(), from: new Set<string>() };
-      if (cur.urls.size < 5) cur.urls.add(m[0].slice(0, 160));
-      cur.from.add(f.rel);
-      ext.set(host, cur);
-    }
+    addUrls(body, f.rel);
     // Local references: only plain src/href attributes in HTML (scripts and CSS build paths in ways that cannot be followed statically).
     if (e === '.html' || e === '.htm') {
       const dir = path.posix.dirname(f.rel);
@@ -413,7 +433,11 @@ function scanTextFiles(root: string, files: Array<{ rel: string; bytes: number }
       }
     }
   }
-  result.externalDependencies = [...ext.entries()].map(([host, v]) => ({ host, urls: [...v.urls], referencedFrom: [...v.from].slice(0, 5) })).sort((a, b) => a.host.localeCompare(b.host));
+  // Rise keeps lesson text, and so the author's links, base64-encoded in one data file; the adapter decoded it.
+  if (tool?.contentText) addUrls(tool.contentText.text, tool.contentText.from);
+  const all = [...ext.entries()].map(([host, v]) => ({ host, urls: [...v.urls], referencedFrom: [...v.from].slice(0, 5), runtime: vendor(host) || [...v.from].every(inRuntime) })).sort((a, b) => a.host.localeCompare(b.host));
+  result.externalDependencies = all.filter((d) => !d.runtime).map(({ runtime: _, ...d }) => d);
+  result.runtimeReferences = all.filter((d) => d.runtime).map(({ runtime: _, ...d }) => d);
   for (const [rel, from] of [...missing.entries()].slice(0, 100)) result.issues.push({ ruleId: 'PKG-005', outcome: 'failed', title: `Page refers to a missing file: ${rel}`, detail: `"${rel}" is referenced from ${[...new Set(from)].slice(0, 3).join(', ')} but is not in the package.`, paths: [rel] });
   for (const [rel, v] of [...caseMismatch.entries()].slice(0, 100)) result.issues.push({ ruleId: 'PKG-005', outcome: 'needs_review', title: `Letter case differs: ${rel}`, detail: `"${rel}" is referenced from ${[...new Set(v.from)].slice(0, 3).join(', ')} but the file is "${v.actual}". This fails on case-sensitive servers.`, paths: [rel, v.actual] });
   if (looked > MAX_TEXT_FILES) result.issues.push({ ruleId: 'PKG-005', outcome: 'needs_review', title: 'Not every page was checked for missing files', detail: `Only the first ${MAX_TEXT_FILES} text files were read; the rest were not.` });

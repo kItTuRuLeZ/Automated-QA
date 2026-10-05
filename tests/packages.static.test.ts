@@ -174,3 +174,68 @@ describe('manifest and package inspection', () => {
     expect(inspect({ 'readme.txt': 'no pages' }).issues.some((i) => i.ruleId === 'PKG-004' && i.outcome === 'failed')).toBe(true);
   });
 });
+
+describe('authoring tool recognition (built from real Rise 360 and Storyline 360 exports)', () => {
+  const runtimeData = (course: object) => `__jsonp("runtime-data.js","${Buffer.from(JSON.stringify({ course })).toString('base64')}");`;
+  const riseFiles = (extra: Files = {}): Files => ({
+    'imsmanifest.xml': manifest2004({ launch: 'scormdriver/indexAPI.html' }),
+    'scormdriver/indexAPI.html': page('Rise driver'),
+    'scormdriver/scormdriver.js': 'var docs="https://adlnet.gov/expapi/verbs/completed";',
+    'scormcontent/index.html': page('Rise', '', '<script src="lib/rise/app.js"></script>'),
+    'scormcontent/lib/rise/app.js': 'var a="https://github.com/facebook/react",b="https://360.${e}`",c="https://rise.articulate.com/x",d="https://placeholder.invalid/";',
+    'scormcontent/runtime-data.js': runtimeData({
+      lessons: [
+        { type: 'blocks', title: 'One', items: [{ type: 'text' }, { type: 'knowledgeCheck' }, { type: 'text', note: 'See https://policy.example.org/handbook and https://intranet.cobank-docs.com/p' }] },
+        { type: 'blocks', title: 'Two', items: [{ type: 'text' }] },
+      ],
+      exportSettings: { reporting: 'passed-failed', completeWith: 'reporting', completionPercentage: 80, targetName: 'SCORM 2004 - 4th Edition' },
+      lmsOptions: { enableExitCourse: false },
+    }),
+    ...extra,
+  });
+  type Files = Record<string, string>;
+
+  it('recognizes Rise, reads its settings, and splits the tool\'s own code from the course\'s outside links', () => {
+    const r = inspect(riseFiles());
+    const t = r.authoringTool!;
+    expect(t.tool).toBe('rise');
+    expect(t.facts).toEqual(expect.arrayContaining([{ label: 'Lessons', value: '2, 4 blocks, 1 knowledge check(s)' }, { label: 'LMS reporting', value: 'Passed / Failed' }, { label: 'Exit course button', value: 'hidden' }]));
+    expect(t.tracking).toMatchObject({ reporting: 'passed-failed', completionPercentage: 80 });
+    expect(t.contentText).toBeUndefined(); // decoded text is not stored
+    expect(t.defaultJourney?.steps[0]?.target).toContain('internal:control=enter-frame');
+    // The author's links (in lesson content) are course dependencies; the player's own library links, vendor domains,
+    // placeholder names and half-built addresses are not.
+    expect(r.externalDependencies.map((d) => d.host)).toEqual(['intranet.cobank-docs.com', 'policy.example.org']);
+    expect(r.runtimeReferences?.map((d) => d.host)).toEqual(expect.arrayContaining(['adlnet.gov', 'github.com', 'rise.articulate.com']));
+    expect(r.runtimeReferences?.some((d) => d.host.startsWith('360.') || d.host.endsWith('.invalid'))).toBe(false);
+    expect(issues(r, 'PKG-006')[0]!.outcome).toBe('needs_review');
+    expect(issues(r, 'PKG-006')[0]!.detail).toMatch(/intranet\.cobank-docs\.com.*A further \d+ address/);
+  });
+
+  it('reports the outside-site check as passed when only the tool\'s own code refers to outside sites', () => {
+    const r = inspect(riseFiles({ 'scormcontent/runtime-data.js': runtimeData({ lessons: [], exportSettings: {} }) }));
+    expect(r.externalDependencies).toEqual([]);
+    expect(issues(r, 'PKG-006')[0]!.outcome).toBe('passed');
+  });
+
+  it('recognizes Storyline 360 from its files and meta.xml, and does not mistake a custom package for either tool', () => {
+    const sl = inspect({
+      'imsmanifest.xml': manifest2004({ launch: 'index_lms.html' }),
+      'index_lms.html': page('Story', '', '<script src="lms/scormdriver.js"></script>'),
+      'story.html': page('Story'),
+      'lms/scormdriver.js': 'var a="https://www.scorm.com/";',
+      'html5/lib/scripts/bootstrapper.min.js': 'var a="https://lodash.com/";',
+      'story_content/user.js': '1',
+      'meta.xml': '<meta><project title="T" datepublished="2026-10-05T05:36:01" duration="About 3 minutes"/><slidemeta viewslides="32"/><application name="Articulate Storyline" version="3.126.38052.0"/></meta>',
+    });
+    expect(sl.authoringTool).toMatchObject({ tool: 'storyline', product: 'Storyline 360', version: '3.126.38052.0' });
+    expect(sl.authoringTool!.facts).toEqual(expect.arrayContaining([{ label: 'Slides', value: '32' }]));
+    expect(sl.authoringTool!.defaultJourney?.steps.filter((s) => s.action === 'click')).toHaveLength(3);
+    expect(sl.externalDependencies).toEqual([]);
+    expect(sl.runtimeReferences?.map((d) => d.host)).toEqual(['lodash.com', 'www.scorm.com']);
+
+    const custom = inspect({ 'imsmanifest.xml': manifest2004(), 'index.html': page('Custom', '', '<script src="app.js"></script>'), 'app.js': 'var a="https://cdn.example-vendor.com/lib.js";' });
+    expect(custom.authoringTool).toBeUndefined();
+    expect(custom.externalDependencies.map((d) => d.host)).toEqual(['cdn.example-vendor.com']);
+  });
+});

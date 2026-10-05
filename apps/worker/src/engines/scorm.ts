@@ -1,7 +1,7 @@
-import type { Browser } from 'playwright';
+import type { Browser, BrowserContext, Page } from 'playwright';
 import type { EvidenceId, FindingLocation, ProviderContext, ScanRun, ScormJourney, ScormSettings } from '@cqa/shared';
 import { nowIso } from '@cqa/core';
-import { type HarnessCall, type HarnessConfig, type ScormVersion, harnessInitScript } from '../adapters/scorm-harness.js';
+import { type HarnessCall, type HarnessConfig, type HarnessSnapshot, type ScormVersion, READBACK_PATH, harnessInitScript, readSpill } from '../adapters/scorm-harness.js';
 import { type NewCheck, type NewFinding, check, finding, truncate } from './helpers.js';
 import { type RuleResult, type SessionResult, analyzeExpectation, analyzeResume, analyzeSession, toChecks } from './scorm-analysis.js';
 
@@ -43,6 +43,24 @@ function secondsOf(version: ScormVersion, value: string | undefined): number {
   }
   const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/.exec(value);
   return m ? Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0) : 0;
+}
+
+/** Opens a blank page on the course's own origin (answered here, never sent to the network) and collects the harness spill. */
+async function readBack(context: BrowserContext, page: Page, targetUrl: string): Promise<HarnessSnapshot | null> {
+  let url: URL;
+  try {
+    url = new URL(READBACK_PATH, targetUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+  try {
+    await context.route(url.href, (route) => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>read-back</title>' }));
+    await page.goto(url.href, { waitUntil: 'load', timeout: 5_000 });
+    return await page.evaluate(readSpill);
+  } catch {
+    return null;
+  }
 }
 
 /** One fresh browser context, one harness, one scripted visit. */
@@ -107,6 +125,13 @@ async function runSession(input: ScormRunInput, opts: { name: string; kind: 'jou
     const callsBeforeLeave = Math.max(0, ...[...emitted.keys()]);
     await page.goto('about:blank').catch(() => undefined);
     await page.waitForTimeout(500);
+    // Calls made in pagehide/unload handlers can miss the binding; the harness also spilled them to the package origin's storage.
+    const spilled = await readBack(context, page, input.targetUrl);
+    if (spilled) {
+      for (const c of spilled.calls) if (!emitted.has(c.seq)) emitted.set(c.seq, c);
+      if (spilled.calls.some((c) => c.seq > callsBeforeLeave)) lastPersist = { committed: spilled.committed, cmi: spilled.cmi };
+      for (const l of spilled.lookups) if (!lookups.some((x) => x.name === l.name && x.t === l.t)) lookups.push(l);
+    }
     const calls = [...emitted.values()].sort((a, b) => a.seq - b.seq);
     return {
       name: opts.name,

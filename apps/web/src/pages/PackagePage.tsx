@@ -117,9 +117,21 @@ export function PackagePage({ id }: { id: string }) {
             </tbody>
           </table>
         </TableScroll>
+        {ins.authoringTool && (
+          <div>
+            <p>
+              <strong>Made with:</strong> {ins.authoringTool.product}
+              {ins.authoringTool.version ? ` (build ${ins.authoringTool.version})` : ''}. {ins.authoringTool.facts.map((f) => `${f.label}: ${f.value}`).join(' · ')}
+            </p>
+            <p className="help">
+              Recognized by the {ins.authoringTool.tool === 'rise' ? 'Rise' : 'Storyline'} adapter (version {ins.authoringTool.adapterVersion}). With no journey written, a scan runs: {ins.authoringTool.scenarios.join('; ')}. The adapter does not reach inside canvas or script-drawn content, and the settings above are what the export file states, not what an LMS will do.
+            </p>
+          </div>
+        )}
         <p>
           <strong>Outside websites referenced:</strong>{' '}
-          {ins.externalDependencies.length ? ins.externalDependencies.map((d) => d.host).join(', ') : 'none found in the package text'}
+          {ins.externalDependencies.length ? ins.externalDependencies.map((d) => d.host).join(', ') : "none found in the course's own files"}
+          {ins.runtimeReferences?.length ? ` (plus ${ins.runtimeReferences.length} in ${ins.authoringTool?.product ?? 'the authoring tool'}'s own player code, listed in the inspection data)` : ''}
         </p>
       </div>
 
