@@ -2,7 +2,7 @@
 
 Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code_Course_QA_Automation_Phased_Prompt.md). Resume from this file; do not restart completed phases.
 
-**Current state:** Phase 7 complete (SCORM 1.2 and 2004 test harness; results are harness results, not LMS results). Next: a container worker, the optional hosting phase, Phase 8 (AI, only on request), or Phase 9 (storyboard fidelity).
+**Current state:** Phase 7 complete (SCORM 1.2 and 2004 test harness; results are harness results, not LMS results), with Rise and Storyline adapters 1.0 validated on one real 2004 export each. Next: a container worker, the optional hosting phase, Phase 8 (AI, only on request), or Phase 9 (storyboard fidelity).
 
 ## Phase checklist
 
@@ -15,7 +15,7 @@ Source prompt: [`Claude_Code_Course_QA_Automation_Phased_Prompt.md`](Claude_Code
 | 4 | Responsive, visual heuristics, performance evidence | ✅ Complete (2026-10-03) |
 | 5 | Reports, client profiles, retest, standalone V1 | ✅ Complete (2026-10-04) |
 | 6 | HTML5/SCORM package inspection and package scans | ✅ Complete (2026-10-04), without container isolation (see limitations) |
-| 7 | SCORM runtime harness and platform adapters | ✅ Harness complete (2026-10-04); Rise/Storyline adapters not built (no real exports supplied) |
+| 7 | SCORM runtime harness and platform adapters | ✅ Harness complete (2026-10-04); Rise and Storyline adapters 1.0 built from one real export each (2026-10-05, see Phase 7b) |
 | 8 | Optional AI-assisted review (only on explicit request) | Not started |
 | 9 | Storyboard-to-course fidelity comparison | Not started |
 
@@ -421,3 +421,16 @@ Requested: Storyline courses are a fixed-size stage and not responsive, so they 
 - Implements a subset of each data model (see the harness source); comments, learner preferences (2004), and `adl.nav` are not implemented.
 - Passing the harness does not mean the course works in an LMS. Multi-SCO sequencing, attempts, and mastery-score logic are not modelled.
 - The scan still runs course code without a container (see Phase 6 limitations).
+
+## Phase 7b — real Rise 360 and Storyline 360 exports (2026-10-05)
+
+Inputs: `supporting-files/` (outside the repo): a Rise 360 SCORM 2004 4th ed. ZIP (221 MB, 145 files) and a Storyline 360 3.126 SCORM 2004 4th ed. ZIP (64 MB, 233 files). Both passed archive validation, extraction (about 5 s each) and static inspection unchanged.
+
+What the real exports found and what changed:
+
+- **Harness lost calls made while the page closes (false findings).** Storyline sends its final Commit and Terminate from a `pagehide` handler, after Playwright's binding is gone, so the first run reported "never calls Terminate" and "sets values it never commits" (two High findings) for a course that does both. The harness now spills calls to the package origin's storage once the page starts closing, and the scan reads them back on a blank page it answers itself (never sent to the network). Test: `SCORM 2004 harness: calls made while the page closes`. Result on Storyline: the High findings are gone; one Low note remains (terminates only on unload, which is true).
+- **Outside-site list was noise (44 and 55 hosts).** Almost all were licence, help and library links inside the tool's own player and SCORM driver code. Inspection now recognizes the tool, keeps those in a separate `runtimeReferences` list (still blocked during a scan), drops half-built addresses (for example `https://360.${e}`) and reserved example names, and decodes Rise's base64 lesson data so links the author wrote are still listed. Rise: 55 to 0 course dependencies; Storyline: 44 to 0.
+- **Adapter 1.0** (`packages/core/src/package/authoring.ts`): recognition from files the tools always write; Rise reads `scormcontent/runtime-data.js` (lessons, blocks, knowledge checks, reporting mode, completion rule, exit button), Storyline reads `meta.xml` (version, slide count, published date). When no journey is written, a scan runs the tool's default journey: Rise opens the cover page's Start Course button inside the course frame; Storyline presses the player Next button three times. Shown on the package page, in the HTML report and in the inspection data with the adapter version and what it cannot do.
+- **Real-export result (2004 harness).** Rise: completion incomplete, bookmark and 310 characters of suspend data saved after Start Course, reopened session reads them back; no tracking failures. Storyline: same pattern; suspend data grows with each slide. Both only call Terminate on unload (Low note) and both have manifest sequencing rules (disclosed, not evaluated).
+- **Not covered:** completion and pass rules (the default journeys do not finish the course or answer quizzes; Rise reports completion at 100% of lessons viewed, so the harness has not seen a completed attempt), SCORM 1.2 exports, canvas content, Storyline triggers and branching, Captivate and custom HTML.
+- Optional test: `tests/real-exports.test.ts` runs real ZIPs through a package scan and writes the call logs to a folder; it is skipped unless `CQA_REAL_EXPORTS`, `CQA_REAL_ZIPS` and `CQA_REAL_OUT` are set, so real client content never enters the repo or the default suite.

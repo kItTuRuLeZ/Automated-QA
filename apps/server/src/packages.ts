@@ -285,7 +285,8 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         config.engines.scorm = scormVersion;
         config.scorm = {
           version: scormVersion,
-          journeys: input.scorm?.journeys ?? [],
+          // With no journey written by the person, use the authoring tool's adapter journey (if one is recognized) so resume is exercised.
+          journeys: input.scorm?.journeys?.length ? input.scorm.journeys : pkg.inspection.authoringTool?.defaultJourney ? [pkg.inspection.authoringTool.defaultJourney] : [],
           checkResume: input.scorm?.checkResume ?? true,
           observeSeconds: input.scorm?.observeSeconds ?? 4,
           launchData: c.dataFromLms,

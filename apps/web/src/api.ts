@@ -84,6 +84,8 @@ export interface PackageView {
     inventory: { files: number; bytes: number; byType: Array<{ type: string; files: number; bytes: number }>; largest: Array<{ path: string; bytes: number }> };
     launchChoices: Array<{ key: string; title: string; path: string }>;
     externalDependencies: Array<{ host: string; urls: string[] }>;
+    runtimeReferences?: Array<{ host: string; urls: string[] }>;
+    authoringTool?: { tool: 'rise' | 'storyline'; product: string; version?: string; facts: Array<{ label: string; value: string }>; scenarios: string[]; adapterVersion: string; defaultJourney?: { name: string } };
     issues: Array<{ ruleId: string; outcome: 'passed' | 'failed' | 'needs_review' | 'not_applicable' | 'not_tested'; title?: string; detail: string }>;
     limits: string[];
   };

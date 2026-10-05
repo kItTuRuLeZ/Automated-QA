@@ -67,6 +67,10 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
   const cmi: Record<string, string> = {};
   let committed: Record<string, string> = {};
   let sessionTimeSet = false;
+  // Once the page starts closing, calls are also written to this origin's localStorage:
+  // Playwright bindings can be torn down before `pagehide`/`unload` handlers run, which
+  // is exactly when many courses (Storyline among them) commit and terminate.
+  let leaving = false;
 
   // ---- error tables ----
   const ERR12: Record<number, string> = { 0: 'No error', 101: 'General exception', 201: 'Invalid argument error', 202: 'Element cannot have children', 203: 'Element not an array. Cannot have count', 301: 'Not initialized', 401: 'Not implemented error', 402: 'Invalid set value, element is a keyword', 403: 'Element is read only', 404: 'Element is write only', 405: 'Incorrect data type' };
@@ -263,6 +267,14 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
   const REDACT_ELEMENTS = /suspend_data|comments|student_response|learner_response|launch_data|student_name|learner_name|student_id|learner_id/;
   const shown = (name: string, value: string): string => (REDACT_ELEMENTS.test(name) ? `[${value.length} characters]` : value.length > 120 ? `${value.slice(0, 117)}...` : value);
 
+  const spill = () => {
+    if (!leaving) return;
+    try {
+      win.localStorage.setItem('__cqaScormSpill', JSON.stringify({ calls: calls.slice(-500), cmi, committed, state, lookups }));
+    } catch {
+      /* storage unavailable; the snapshot taken before leaving still stands */
+    }
+  };
   const record = (fn: string, args: string[], ret: string, error: number, loggedRet?: string): string => {
     const entry: HarnessCall = { seq: ++seq, t: Date.now() - t0, fn, args, ret: loggedRet ?? ret, error, state };
     calls.push(entry);
@@ -272,6 +284,7 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
     } catch {
       /* the binding may be gone while the page unloads */
     }
+    spill();
     return ret;
   };
   const persist = () => {
@@ -281,6 +294,7 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
     } catch {
       /* see above */
     }
+    spill();
   };
   const fail = (code: number): string => {
     lastError = code;
@@ -470,6 +484,15 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
       /* already defined by the page; the harness cannot be installed */
     }
     win.__cqaScorm = { snapshot: () => ({ calls: calls.slice(), cmi: { ...cmi }, committed: { ...committed }, state, lookups: lookups.slice() }) };
+    if (typeof win.addEventListener === 'function') {
+      // Registered before any course script, so these run first and every later unload-time call is kept.
+      const startLeaving = () => {
+        leaving = true;
+        spill();
+      };
+      win.addEventListener('beforeunload', startLeaving, true);
+      win.addEventListener('pagehide', startLeaving, true);
+    }
   }
 
   return { api, snapshot: () => ({ calls: calls.slice(), cmi: { ...cmi }, committed: { ...committed }, state, lookups: lookups.slice() }) };
@@ -477,5 +500,21 @@ export function scormHarness(cfg: HarnessConfig, win: any): Harness {
 
 /** Init-script source: installs the harness only in the top window (courses find it by walking up `parent`). */
 export function harnessInitScript(cfg: HarnessConfig): string {
-  return `globalThis.__name ??= (fn) => fn;\n(function(){ if (window !== window.top) return; (${scormHarness.toString()})(${JSON.stringify(cfg)}, window); })();`;
+  // The read-back page only exists to read what the closing page spilled, so it gets no harness;
+  // every other page starts from a clean spill so an earlier page's log is never mixed in.
+  return `globalThis.__name ??= (fn) => fn;\n(function(){ if (window !== window.top) return; if (location.pathname.endsWith(${JSON.stringify(READBACK_PATH)})) return; try { localStorage.removeItem('__cqaScormSpill'); } catch {} (${scormHarness.toString()})(${JSON.stringify(cfg)}, window); })();`;
+}
+
+/** Path on the package origin the scan opens after leaving, to collect calls made while the course page closed. */
+export const READBACK_PATH = '/__cqa_scorm_readback';
+
+/** Reads (and clears) what the harness wrote while the page was closing. Runs on the read-back page. */
+export function readSpill(): HarnessSnapshot | null {
+  try {
+    const raw = localStorage.getItem('__cqaScormSpill');
+    localStorage.removeItem('__cqaScormSpill');
+    return raw ? (JSON.parse(raw) as HarnessSnapshot) : null;
+  } catch {
+    return null;
+  }
 }

@@ -35,8 +35,10 @@ A local web app that scans a published course URL, clicks through what it can re
 | Authoring tool | Status |
 | --- | --- |
 | Rise (share link) | **Partial.** One Rise course was scanned and drove fixes (late-rendered controls, aborted requests, late titles). Not validated across versions, block types, or large courses |
+| Rise 360 SCORM 2004 4th ed. export (ZIP) | **Partial.** One export (10 lessons, 71 blocks, video, AI-scenario and custom blocks; 221 MB) uploaded, inspected, scanned and run through the 2004 harness on 2026-10-05. The Rise adapter (1.0) recognizes the export, reads its tracking settings, starts the course inside its frame, and the resume check passed (bookmark saved and read back). SCORM 1.2 Rise exports and quiz-tracked (passed/failed) courses are untested |
+| Storyline 360 3.126 SCORM 2004 4th ed. export (ZIP) | **Partial.** One export (32 slides) run the same way. The Storyline adapter (1.0) recognizes it, moves forward three slides with the player Next button, and resume passed. Branching, quizzes, triggers, and canvas/script-drawn content are not driven; SCORM 1.2 Storyline exports are untested |
 | Storyline 360 (`story.html`) | **Partial.** Two courses scanned (one Aptara-hosted, one Storyline 360). Fixed-stage handling, script links, and inline placeholder video were fixed from these |
-| Older Storyline (2/3), Captivate, Lectora, custom HTML from other teams | **Pending.** No samples supplied. Only the fixture pack covers custom HTML patterns |
+| Older Storyline (2/3), Captivate, Lectora, custom HTML from other teams, any SCORM 1.2 export | **Pending.** No samples supplied. Only the fixture pack covers these |
 | Courses with video, audio, large media, or LMS-only behaviour | **Pending.** Fixture coverage only |
 
 "Partial" means the scanner ran on real output and its findings were reviewed by hand for false positives; it does not mean every feature of that tool is covered. Please send further samples; each real course so far has found a real gap.

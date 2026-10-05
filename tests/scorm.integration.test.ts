@@ -154,6 +154,24 @@ describe('SCORM 1.2 harness against faulty courses', () => {
   });
 });
 
+describe('SCORM 2004 harness: calls made while the page closes', () => {
+  it('keeps Commit and Terminate sent from pagehide (the way Storyline exits), so the course is not reported as never finishing', async () => {
+    const closing = page(
+      'Exits on pagehide',
+      '',
+      `<script>var api=window.API_1484_11;api.Initialize('');api.SetValue('cmi.completion_status','incomplete');api.SetValue('cmi.exit','suspend');
+      window.addEventListener('pagehide',function(){api.SetValue('cmi.session_time','PT5S');api.SetValue('cmi.suspend_data','late');api.Commit('');api.Terminate('')});</script>`,
+    );
+    const { checks, findings, run } = await scorm({ 'imsmanifest.xml': manifest2004(), 'index.html': closing }, {});
+    expect(outcomes(checks, 'SCO04-004')).toEqual(['passed']); // saved and committed
+    expect(findings.some((f) => f.ruleId === 'SCO04-004')).toBe(false);
+    expect(outcomes(checks, 'SCO04-003')).toEqual(['needs_review']); // terminates only on unload: low-severity note, not "never"
+    expect(titles(findings, 'SCO04-003')[0]).toMatch(/only calls Terminate while the page is closing/);
+    const calls = (h.store.listEvidenceByKind(run.id, 'scorm_api_call')[0]!.data as { calls: Array<{ fn: string }> }).calls.map((c) => c.fn);
+    expect(calls).toEqual(expect.arrayContaining(['Commit', 'Terminate']));
+  });
+});
+
 describe('SCORM 2004 harness', () => {
   it('uses the 2004 API and error codes, and flags range/format errors, a missing Terminate, unsaved values, and no completion', async () => {
     const bad = page(
