@@ -81,7 +81,7 @@ export const EMPTY_COUNTERS: ProgressCounters = {
 // ---- inventory ----
 
 /** Rise uses lesson and block, Storyline uses scene and slide, with layer and state beneath. */
-export const UNIT_KINDS = ['lesson', 'block', 'scene', 'slide', 'layer', 'state', 'screen'] as const;
+export const UNIT_KINDS = ['sco', 'lesson', 'block', 'scene', 'slide', 'layer', 'state', 'screen'] as const;
 export type UnitKind = (typeof UNIT_KINDS)[number];
 
 export const DISCOVERY_SOURCES = ['manifest', 'authoring_export', 'player_menu', 'runtime'] as const;

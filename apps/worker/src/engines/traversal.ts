@@ -98,6 +98,8 @@ export class Traversal {
       excludeResourceTypes?: readonly string[];
       /** Called once per reached state while the page shows it (per-state content checks). */
       onStateReady?: (state: CourseState, reproductionSteps: string[], pathKey: string) => Promise<void>;
+      /** Called with every control found on a state (including the ones that will not be clicked), so interactions can be inventoried. */
+      onActions?: (state: CourseState, candidates: readonly CandidateAction[]) => void;
       /** Keyboard activation of recognized controls (Phase 3); optional. */
       keyboardPass?: (input: KeyboardPassInput) => Promise<{ checks: NewCheck[]; findings: NewFinding[] }>;
     },
@@ -196,7 +198,7 @@ export class Traversal {
     await settle();
     const rootSnap = await snap();
     const root: Node = {
-      state: { ...this.deps.rootState, signature: signatureOf(rootSnap), lessonId: rootSnap.lessonId ?? undefined, openDialogs: rootSnap.dialogs, selectedTabs: rootSnap.selectedTabs },
+      state: { ...this.deps.rootState, signature: signatureOf(rootSnap), lessonId: rootSnap.lessonId ?? undefined, lessonTitle: rootSnap.lessonTitle, openDialogs: rootSnap.dialogs, selectedTabs: rootSnap.selectedTabs },
       snap: rootSnap,
       path: [],
     };
@@ -273,6 +275,7 @@ export class Traversal {
         await settle();
         candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
       }
+      this.deps.onActions?.(node.state, candidates);
       const skipped = candidates.filter((c) => c.reason);
       // In-page interactions first; links last, so site navigation does not consume the state budget before the content is explored.
       const runnable = candidates.filter((c) => !c.reason).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);
@@ -384,6 +387,7 @@ export class Traversal {
                 title,
                 signature: signatureOf(after),
                 lessonId: after.lessonId ?? undefined,
+                lessonTitle: after.lessonTitle,
                 openDialogs: after.dialogs,
                 selectedTabs: after.selectedTabs,
                 depth: node.state.depth + 1,

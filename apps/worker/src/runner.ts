@@ -3,7 +3,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
 import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
-import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines } from '@cqa/core';
+import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines, unitsFromPackage } from '@cqa/core';
+import { RunRecorder } from './recorder.js';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
 import { harnessInitScript } from './adapters/scorm-harness.js';
@@ -64,7 +65,22 @@ type AbortReason = 'cancelled' | 'budget_runtime' | 'worker_lost';
  * status and cleans up the browser, proxy, and temp directory.
  */
 export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> {
-  const status = await runScanInner(deps, run);
+  const rec = new RunRecorder(new QaStore(deps.store.db), run.id);
+  rec.begin();
+  let status: RunStatus;
+  try {
+    status = await runScanInner(deps, run, rec);
+  } finally {
+    rec.stop();
+  }
+  try {
+    const finished = deps.store.getRun(run.id);
+    const reason = status === 'cancelled' ? 'The scan was cancelled before reaching this.' : (finished?.coverage?.budgetsReached.length ?? 0) > 0 ? 'The scan stopped at one of its limits before reaching this.' : 'No control the scanner could operate led here from the start, so a browser never showed it.';
+    rec.explainUnreached(() => reason);
+    rec.finalize(status === 'completed' || status === 'partial' || status === 'failed' || status === 'cancelled' ? status : 'failed', finished?.statusDetail);
+  } catch (err) {
+    deps.log.error({ err, runId: run.id }, 'could not finalize run progress');
+  }
   if (run.retestOfRunId) {
     try {
       applyRetestOutcome(deps.store, run.id);
@@ -75,7 +91,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
   return status;
 }
 
-async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> {
+async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): Promise<RunStatus> {
   const { store, log } = deps;
   const leaseMs = deps.leaseMs ?? 30_000;
   const heartbeatMs = deps.heartbeatMs ?? 1_000;
@@ -124,6 +140,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
   };
 
   try {
+    rec.stage('validating', 'Checking the address and scan settings');
     // Re-validate at run time: DNS may differ from submission time.
     const decision = await deps.policy.validateTarget(targetUrl, run.config.scope);
     if (!decision.ok) {
@@ -134,6 +151,15 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     }
     if (store.isCancelRequested(run.id)) abort('cancelled');
     if (controller.signal.aborted) throw new Error('aborted');
+    rec.stage('discovering', 'Opening the course and listing what it contains');
+    // A package already tells us a lot about what it contains. List that before any browser visit.
+    if (run.config.target.kind === 'package' && run.config.target.packageId) {
+      const pkg = store.getPackage(run.config.target.packageId);
+      if (pkg) {
+        const inv = unitsFromPackage(pkg.inspection, pkg.inspection.launchChoices.find((c) => c.key === run.config.target.launchEntry)?.key);
+        rec.seedUnits(inv.units, inv.launchUnitId);
+      }
+    }
 
     mkdirSync(tmpDir, { recursive: true });
     proxy = new EgressProxy({ policy: deps.policy, scope: run.config.scope, maxTotalBytes: run.config.budgets.maxTotalBytes, onBlocked: (b) => blocked.push(b) });
@@ -226,6 +252,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     const annotator = new Annotator();
     const brandEngine = run.config.engines.brand && profile ? new BrandChecks(profile) : undefined;
     const onStateReady = async (state: CourseState, repro: string[], pathKey = '') => {
+      rec.stateReached(state);
       const guarded = async (fn: () => Promise<void>) => {
         try {
           await fn();
@@ -257,6 +284,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
     // ---- bounded traversal ----
     let traversal: TraversalOutput | undefined;
     let traversalError: string | undefined;
+    rec.stage('running', 'Checking screens and exercising controls');
     if (run.config.engines.traversal) {
       if (out.state && !out.navigationFailed && !out.outOfScope) {
         try {
@@ -267,6 +295,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
             blocked: () => blocked,
             excludeResourceTypes,
             onStateReady,
+            onActions: (state, candidates) => rec.actionsDiscovered(state, candidates),
             keyboardPass: run.config.engines.keyboard ? (input) => keyboardEngine.activate(input) : undefined,
           });
           traversal = await engine.explore({ ...ctx, state: out.state }, (state) => store.insertState(state));
@@ -382,6 +411,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> 
       ].filter(Boolean);
       detail = parts.join(' ') || 'Some content could not be checked.';
     }
+    rec.stage('finalizing', 'Saving results');
     store.finishRun(run.id, { status, reason, detail, coverage });
     return status;
   } catch (err) {

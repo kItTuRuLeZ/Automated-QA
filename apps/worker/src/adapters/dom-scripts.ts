@@ -7,6 +7,8 @@
 export interface StateSnapshot {
   url: string;
   lessonId: string | null;
+  /** Title of the current lesson or slide when the player states it (Storyline's selected menu item). */
+  lessonTitle?: string;
   dialogs: string[];
   selectedTabs: string[];
   expanded: string[];
@@ -65,7 +67,14 @@ export function snapshotState(): StateSnapshot {
   u.search = '';
   const lessonMatch = location.hash.match(/#\/?(?:lessons?|pages?|screens?|slides?)\/([^/?&#]+)/i);
   const lessonAttr = document.querySelector('[data-lesson-id]')?.getAttribute('data-lesson-id') ?? null;
-  return { url: u.toString(), lessonId: lessonMatch?.[1] ?? lessonAttr, dialogs, selectedTabs, expanded, textHash: h.toString(16) };
+  // Storyline: the player menu marks the current slide with cs-selected and names it by data-ref (_player.<scene>.<slide>).
+  const slideItem = document.querySelector('.cs-listitem[data-ref].cs-selected:not(.is-scene)');
+  const slideRef = slideItem?.getAttribute('data-ref') ?? null;
+  const slideId = slideRef ? slideRef.split('.').pop() ?? null : null;
+  const snapshot: { url: string; lessonId: string | null; lessonTitle?: string; dialogs: string[]; selectedTabs: string[]; expanded: string[]; textHash: string } = { url: u.toString(), lessonId: lessonMatch?.[1] ?? lessonAttr ?? slideId, dialogs, selectedTabs, expanded, textHash: h.toString(16) };
+  const slideTitle = slideItem?.getAttribute('data-slide-title');
+  if (slideTitle) snapshot.lessonTitle = slideTitle.trim();
+  return snapshot;
 }
 
 /** Finds candidate controls in the current state and classifies them. Nothing is clicked here. */

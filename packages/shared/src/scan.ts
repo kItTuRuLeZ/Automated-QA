@@ -146,6 +146,8 @@ export interface EngineSelection {
   brand?: boolean;
   /** SCORM test harness for this scan, and which version's API it provides (set only for SCORM packages). */
   scorm?: '1.2' | '2004';
+  /** Functional behavior tests from the test library (interaction cases and behavior rules). Absent in older scans. */
+  functional?: boolean;
 }
 
 /** One scripted action in a journey the person wrote. Targets are Playwright locators: `text=Start` or a CSS selector like `#next`. */

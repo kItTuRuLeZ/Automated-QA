@@ -22,3 +22,5 @@ export * from './package/inspect.js';
 export * from './package/authoring.js';
 export * from './db/qa-store.js';
 export * from './qa/aggregation.js';
+export * from './qa/inventory.js';
+export * from './qa/library.js';

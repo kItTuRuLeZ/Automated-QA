@@ -37,7 +37,23 @@ export interface AuthoringToolInfo {
   adapterVersion: string;
   /** Decoded course text the inspector searches for outside links; dropped before the inspection is stored. */
   contentText?: { text: string; from: string };
+  /** What the export itself says the course contains: Rise lessons and blocks, Storyline scenes, slides and layers. */
+  outline?: OutlineEntry[];
 }
+
+export interface OutlineEntry {
+  kind: 'lesson' | 'block' | 'scene' | 'slide' | 'layer';
+  /** The tool's own identifier (Rise lesson id; Storyline scene or slide id). */
+  id: string;
+  title: string;
+  /** True when the export gives no title, so a readable fallback was used. */
+  titleIsFallback: boolean;
+  parentId?: string;
+  /** Rise block type, or Storyline slide number, for the reviewer. */
+  detail?: string;
+}
+
+const stripTags = (s: string): string => s.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
 
 export const AUTHORING_ADAPTER_VERSION = '1.0 (2026-10)';
 
@@ -86,6 +102,7 @@ function rise(root: string, has: (rel: string) => boolean): AuthoringToolInfo | 
         course?: { lessons?: Array<{ type?: string; items?: Array<{ type?: string; family?: string }> }>; exportSettings?: { completeWith?: string; completionPercentage?: number; reporting?: string; targetName?: string; quizId?: string | null }; lmsOptions?: { enableExitCourse?: boolean }; navigationMode?: string };
       };
       const course = data.course ?? {};
+      info.outline = riseOutline(course.lessons as RiseLesson[] | undefined);
       info.contentText = { text: JSON.stringify(course.lessons ?? []), from: 'scormcontent/runtime-data.js (lesson content)' };
       const lessons = (course.lessons ?? []).filter((l) => l.type !== 'section');
       const blocks = lessons.reduce((n, l) => n + (l.items?.length ?? 0), 0);
@@ -106,6 +123,73 @@ function rise(root: string, has: (rel: string) => boolean): AuthoringToolInfo | 
     }
   }
   return info;
+}
+
+interface RiseLesson {
+  id?: string;
+  type?: string;
+  title?: string;
+  items?: Array<{ id?: string; type?: string; family?: string; variant?: string; title?: string }>;
+}
+
+/** Lessons and the blocks inside them, exactly as the export lists them. Titles that are missing become readable fallbacks. */
+function riseOutline(lessons: RiseLesson[] | undefined): OutlineEntry[] {
+  const out: OutlineEntry[] = [];
+  (lessons ?? []).forEach((l, li) => {
+    if (!l.id || l.type === 'section') return;
+    out.push({ kind: 'lesson', id: l.id, title: l.title?.trim() || `Lesson ${li + 1}`, titleIsFallback: !l.title?.trim(), detail: l.type });
+    (l.items ?? []).forEach((b, bi) => {
+      if (!b.id) return;
+      const label = [b.family, b.variant].filter((x) => x && x !== b.family).join(' ') || b.family || b.type || 'block';
+      out.push({ kind: 'block', id: b.id, title: b.title?.trim() || `Block ${bi + 1}: ${label}`, titleIsFallback: !b.title?.trim(), parentId: l.id, detail: b.type });
+    });
+  });
+  return out;
+}
+
+interface StorylineSlide {
+  id?: string;
+  title?: string;
+  lmsId?: string;
+  slideNumberInScene?: number;
+  slideLayers?: Array<{ id?: string; title?: string; isBaseLayer?: boolean }>;
+}
+interface StorylineScene {
+  id?: string;
+  lmsId?: string;
+  isMessageScene?: boolean;
+  sceneNumber?: number;
+  slides?: StorylineSlide[];
+}
+
+/** Scenes, slides and layers from html5/data/js/data.js (a JSON string passed to globalProvideData). Player prompt scenes are skipped. */
+function storylineOutline(root: string): OutlineEntry[] | undefined {
+  const raw = safeRead(path.join(root, 'html5', 'data', 'js', 'data.js'), 16 * 1024 * 1024)?.replace(/^﻿/, '');
+  const m = raw ? /globalProvideData\(\s*'data'\s*,\s*'([\s\S]*)'\s*\)\s*;?\s*$/.exec(raw) : null;
+  if (!m) return undefined;
+  let data: { scenes?: StorylineScene[] };
+  try {
+    // The payload is a JS single-quoted string literal holding JSON. Read it back the way JavaScript would, then parse the JSON.
+    const literal = m[1]!.replace(/\\(.)/g, (_all, c: string) => (c === "'" ? "'" : c === 'n' ? '\n' : c === 't' ? '\t' : c === 'r' ? '\r' : c === '\\' ? '\\' : c === '"' ? '\\"' : `\\${c}`));
+    data = JSON.parse(literal) as { scenes?: StorylineScene[] };
+  } catch {
+    return undefined;
+  }
+  const out: OutlineEntry[] = [];
+  (data.scenes ?? []).forEach((sc, si) => {
+    if (sc.isMessageScene || !sc.id) return;
+    out.push({ kind: 'scene', id: sc.id, title: `Scene ${sc.sceneNumber ?? si + 1}`, titleIsFallback: true });
+    (sc.slides ?? []).forEach((sl, i) => {
+      if (!sl.id) return;
+      const title = stripTags(sl.title ?? '');
+      out.push({ kind: 'slide', id: sl.id, title: title || `Slide ${sl.slideNumberInScene ?? i + 1}`, titleIsFallback: !title, parentId: sc.id, detail: sl.lmsId });
+      (sl.slideLayers ?? []).filter((ly) => ly.isBaseLayer === false).forEach((ly, k) => {
+        const lt = stripTags(ly.title ?? '');
+        out.push({ kind: 'layer', id: ly.id ?? `${sl.id}-layer-${k + 1}`, title: lt || `Layer ${k + 1}`, titleIsFallback: !lt, parentId: sl.id });
+      });
+    });
+  });
+  return out;
 }
 
 function storyline(root: string, has: (rel: string) => boolean): AuthoringToolInfo | undefined {
@@ -142,6 +226,7 @@ function storyline(root: string, has: (rel: string) => boolean): AuthoringToolIn
     const [maj, min] = version.split('.').map(Number);
     info.product = maj === 3 && (min ?? 0) >= 20 ? 'Storyline 360' : maj === 3 ? 'Storyline 3' : maj === 2 ? 'Storyline 2' : 'Storyline';
   }
+  info.outline = storylineOutline(root);
   const slides = attrOf(slidemeta, 'viewslides');
   if (slides) info.facts.push({ label: 'Slides', value: slides });
   const published = attrOf(project, 'datepublished');

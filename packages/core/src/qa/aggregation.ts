@@ -1,3 +1,4 @@
+import { isPrimaryUnit } from './inventory.js';
 import type { ContentUnit, InteractionInstance, ReviewDisposition, ScreenBadge, ScreenStatus, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 
 /**
@@ -154,6 +155,8 @@ export interface CoverageSummary {
   passRate: Ratio;
   interactions: { total: number; exercised: Ratio };
   manual: { outstanding: number; manualOnlyCases: number };
+  /** Blocks, layers, scenes and package items that are listed but not tracked one by one. */
+  listedNotTracked: number;
   gaps: { blocked: number; errored: number; skipped: number; pending: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
   counts: StatusCounts;
   /** One statement built from the numbers above. */
@@ -195,8 +198,10 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     reason = 'Every listed item came from the course package or player menu, and nothing extra appeared at run time. This does not prove the list is exhaustive.';
   }
 
-  const visited = units.filter((u) => u.visitedAt).length;
-  const visit = ratio(visited, completeness === 'unknown' ? undefined : units.length, completeness === 'unknown' ? `The total number of ${noun.plural} is not known, so there is no visit percentage. ${visited} found and visited so far.` : 'Nothing discovered.');
+  // Visits are counted on lessons, slides and screens. Blocks, layers and scenes are listed, not tracked one by one.
+  const primary = units.filter((u) => isPrimaryUnit(u, units));
+  const visited = primary.filter((u) => u.visitedAt).length;
+  const visit = ratio(visited, completeness === 'unknown' ? undefined : primary.length, completeness === 'unknown' ? `The total number of ${noun.plural} is not known, so there is no visit percentage. ${visited} found and visited so far.` : 'Nothing discovered.');
 
   const counts = countStatuses(executions);
   const mapped = executions.filter((e) => {
@@ -213,7 +218,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
   const interactionRatio = ratio(exercised, interactions.length, 'No interactions were detected.');
 
   const manualOnlyCases = executions.filter((e) => definitions.get(e.definitionId)?.automation === 'manual' && e.status !== 'not_applicable').length;
-  const unitsNotReached = units.filter((u) => !u.visitedAt).map((u) => ({ id: u.id, title: u.title, reason: u.notReachedReason ?? 'No browser visit was recorded.' }));
+  const unitsNotReached = primary.filter((u) => !u.visitedAt).map((u) => ({ id: u.id, title: u.title, reason: u.notReachedReason ?? 'No browser visit was recorded.' }));
 
   const gaps = {
     blocked: counts.blocked,
@@ -228,8 +233,8 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
   const parts: string[] = [];
   parts.push(
     completeness === 'unknown'
-      ? `${visited} ${visited === 1 ? noun.singular : noun.plural} visited of ${units.length} found so far (the course's total is not known).`
-      : `${visited} of ${units.length} discovered ${noun.plural} visited.`,
+      ? `${visited} ${visited === 1 ? noun.singular : noun.plural} visited of ${primary.length} found so far (the course's total is not known).`
+      : `${visited} of ${primary.length} discovered ${noun.plural} visited.`,
   );
   parts.push(
     mapped.length === 0
@@ -247,6 +252,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     passRate,
     interactions: { total: interactions.length, exercised: interactionRatio },
     manual: { outstanding: manualOutstanding, manualOnlyCases },
+    listedNotTracked: units.length - primary.length,
     gaps,
     counts,
     statement: parts.join(' '),
