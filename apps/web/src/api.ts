@@ -119,6 +119,11 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   if (method !== 'GET') headers['X-QA-Request'] = '1';
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  // LAN demo mode: a session that ended sends the person back to the sign-in page.
+  if (res.status === 401 && url !== '/api/session') {
+    window.location.assign('/login');
+    throw new ApiError('Sign in again.', 401);
+  }
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: ApiError['issues']; ruleId?: string; reason?: string };
   if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues, data.ruleId ?? data.reason);
@@ -126,6 +131,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
+  session: () => request<{ lan: boolean; user?: string }>('GET', '/api/session'),
+  logout: () => request<{ ok: boolean }>('POST', '/api/auth/logout', {}),
   listProjects: () => request<ProjectListItem[]>('GET', '/api/projects'),
   createProject: (input: { name: string; description?: string; courseUrl?: string }) => request<Project>('POST', '/api/projects', input),
   getProject: (id: string) => request<Project>('GET', `/api/projects/${encodeURIComponent(id)}`),

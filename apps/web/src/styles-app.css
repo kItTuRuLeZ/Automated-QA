@@ -160,3 +160,7 @@ a.big-count:hover { box-shadow: 0 0 0 2px var(--primary); }
   .review > div { grid-template-columns: 1fr; }
   .tab { padding: 0.55rem 0.7rem; }
 }
+
+.topbar-session { display: inline-flex; align-items: center; gap: 0.5rem; }
+.btn-signout { background: transparent; color: #fff; border-color: rgba(255, 255, 255, 0.6); }
+.btn-signout:hover { background: rgba(255, 255, 255, 0.15); }

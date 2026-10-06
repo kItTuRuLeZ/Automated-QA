@@ -7,7 +7,8 @@ import { ProfilesPage } from './pages/ProfilesPage';
 import { ProjectPage } from './pages/ProjectPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { RunPage } from './pages/RunPage';
-import { splitRoute } from './components/ui';
+import { splitRoute, useLoader } from './components/ui';
+import { api } from './api';
 
 function useHashRoute(): string {
   const [route, setRoute] = useState(() => window.location.hash.slice(1) || '/');
@@ -42,6 +43,14 @@ export function App() {
   const route = useHashRoute();
   const mainRef = useRef<HTMLElement>(null);
   const section = splitRoute(route).parts[0];
+  const session = useLoader(() => api.session(), []);
+  const signOut = async () => {
+    try {
+      await api.logout();
+    } finally {
+      window.location.assign('/login');
+    }
+  };
 
   // Move focus to the main region on navigation so keyboard and screen-reader users land on the new page.
   // Moving between tabs of the same page keeps the reader where they are.
@@ -73,7 +82,16 @@ export function App() {
             ))}
           </ul>
         </nav>
-        <span className="topbar-note">Runs on this computer · no AI</span>
+        {session.data?.lan ? (
+          <span className="topbar-note topbar-session">
+            LAN demo · signed in as {session.data.user}{' '}
+            <button type="button" className="btn btn-small btn-signout" onClick={() => void signOut()}>
+              Sign out
+            </button>
+          </span>
+        ) : (
+          <span className="topbar-note">Runs on this computer · no AI</span>
+        )}
       </header>
       <main id="main" ref={mainRef} tabIndex={-1} className="container">
         <Page route={route} />

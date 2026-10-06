@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { type CapabilityOptions, buildCapabilities } from './capabilities.js';
 import { registerPackageRoutes } from './packages.js';
+import { type AuthGate, SESSION_COOKIE, clearedSessionCookie, loginPage, readCookie, sessionCookie } from './auth.js';
 import { buildHtmlReport } from './export/html.js';
 import { renderPdf } from './export/pdf.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
@@ -26,6 +27,8 @@ export interface AppOptions {
   capabilities?: CapabilityOptions;
   /** Where uploaded packages live and the port of the separate origin that serves them. Package routes are off without it. */
   packages?: { dir: string; port: number };
+  /** LAN demo mode only: sign-in required for everything except the sign-in page. Absent in the default local mode. */
+  auth?: AuthGate;
 }
 
 const STATIC_TYPES: Record<string, string> = {
@@ -51,6 +54,15 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     if (origin && !opts.allowedOrigins.includes(origin)) return reply.code(403).send({ error: 'Cross-origin requests are not allowed.' });
     const fetchSite = req.headers['sec-fetch-site'];
     if (fetchSite === 'cross-site') return reply.code(403).send({ error: 'Cross-site requests are not allowed.' });
+    if (opts.auth) {
+      const urlPath = req.url.split('?')[0] ?? '/';
+      const signInPage = urlPath === '/login' && (req.method === 'GET' || req.method === 'POST' || req.method === 'HEAD');
+      if (!signInPage && !opts.auth.validate(readCookie(req.headers.cookie, SESSION_COOKIE))) {
+        // Nothing (UI files, APIs, uploads, screenshots, reports) is served before sign-in. Checked before any body is read.
+        if (urlPath.startsWith('/api/')) return reply.code(401).send({ error: 'Sign in first.' });
+        return reply.code(302).header('Location', '/login').send();
+      }
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD' && req.url.startsWith('/api/')) {
       if (req.headers['x-qa-request'] !== '1') return reply.code(403).send({ error: 'Missing X-QA-Request header.' });
       const ct = req.headers['content-type'] ?? '';
@@ -59,6 +71,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     }
   });
   app.addHook('onSend', async (_req, reply, payload) => {
+    // Shared demo machines: never let a browser or proxy keep reports, screenshots or API data.
+    if (opts.auth) reply.header('Cache-Control', 'no-store');
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'no-referrer');
     reply.header('X-Frame-Options', 'DENY');
@@ -70,6 +84,30 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   const badRequest = (reply: FastifyReply, error: string, issues?: unknown) => reply.code(400).send({ error, issues });
 
   app.get('/api/health', async () => ({ ok: true }));
+  app.get('/api/session', async () => (opts.auth ? { lan: true, user: opts.auth.user } : { lan: false }));
+
+  if (opts.auth) {
+    const auth = opts.auth;
+    app.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (_req, body, done) => done(null, Object.fromEntries(new URLSearchParams(String(body)))));
+    const page = (reply: FastifyReply, code: number, html: string) => reply.code(code).header('Content-Type', 'text/html; charset=utf-8').send(html);
+    app.get('/login', async (_req, reply) => page(reply, 200, loginPage({})));
+    app.post<{ Body: { user?: string; password?: string } }>('/login', async (req, reply) => {
+      const user = typeof req.body?.user === 'string' ? req.body.user.slice(0, 64) : '';
+      const password = typeof req.body?.password === 'string' ? req.body.password.slice(0, 256) : '';
+      const result = auth.login(user, password, req.ip);
+      if (result.ok) return reply.code(303).header('Set-Cookie', sessionCookie(result.token, result.maxAgeSec)).header('Location', '/').send();
+      req.log.warn({ remote: req.ip, status: result.status }, 'LAN sign-in failed');
+      if (result.status === 429) {
+        reply.header('Retry-After', String(result.retryAfterSec ?? 300));
+        return page(reply, 429, loginPage({ user, message: `Too many failed sign-ins from this device. Try again in ${Math.ceil((result.retryAfterSec ?? 300) / 60)} minutes.` }));
+      }
+      return page(reply, 401, loginPage({ user, message: 'Sign-in failed. Check the user name and password.' }));
+    });
+    app.post('/api/auth/logout', async (req, reply) => {
+      auth.logout(readCookie(req.headers.cookie, SESSION_COOKIE));
+      return reply.header('Set-Cookie', clearedSessionCookie).send({ ok: true });
+    });
+  }
   app.get('/api/rules', async () => allRules());
   app.get('/api/capabilities', async () => buildCapabilities(opts.capabilities));
   app.get('/api/manual-checklist', async () => ({ disclaimer: ACCESSIBILITY_DISCLAIMER, items: MANUAL_REVIEW_CHECKLIST }));

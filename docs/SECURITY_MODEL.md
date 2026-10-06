@@ -118,3 +118,13 @@ Production policy denies loopback and private addresses. For the offline sample 
 
 - Results are append-only per run; retests create new runs.
 - Demo data is flagged `isDemo` and stored in a separate project namespace; it is never mixed into real totals.
+
+## LAN demo mode (optional, off by default)
+
+Off unless `CQA_LAN_HOST` is set at start-up (see [LAN_DEMO.md](LAN_DEMO.md)). When on:
+
+- The app's API and UI listen only on the one RFC 1918 address named in `CQA_LAN_HOST`, which must belong to a network adapter of this computer. `0.0.0.0`, loopback, public addresses and names are refused, and an invalid or incomplete setting stops start-up rather than falling back.
+- Host and Origin must be exactly that address and port. The cross-site, `X-QA-Request` and JSON checks are unchanged.
+- A sign-in (one shared account, `CQA_LAN_PASSWORD` of at least 12 characters, no default) is required before any UI file, API, upload, screenshot or report is served; the check runs before request bodies are read. Sessions are random in-memory tokens (hashed at rest), `HttpOnly` and `SameSite=Strict`, ending after 60 minutes idle or 8 hours. Five failed sign-ins from one address lock it out for five minutes. Credentials are compared in constant time and never logged. Responses are `no-store`.
+- Not changed: the shared core configuration, the package server (`127.0.0.1`, port `CQA_PACKAGE_PORT`, default 4318, loopback only), the worker, the scan network policy (private addresses, including the LAN, stay blocked as scan targets) and the browser sandbox.
+- Known limits: plain HTTP, so credentials and session cookies are visible to anyone who can observe the network; one shared account with full rights; uploaded packages still run without a container. Intended for short demos on trusted networks only.
