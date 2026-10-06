@@ -205,6 +205,20 @@ export class Store {
     });
   }
 
+  updateProject(id: string, input: { name?: string; description?: string; courseUrl?: string | null }): Project | undefined {
+    return this.db.transaction(() => {
+      const existing = this.getProject(id);
+      if (!existing) return undefined;
+      const name = input.name !== undefined ? input.name : existing.name;
+      const description = input.description !== undefined ? input.description : (existing.description ?? '');
+      const courseUrl = input.courseUrl !== undefined ? input.courseUrl : (existing.courseUrl ?? null);
+      this.db
+        .prepare('UPDATE projects SET name = ?, description = ?, course_url = ? WHERE id = ?')
+        .run(name, description, courseUrl, id);
+      return this.getProject(id);
+    })();
+  }
+
   deleteProject(id: string): boolean {
     return this.db.prepare('DELETE FROM projects WHERE id = ?').run(id).changes > 0;
   }

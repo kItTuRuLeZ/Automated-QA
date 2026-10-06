@@ -9,6 +9,13 @@ export const CreateProjectInput = z.object({
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 
+export const UpdateProjectInput = z.object({
+  name: z.string().trim().min(1, 'Name is required').max(120).optional(),
+  description: z.string().trim().max(2000).optional(),
+  courseUrl: z.string().trim().max(2048).nullable().optional().or(z.literal('').transform(() => null)),
+});
+export type UpdateProjectInput = z.infer<typeof UpdateProjectInput>;
+
 const origin = z
   .string()
   .trim()

@@ -34,6 +34,8 @@ export function useLiveRun(runId: string, active: boolean): LiveRun {
   const [state, setState] = useState<LiveRun>({ events: [], connectionLost: false });
   const lastSeq = useRef(0);
   const tick = useRef(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     let cancelled = false;
@@ -60,7 +62,7 @@ export function useLiveRun(runId: string, active: boolean): LiveRun {
         tick.current++;
         if (cancelled) return;
         setState((s) => ({ progress: p, recorded: true, inventory: inv && inv.recorded ? inv : s.inventory, events: [...s.events, ...fresh].slice(-200), connectionLost: false }));
-        if (ACTIVE.has(p.progress.stage) || (active && p.run.status !== 'completed' && p.run.status !== 'partial' && p.run.status !== 'failed' && p.run.status !== 'cancelled')) timer = window.setTimeout(run, 1500);
+        if (ACTIVE.has(p.progress.stage) || (activeRef.current && p.run.status !== 'completed' && p.run.status !== 'partial' && p.run.status !== 'failed' && p.run.status !== 'cancelled')) timer = window.setTimeout(run, 1500);
       } catch {
         if (cancelled) return;
         setState((s) => ({ ...s, connectionLost: true }));
@@ -72,10 +74,11 @@ export function useLiveRun(runId: string, active: boolean): LiveRun {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [runId, active]);
+  }, [runId]);
 
   return state;
 }
+
 
 function clock(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));

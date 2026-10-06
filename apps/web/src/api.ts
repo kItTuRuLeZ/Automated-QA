@@ -128,6 +128,8 @@ export async function request<T>(method: string, url: string, body?: unknown): P
 export const api = {
   listProjects: () => request<ProjectListItem[]>('GET', '/api/projects'),
   createProject: (input: { name: string; description?: string; courseUrl?: string }) => request<Project>('POST', '/api/projects', input),
+  updateProject: (id: string, input: { name?: string; description?: string; courseUrl?: string | null }) =>
+    request<Project>('PATCH', `/api/projects/${encodeURIComponent(id)}`, input),
   getProject: (id: string) => request<Project>('GET', `/api/projects/${encodeURIComponent(id)}`),
   deleteProject: (id: string) => request<void>('DELETE', `/api/projects/${encodeURIComponent(id)}`),
   listRuns: (projectId: string) => request<RunWithSummary[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/runs`),

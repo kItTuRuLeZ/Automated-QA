@@ -10,7 +10,7 @@ import { registerPackageRoutes } from './packages.js';
 import { registerQaRoutes } from './qa-routes.js';
 import { buildHtmlReport } from './export/html.js';
 import { renderPdf } from './export/pdf.js';
-import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
+import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, UpdateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
 export interface AppOptions {
   store: Store;
@@ -92,6 +92,18 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
     const p = isOpaqueId(req.params.id) ? store.getProject(req.params.id) : undefined;
     return p ?? notFound(reply, 'Project not found.');
+  });
+
+  app.patch<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
+    if (!isOpaqueId(req.params.id)) return notFound(reply, 'Project not found.');
+    const parsed = UpdateProjectInput.safeParse(req.body);
+    if (!parsed.success) return badRequest(reply, 'Invalid project updates.', parsed.error.issues);
+    if (parsed.data.courseUrl) {
+      const t = policy.parseTarget(parsed.data.courseUrl);
+      if (!t.ok) return badRequest(reply, t.detail);
+    }
+    const updated = store.updateProject(req.params.id, parsed.data);
+    return updated ?? notFound(reply, 'Project not found.');
   });
 
   app.delete<{ Params: { id: string } }>('/api/projects/:id', async (req, reply) => {
