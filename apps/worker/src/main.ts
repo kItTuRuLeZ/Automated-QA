@@ -7,11 +7,15 @@ const paths = resolveDataPaths();
 const localTargets = parseLocalTargets(process.env.CQA_ALLOW_LOCAL_TARGETS);
 for (const r of localTargets.rejected) log.warn({ entry: r.entry }, `CQA_ALLOW_LOCAL_TARGETS entry ignored: ${r.reason}`);
 if (localTargets.exemptions.length) log.warn({ allowed: localTargets.exemptions }, 'Scanning of these local addresses is allowed by CQA_ALLOW_LOCAL_TARGETS');
+const allowPrivateAddresses = Boolean(process.env.CQA_ALLOW_INTRANET && process.env.CQA_ALLOW_INTRANET !== '0' && process.env.CQA_ALLOW_INTRANET !== 'false');
+if (allowPrivateAddresses) {
+  log.warn('CQA_ALLOW_INTRANET is enabled: Scanning of private intranet addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) is allowed.');
+}
 const store = new Store(openDatabase(paths.dbFile));
 const artifacts = new ArtifactStore(paths.artifacts, store);
 
-// Production policy: no exemptions. Private, loopback, and reserved destinations are denied.
-const worker = startWorker({ store, artifacts, policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }] }), tmpRoot: paths.tmp, log });
+// Production policy: no exemptions unless explicitly configured. Private, loopback, and reserved destinations are denied by default.
+const worker = startWorker({ store, artifacts, policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }], allowPrivateAddresses }), tmpRoot: paths.tmp, log });
 log.info({ dataDir: paths.root }, 'worker started');
 
 const shutdown = async () => {

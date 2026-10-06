@@ -18,6 +18,11 @@ export interface PolicyOptions {
    * Never settable through the API.
    */
   exemptAddresses?: ReadonlyArray<{ ip: string; port: number }>;
+  /**
+   * Whether to allow RFC 1918 private unicast addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16).
+   * Off by default; enabled only when the operator explicitly sets CQA_ALLOW_INTRANET.
+   */
+  allowPrivateAddresses?: boolean;
 }
 
 export type PolicyDecision =
@@ -28,6 +33,25 @@ const DEFAULT_PORTS: Record<string, number> = { 'http:': 80, 'https:': 443 };
 
 export function effectivePort(url: URL): number {
   return url.port ? Number(url.port) : (DEFAULT_PORTS[url.protocol] ?? 0);
+}
+
+/**
+ * Returns true only for RFC 1918 private IPv4 addresses (10/8, 172.16/12, 192.168/16)
+ * and IPv6 unique local addresses (fc00::/7).
+ */
+export function isPrivateAddress(address: string): boolean {
+  if (!ipaddr.isValid(address)) return false;
+  let parsed = ipaddr.parse(address);
+  if (parsed.kind() === 'ipv6') {
+    const v6 = parsed as ipaddr.IPv6;
+    if (v6.isIPv4MappedAddress()) {
+      parsed = v6.toIPv4Address();
+    }
+  }
+  if (parsed.kind() === 'ipv4') {
+    return parsed.range() === 'private';
+  }
+  return parsed.range() === 'uniqueLocal';
 }
 
 /**
@@ -63,14 +87,17 @@ function stripBrackets(hostname: string): string {
 export class NetworkPolicy {
   private readonly resolver: Resolver;
   private readonly exempt: Set<string>;
+  private readonly allowPrivateAddresses: boolean;
 
   constructor(options: PolicyOptions = {}) {
     this.resolver = options.resolver ?? systemResolver;
     this.exempt = new Set((options.exemptAddresses ?? []).map((e) => `${normalizeIp(e.ip)}|${e.port}`));
+    this.allowPrivateAddresses = options.allowPrivateAddresses ?? false;
   }
 
   isAddressAllowed(address: string, port: number): boolean {
     if (this.exempt.has(`${normalizeIp(address)}|${port}`)) return true;
+    if (this.allowPrivateAddresses && isPrivateAddress(address)) return true;
     return isPublicAddress(address);
   }
 

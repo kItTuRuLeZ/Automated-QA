@@ -96,6 +96,23 @@ describe('NetworkPolicy.validateTarget', () => {
     expect(exempt.isAddressAllowed('127.0.0.1', 5556)).toBe(false);
     expect(new NetworkPolicy().isAddressAllowed('127.0.0.1', 5555)).toBe(false);
   });
+
+  it('allows RFC 1918 private addresses when allowPrivateAddresses is enabled', async () => {
+    const defaultPolicy = new NetworkPolicy();
+    expect(defaultPolicy.isAddressAllowed('192.168.57.169', 443)).toBe(false);
+    expect(defaultPolicy.isAddressAllowed('10.0.1.5', 80)).toBe(false);
+    expect(defaultPolicy.isAddressAllowed('172.16.0.10', 443)).toBe(false);
+
+    const intranetPolicy = new NetworkPolicy({ allowPrivateAddresses: true });
+    expect(intranetPolicy.isAddressAllowed('192.168.57.169', 443)).toBe(true);
+    expect(intranetPolicy.isAddressAllowed('10.0.1.5', 80)).toBe(true);
+    expect(intranetPolicy.isAddressAllowed('172.16.0.10', 443)).toBe(true);
+
+    // Reserved addresses like cloud metadata, loopback and broadcast remain blocked
+    expect(intranetPolicy.isAddressAllowed('169.254.169.254', 80)).toBe(false);
+    expect(intranetPolicy.isAddressAllowed('127.0.0.1', 80)).toBe(false);
+    expect(intranetPolicy.isAddressAllowed('0.0.0.0', 80)).toBe(false);
+  });
 });
 
 describe('redaction', () => {
