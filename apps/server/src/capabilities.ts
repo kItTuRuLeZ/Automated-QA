@@ -14,6 +14,7 @@ export interface CapabilityOptions {
   /** Where the browser should be; undefined when Playwright cannot say. Injectable for tests. */
   browserExecutable?: () => string | undefined;
   localTargets?: Array<{ ip: string; port: number }>;
+  allowPrivateAddresses?: boolean;
   retentionDays?: number;
 }
 
@@ -41,6 +42,9 @@ export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
       ? { id: 'pdf', name: 'PDF reports', status: 'available', detail: 'Made offline from the same report as the HTML and Excel files.' }
       : { id: 'pdf', name: 'PDF reports', status: 'blocked', detail: 'Needs the scanning browser. JSON, HTML, and Excel reports still work.' },
     { id: 'reports', name: 'JSON, HTML, and Excel reports', status: 'available', detail: 'Always available for any finished scan.' },
+    opts.allowPrivateAddresses
+      ? { id: 'intranet', name: 'Scanning intranet and private addresses', status: 'available', detail: 'Enabled via CQA_ALLOW_INTRANET. Private RFC 1918 addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) can be scanned.' }
+      : { id: 'intranet', name: 'Scanning intranet and private addresses', status: 'blocked', detail: 'Off by default. Private and intranet addresses are blocked. Set CQA_ALLOW_INTRANET=1 before starting the server to enable.' },
     local.length
       ? { id: 'local-targets', name: 'Scanning courses on this computer', status: 'available', detail: `Allowed for ${local.map((l) => `${l.ip}:${l.port}`).join(', ')} by the administrator setting CQA_ALLOW_LOCAL_TARGETS. All other private addresses stay blocked.` }
       : { id: 'local-targets', name: 'Scanning courses on this computer', status: 'blocked', detail: 'Off. Private and loopback addresses are blocked. To scan the sample course pack offline, an administrator can allow exact 127.0.0.1 ports (see docs/SETUP.md).' },

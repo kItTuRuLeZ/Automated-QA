@@ -34,7 +34,7 @@ const app = buildApp({
   allowedOrigins: hosts.map((h) => `http://${h}`),
   webDist: path.resolve(here, '../../web/dist'),
   packages: { dir: paths.packages, port: PACKAGE_PORT },
-  capabilities: { localTargets: localTargets.exemptions, retentionDays },
+  capabilities: { localTargets: localTargets.exemptions, allowPrivateAddresses, retentionDays },
 });
 
 // Bound to loopback only. Network exposure requires authentication first (future work).

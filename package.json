@@ -15,6 +15,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "vitest run",
     "dev": "concurrently -n server,worker,web -c blue,magenta,green \"npm run dev -w @cqa/server\" \"npm run dev -w @cqa/worker\" \"npm run dev -w @cqa/web\"",
+    "dev:intranet": "tsx scripts/dev-intranet.ts",
     "start": "npm run build -w @cqa/web && concurrently -n server,worker -c blue,magenta \"npm run start -w @cqa/server\" \"npm run start -w @cqa/worker\"",
     "browsers:install": "playwright install chromium",
     "backup": "tsx scripts/cli.ts backup",
