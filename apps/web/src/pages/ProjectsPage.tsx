@@ -10,6 +10,13 @@ export function ProjectsPage() {
   const { data, error, reload } = useLoader(() => api.listProjects(), [], (list) => list.some((p) => p.lastRun?.status === 'running' || p.lastRun?.status === 'queued'));
   const [showForm, setShowForm] = useState(false);
   const [showQuickScan, setShowQuickScan] = useState(false);
+  const [showHero, setShowHero] = useState(() => {
+    try {
+      return localStorage.getItem('cqa_hide_hero') !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const [editingProject, setEditingProject] = useState<ProjectListItem | null>(null);
   const [duplicatingProject, setDuplicatingProject] = useState<ProjectListItem | null>(null);
   const [deletingProject, setDeletingProject] = useState<ProjectListItem | null>(null);
@@ -19,6 +26,18 @@ export function ProjectsPage() {
   const [sortBy, setSortBy] = useState<SortOption>('recent');
 
   const projects = data ?? [];
+
+  const toggleHero = () => {
+    setShowHero((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('cqa_hide_hero', next ? 'false' : 'true');
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     setToast({ type, message });
@@ -67,12 +86,31 @@ export function ProjectsPage() {
 
   return (
     <section aria-labelledby="dashboard-heading" className="dashboard-view">
+      {/* Landing Hero Section */}
+      {showHero && (
+        <LandingHero
+          onNewProject={() => setShowForm(true)}
+          onQuickScan={() => setShowQuickScan(true)}
+          onDismiss={toggleHero}
+        />
+      )}
+
       <PageHeader
-        title="QA Dashboard"
+        title="Course Projects & Scans"
         titleId="dashboard-heading"
-        subtitle="Overview of courses, scan health, defect review, and recent test activity."
+        subtitle="Overview of course packages, scan history, defect review, and recent test activity."
         actions={
           <div className="dashboard-top-actions">
+            {!showHero && (
+              <button
+                type="button"
+                className="btn btn-quiet btn-small"
+                onClick={toggleHero}
+                aria-label="Show landing overview banner"
+              >
+                ✨ Show overview
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-secondary"
@@ -375,6 +413,89 @@ export function ProjectsPage() {
         </>
       )}
     </section>
+  );
+}
+
+function LandingHero({
+  onNewProject,
+  onQuickScan,
+  onDismiss,
+}: {
+  onNewProject: () => void;
+  onQuickScan: () => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="landing-hero-card" role="region" aria-label="Course QA Platform Overview">
+      <div className="landing-hero-top">
+        <div className="landing-hero-badge">
+          <span className="hero-sparkle" aria-hidden="true">✨</span> Evidence-Backed eLearning Quality Assurance
+        </div>
+        <button
+          type="button"
+          className="btn btn-quiet btn-small hero-dismiss-btn"
+          onClick={onDismiss}
+          aria-label="Hide overview banner"
+        >
+          Hide banner ✕
+        </button>
+      </div>
+
+      <div className="landing-hero-main">
+        <h1 className="landing-hero-title">
+          Automated QA Scanning for Digital Courses
+        </h1>
+        <p className="landing-hero-desc">
+          Inspect Rise 360, Storyline 360, SCORM 1.2/2004 packages, and custom HTML5 lessons in a secure, local sandbox. Detect broken interactions, accessibility violations, and runtime defects with verifiable DOM and screenshot evidence.
+        </p>
+
+        <div className="landing-hero-actions">
+          <button type="button" className="btn btn-primary" onClick={onNewProject}>
+            + Create New Project
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={onQuickScan}>
+            ⚡ Quick Scan URL
+          </button>
+          <a href="#/library" className="btn btn-quiet">
+            📖 Browse 72+ Test Rules
+          </a>
+        </div>
+      </div>
+
+      <div className="landing-hero-features">
+        <div className="hero-feature-item">
+          <span className="feature-icon" aria-hidden="true">🔍</span>
+          <div className="feature-text">
+            <strong>Functional Traversal</strong>
+            <p>Tabs, accordions, modals, branches & behavior-rule all-click validation</p>
+          </div>
+        </div>
+
+        <div className="hero-feature-item">
+          <span className="feature-icon" aria-hidden="true">♿</span>
+          <div className="feature-text">
+            <strong>WCAG 2.2 & A11Y</strong>
+            <p>Axe-core audits, 320px reflow heuristics, keyboard traps & containment</p>
+          </div>
+        </div>
+
+        <div className="hero-feature-item">
+          <span className="feature-icon" aria-hidden="true">📦</span>
+          <div className="feature-text">
+            <strong>SCORM 1.2 & 2004</strong>
+            <p>Direct ZIP inspection, CMI lifecycle tracking & resume simulation</p>
+          </div>
+        </div>
+
+        <div className="hero-feature-item">
+          <span className="feature-icon" aria-hidden="true">🔒</span>
+          <div className="feature-text">
+            <strong>100% Local & Zero-AI</strong>
+            <p>Deterministic local execution, zero network leakage & Excel exports</p>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -63,20 +63,31 @@ export function App() {
       </a>
       <header className="topbar">
         <a href="#/" className="brand">
-          Course QA
+          <span className="brand-icon" aria-hidden="true">🎯</span>
+          <span className="brand-text">Course<strong>QA</strong></span>
+          <span className="brand-tag">Local</span>
         </a>
-        <nav aria-label="Main">
-          <ul>
+        <nav aria-label="Main" className="topbar-nav">
+          <ul className="nav-list">
             {NAV.map((n) => (
               <li key={n.to}>
-                <a href={`#${n.to}`} aria-current={n.match(section) ? 'page' : undefined}>
+                <a
+                  href={`#${n.to}`}
+                  aria-current={n.match(section) ? 'page' : undefined}
+                  className="nav-link"
+                >
                   {n.label}
                 </a>
               </li>
             ))}
           </ul>
         </nav>
-        <span className="topbar-note">Runs on this computer · no AI</span>
+        <div className="topbar-right">
+          <div className="system-status-pill" title="Local loopback execution with zero network leakage">
+            <span className="pulsing-live-dot" aria-hidden="true" />
+            <span className="topbar-note">127.0.0.1 · Sandboxed (No AI)</span>
+          </div>
+        </div>
       </header>
       <main id="main" ref={mainRef} tabIndex={-1} className="container">
         <Page route={route} />
