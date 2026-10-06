@@ -112,14 +112,14 @@ export async function buildWorkbook(report: ProjectReport, options: WorkbookOpti
 
 function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
   const ws = wb.addWorksheet('Summary', { properties: { tabColor: { argb: 'FF1F4FBF' } } });
-  ws.columns = [{ width: 52 }, { width: 22 }, { width: 34 }, { width: 14 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 12 }];
+  ws.columns = [{ width: 52 }, { width: 22 }, { width: 34 }, { width: 14 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 12 }, { width: 22 }];
   ws.getCell('A1').value = safeCell(`Course QA report: ${report.project.name}`);
   ws.getCell('A1').font = { bold: true, size: 16 };
   ws.getCell('A2').value = `Generated ${report.generatedAt.slice(0, 16).replace('T', ' ')} UTC`;
   ws.getCell('A2').font = { color: { argb: 'FF566176' } };
 
   const header = ws.getRow(4);
-  header.values = ['Course address', 'Last scanned', 'Scan result', 'Screens scanned', 'To fix', 'Check by hand', 'Not checked', 'Scans so far'];
+  header.values = ['Course address', 'Last scanned', 'Scan result', 'Screens scanned', 'To fix', 'Check by hand', 'Areas not checked', 'Scans so far', 'Checks that did not run'];
   styleHeader(header);
   let r = 5;
   for (const c of report.courses) {
@@ -133,9 +133,15 @@ function addSummary(wb: ExcelJS.Workbook, report: ProjectReport): void {
       c.latest.counts.check,
       c.latest.counts.notChecked,
       c.scans,
+      c.latest.untested.reduce((n, u) => n + u.count, 0),
     ];
     row.alignment = { vertical: 'top', wrapText: true };
   }
+
+  // Two different units: "Areas not checked" counts listed areas (the Not checked sheet's first table); "Checks that did not run" counts check executions (its second table).
+  ws.getCell(`A${r + 1}`).value = 'Areas not checked counts the areas listed on the Not checked sheet (frames, canvas, skipped controls, scan limits). Checks that did not run counts individual check executions, by reason, in the second table of that sheet. They are different units and neither is counted as passed.';
+  ws.getCell(`A${r + 1}`).font = { color: { argb: 'FF566176' } };
+  r += 2;
 
   // Package facts (static, from the uploaded files) for package scans.
   const pk = report.courses.filter((c) => c.latest.package);

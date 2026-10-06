@@ -12,9 +12,18 @@ export interface FindingDetail {
 }
 
 export interface RunReport {
-  run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string };
+  run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
+  /** Units: fix/check/notChecked count LISTED ISSUES (areas), not check executions. */
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
+  /** Screens reached, with captured titles. */
+  screens: Array<{ label: string; title: string; url: string; depth: number; reachedBy: string; screenshotId?: string }>;
+  /** Check EXECUTIONS that did not run, by reason. A different unit from counts.notChecked. */
+  untested: Array<{ reason: string; count: number }>;
+  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number };
+  skippedActions: Array<{ what: string; reason: string; detail?: string }>;
+  errors: Array<{ rule: string; detail: string }>;
+  scan: { startedAt?: string; finishedAt?: string; scope: { origins: string[]; pathPrefixes: string[] }; budgets: { maxStates: number; maxDepth: number; maxRuntimeSeconds: number }; checksEnabled: string[]; screenSizes: string[]; toolVersions: Array<{ name: string; version: string }>; platform?: string; aiUsed: false; profile?: { name: string } };
   viewports?: Array<{ name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean; screensChecked: number; screensNotReached: number; layoutIssues: number; skipped?: string }>;
   performance?: {
     loadMs: number | null;
@@ -31,6 +40,8 @@ export interface RunReport {
   issues: Array<{
     id: string;
     findingId: string;
+    url: string;
+    category?: string;
     source: 'static' | 'runtime';
     action: 'fix' | 'check' | 'not_checked';
     priority: Severity;
@@ -46,7 +57,7 @@ export interface RunReport {
     status: string;
     statusReason?: string;
     assignee?: string;
-    technical: { ruleId: string; observed: string };
+    technical: { ruleId: string; observed: string; remediation?: string; standards?: string[]; confidence?: string; type?: string };
   }>;
 }
 
@@ -96,6 +107,8 @@ export class ApiError extends Error {
     message: string,
     readonly status: number,
     readonly issues?: Array<{ path: Array<string | number>; message: string }>,
+    /** Rule id or reason the server attached (for example NET-001 for a blocked address). */
+    readonly code?: string,
   ) {
     super(message);
   }
@@ -107,8 +120,8 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 204) return undefined as T;
-  const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: ApiError['issues'] };
-  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues);
+  const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: ApiError['issues']; ruleId?: string; reason?: string };
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues, data.ruleId ?? data.reason);
   return data as T;
 }
 
@@ -145,6 +158,7 @@ export const api = {
   listFindings: (runId: string) => request<Finding[]>('GET', `/api/runs/${encodeURIComponent(runId)}/findings`),
   setBaseline: (runId: string) => request<{ recorded: number; courseUrl: string }>('POST', `/api/runs/${encodeURIComponent(runId)}/baseline`, {}),
   capabilities: () => request<Array<{ id: string; name: string; status: 'available' | 'blocked' | 'unavailable' | 'not_included'; detail: string }>>('GET', '/api/capabilities'),
+  packageLimits: () => request<{ maxUploadBytes: number; maxEntries: number; maxExpandedBytes: number; maxLessonsPerScan: number; formats: string[] }>('GET', '/api/package-limits'),
   listPackages: (projectId: string) => request<PackageView[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/packages`),
   getPackage: (id: string) => request<PackageView>('GET', `/api/packages/${encodeURIComponent(id)}`),
   uploadPackage: async (projectId: string, file: File) => {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ApiError, api } from '../api';
 import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi } from '../components/ScormJourneys';
-import { ErrorBox, Loading, TableScroll, useLoader } from '../components/ui';
+import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TableScroll, useLoader } from '../components/ui';
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
 const OUTCOME = { passed: 'Passed', failed: 'Problem', needs_review: 'Check by hand', not_applicable: 'Not applicable', not_tested: 'Not checked' } as const;
@@ -9,6 +9,7 @@ const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${
 
 export function PackagePage({ id }: { id: string }) {
   const { data, error, reload } = useLoader(() => api.getPackage(id), [id]);
+  const project = useLoader(() => (data ? api.getProject(data.projectId) : Promise.resolve(undefined)), [data?.projectId]);
   const [picked, setPicked] = useState<string[]>([]);
   const [ack, setAck] = useState(false);
   const [allowed, setAllowed] = useState('');
@@ -25,6 +26,7 @@ export function PackagePage({ id }: { id: string }) {
   const effective = choices.length === 1 ? [choices[0]!.key] : picked;
 
   const start = async () => {
+    if (busy) return;
     setBusy(true);
     setProblem(undefined);
     const scormVersion = ins.kind === 'scorm12' ? '1.2' : ins.kind === 'scorm2004' ? '2004' : undefined;
@@ -51,14 +53,21 @@ export function PackagePage({ id }: { id: string }) {
 
   return (
     <section aria-labelledby="pkg-heading">
-      <nav aria-label="Breadcrumb" className="breadcrumb">
-        <a href={`#/projects/${p.projectId}`}>Project</a> <span aria-hidden="true">/</span> <span aria-current="page">{p.name}</span>
-      </nav>
-      <h1 id="pkg-heading">{p.name}</h1>
-      <p className="muted">
-        {KIND[ins.kind]}
-        {ins.scormVersionDeclared ? ` (schema version ${ins.scormVersionDeclared})` : ''} · {ins.inventory.files} files · {mb(ins.inventory.bytes)} · uploaded as {p.originalFilename}
-      </p>
+      <Breadcrumb items={[{ label: 'Projects', to: '/' }, { label: project.data?.name ?? 'Project', to: `/projects/${p.projectId}` }, { label: p.name }]} />
+      <PageHeader
+        title={p.name}
+        titleId="pkg-heading"
+        subtitle={
+          <>
+            {ins.authoringTool ? `${ins.authoringTool.product} · ` : ''}
+            {KIND[ins.kind]}
+            {ins.scormVersionDeclared ? ` (schema version ${ins.scormVersionDeclared})` : ''} · {ins.inventory.files} files · {mb(ins.inventory.bytes)} · uploaded as {p.originalFilename}
+          </>
+        }
+      />
+      <Alert tone="ok" title="Upload inspected. Nothing has been run yet.">
+        The checks below were read from the files only. {choices.length > 1 ? 'Choose the lessons to scan, then' : 'When you are ready,'} confirm that you want the course’s own JavaScript to run in a browser on this computer. That is what “Scan this package” does.
+      </Alert>
 
       <div className="card">
         <h2>Checks on the package files</h2>

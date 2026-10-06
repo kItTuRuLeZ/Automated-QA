@@ -1,76 +1,149 @@
-import { type FormEvent, useState } from 'react';
-import { ApiError, api } from '../api';
+import { api } from '../api';
+import { ExportMenu, type ExportItem } from '../components/ExportMenu';
 import { PackagesPanel } from '../components/Packages';
-import { Empty, ErrorBox, Link, Loading, StatusBadge, duration, formatDate, useLoader, TableScroll } from '../components/ui';
+import { Alert, Breadcrumb, Empty, ErrorBox, Link, Loading, PageHeader, StatusBadge, TabNav, TableScroll, duration, formatDate, hostPath, useLoader } from '../components/ui';
 
-const VIEWPORTS = [
-  { name: 'desktop', width: 1440, height: 900 },
-  { name: 'laptop', width: 1366, height: 768 },
-  { name: 'tablet', width: 768, height: 1024 },
-  { name: 'mobile', width: 390, height: 844 },
-];
+const FINISHED = ['completed', 'partial', 'failed'];
 
-export function ProjectPage({ id }: { id: string }) {
+export function ProjectPage({ id, tab }: { id: string; tab?: string }) {
   const project = useLoader(() => api.getProject(id), [id]);
   const runs = useLoader(() => api.listRuns(id), [id], (rs) => rs.some((r) => r.status === 'queued' || r.status === 'running'));
+  const current = tab === 'files' ? 'files' : tab === 'history' ? 'history' : 'overview';
 
   if (project.error) return <ErrorBox error={project.error} onRetry={project.reload} />;
   if (!project.data) return <Loading />;
   const p = project.data;
+  const finishedRuns = (runs.data ?? []).filter((r) => FINISHED.includes(r.status));
+  const courses = [...new Set(finishedRuns.map((r) => r.config.target.url ?? ''))].filter(Boolean);
+
+  const exports: ExportItem[] = [
+    ...courses.map((course) => ({
+      key: `course-${course}`,
+      label: `Excel tracker: ${hostPath(course)}`,
+      scope: `This course, across all ${finishedRuns.filter((r) => r.config.target.url === course).length} finished scan(s).`,
+      href: `/api/projects/${id}/export.xlsx?course=${encodeURIComponent(course)}`,
+    })),
+    ...(courses.length > 1 ? [{ key: 'all', label: 'Excel tracker: all courses', scope: `Every course in this project in one workbook.`, href: `/api/projects/${id}/export.xlsx` }] : []),
+  ];
 
   return (
     <section aria-labelledby="project-heading">
-      <nav aria-label="Breadcrumb" className="breadcrumb">
-        <Link to="/">Projects</Link> <span aria-hidden="true">/</span> <span aria-current="page">{p.name}</span>
-      </nav>
-      <div className="page-header">
-        <div>
-          <h1 id="project-heading">{p.name}</h1>
-          {p.description && <p className="muted">{p.description}</p>}
-        </div>
-      </div>
-
-      <PackagesPanel projectId={id} />
-
-      <NewScanForm projectId={id} defaultUrl={p.courseUrl ?? ''} onQueued={(runId) => (window.location.hash = `/runs/${runId}`)} />
-
-      <div className="card">
-        <h2>Excel trackers</h2>
-        <p className="muted">One workbook per course, with issues, screenshots, and status, owner, and notes columns. Each includes every finished scan of that course.</p>
-        <ul className="plain downloads">
-          {(runs.data ? [...new Set(runs.data.filter((r) => ['completed', 'partial', 'failed'].includes(r.status)).map((r) => r.config.target.url ?? ''))].filter(Boolean) : []).map((course) => (
-            <li key={course}>
-              <a className="btn" href={`/api/projects/${id}/export.xlsx?course=${encodeURIComponent(course)}`} download>
-                Download Excel for this course
-              </a>{' '}
-              <span className="mono">{course}</span>
-            </li>
-          ))}
-          <li>
-            <a className="btn" href={`/api/projects/${id}/export.xlsx`} download>
-              Download one workbook with all courses
+      <Breadcrumb items={[{ label: 'Projects', to: '/' }, { label: p.name }]} />
+      <PageHeader
+        title={p.name}
+        titleId="project-heading"
+        subtitle={p.description}
+        actions={
+          <>
+            {exports.length > 0 && <ExportMenu label="Download tracker" items={exports} />}
+            <a className="btn btn-primary" href={`#/projects/${id}/new-scan`}>
+              Start new scan
             </a>
+          </>
+        }
+      />
+      <TabNav
+        label="Project sections"
+        tabs={[
+          { to: `/projects/${id}`, label: 'Overview', current: current === 'overview' },
+          { to: `/projects/${id}/files`, label: 'Course files', current: current === 'files' },
+          { to: `/projects/${id}/history`, label: 'Scan history', current: current === 'history', count: runs.data?.length },
+        ]}
+      />
+
+      {current === 'overview' && <Overview projectId={id} courseUrl={p.courseUrl} runs={runs} />}
+      {current === 'files' && <PackagesPanel projectId={id} />}
+      {current === 'history' && <History runs={runs} />}
+    </section>
+  );
+}
+
+function Overview({ projectId, courseUrl, runs }: { projectId: string; courseUrl?: string; runs: ReturnType<typeof useLoader<Awaited<ReturnType<typeof api.listRuns>>>> }) {
+  const latest = runs.data?.[0];
+  const report = useLoader(() => (latest && FINISHED.includes(latest.status) ? api.runReport(latest.id) : Promise.resolve(undefined)), [latest?.id, latest?.status]);
+  if (runs.error) return <ErrorBox error={runs.error} onRetry={runs.reload} />;
+  if (!runs.data) return <Loading />;
+
+  if (!latest) {
+    return (
+      <Empty title="No scans yet">
+        <p>{courseUrl ? 'This project has a course link ready.' : 'Add a published course link, or upload a course ZIP.'} Start a scan to see what the checks find.</p>
+        <a className="btn btn-primary" href={`#/projects/${projectId}/new-scan`}>
+          Start first scan
+        </a>
+      </Empty>
+    );
+  }
+  const r = report.data;
+  return (
+    <div className="grid-2">
+      <div className="card">
+        <h2>Latest scan</h2>
+        <p className="inline">
+          <StatusBadge status={latest.status} /> <span className="muted">{formatDate(latest.queuedAt)}</span>
+        </p>
+        <p className="muted">{hostPath(latest.config.target.url)}</p>
+        {r ? (
+          <ul className="plain">
+            <li>
+              <strong>{r.counts.fix}</strong> issue{r.counts.fix === 1 ? '' : 's'} to fix
+            </li>
+            <li>
+              <strong>{r.counts.check}</strong> need{r.counts.check === 1 ? 's' : ''} your review
+            </li>
+            <li>
+              <strong>{r.counts.notChecked}</strong> coverage gap{r.counts.notChecked === 1 ? '' : 's'} (areas not checked)
+            </li>
+          </ul>
+        ) : latest.status === 'queued' || latest.status === 'running' ? (
+          <p className="muted">This scan is still {latest.status === 'queued' ? 'waiting to start' : 'running'}.</p>
+        ) : null}
+        <a className="btn btn-primary" href={`#/runs/${latest.id}`}>
+          View latest results
+        </a>
+      </div>
+      <div className="card">
+        <h2>Next steps</h2>
+        <ul className="plain">
+          <li>
+            <a href={`#/projects/${projectId}/new-scan`}>Start a new scan</a>: for a changed course or to retest fixes.
+          </li>
+          <li>
+            <a href={`#/projects/${projectId}/files`}>Course files</a>: upload or review course ZIP packages.
+          </li>
+          <li>
+            <a href={`#/projects/${projectId}/history`}>Scan history</a>: compare earlier scans ({runs.data.length} so far).
           </li>
         </ul>
-        {runs.data && runs.data.every((r) => !['completed', 'partial', 'failed'].includes(r.status)) && <p className="help">Available once a scan has finished.</p>}
+        {courseUrl && (
+          <p className="help">
+            Course link on file: <span title={courseUrl}>{hostPath(courseUrl)}</span>
+          </p>
+        )}
       </div>
+    </div>
+  );
+}
 
-      <h2>Scan history</h2>
-      {runs.error ? <ErrorBox error={runs.error} onRetry={runs.reload} /> : !runs.data ? <Loading /> : runs.data.length === 0 ? (
-        <Empty title="No scans yet">
-          <p>Configure and start a scan above.</p>
-        </Empty>
-      ) : (
-        <TableScroll label="Scan history">
-<table className="table">
+function History({ runs }: { runs: ReturnType<typeof useLoader<Awaited<ReturnType<typeof api.listRuns>>>> }) {
+  if (runs.error) return <ErrorBox error={runs.error} onRetry={runs.reload} />;
+  if (!runs.data) return <Loading />;
+  if (runs.data.length === 0) return <Empty title="No scans yet">Scans you start appear here.</Empty>;
+  return (
+    <>
+      <Alert tone="note">
+        “Checks that ran” counts individual check executions (a rule at a screen and screen size). It is not the number of findings, and checks that did not run are never counted as passed.
+      </Alert>
+      <TableScroll label="Scan history">
+        <table className="table">
           <caption className="sr-only">Scan history</caption>
           <thead>
             <tr>
               <th scope="col">Started</th>
-              <th scope="col">Target</th>
+              <th scope="col">Course</th>
               <th scope="col">Status</th>
               <th scope="col">Findings</th>
-              <th scope="col">Checks run</th>
+              <th scope="col">Checks that ran</th>
               <th scope="col">Duration</th>
             </tr>
           </thead>
@@ -80,7 +153,9 @@ export function ProjectPage({ id }: { id: string }) {
                 <td>
                   <Link to={`/runs/${r.id}`}>{formatDate(r.queuedAt)}</Link>
                 </td>
-                <td className="mono truncate">{r.config.target.url}</td>
+                <td className="truncate" title={r.config.target.url}>
+                  {r.config.target.kind === 'package' ? `${r.config.target.packageName ?? 'Uploaded package'}${r.config.target.launchEntry ? ` (${r.config.target.launchEntry})` : ''}` : hostPath(r.config.target.url)}
+                </td>
                 <td>
                   <StatusBadge status={r.status} />
                 </td>
@@ -93,204 +168,7 @@ export function ProjectPage({ id }: { id: string }) {
             ))}
           </tbody>
         </table>
-</TableScroll>
-      )}
-    </section>
-  );
-}
-
-function NewScanForm({ projectId, defaultUrl, onQueued }: { projectId: string; defaultUrl: string; onQueued: (runId: string) => void }) {
-  const [url, setUrl] = useState(defaultUrl);
-  const [origins, setOrigins] = useState('');
-  const [prefixes, setPrefixes] = useState('');
-  const [timeoutSec, setTimeoutSec] = useState(30);
-  const [sizes, setSizes] = useState<string[]>(['desktop']);
-  const [layout, setLayout] = useState(true);
-  const [compareBaseline, setCompareBaseline] = useState(false);
-  const [testNonResponsive, setTestNonResponsive] = useState(false);
-  const [explore, setExplore] = useState(true);
-  const [accessibility, setAccessibility] = useState(true);
-  const [maxStates, setMaxStates] = useState(25);
-  const [maxDepth, setMaxDepth] = useState(4);
-  const [terms, setTerms] = useState('');
-  const [exclusions, setExclusions] = useState('');
-  const [profileId, setProfileId] = useState('');
-  const [sizesTouched, setSizesTouched] = useState(false);
-  const { data: profiles } = useLoader(() => api.listProfiles(), [], undefined);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-
-  const lines = (s: string) =>
-    s
-      .split(/[\n,]/)
-      .map((x) => x.trim())
-      .filter(Boolean);
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
-    setError(undefined);
-    try {
-      const run = await api.createScan(projectId, {
-        url,
-        allowedOrigins: lines(origins),
-        allowedPathPrefixes: lines(prefixes),
-        navigationTimeoutMs: timeoutSec * 1000,
-        profileId: profileId || undefined,
-        viewports: profileId && !sizesTouched ? undefined : VIEWPORTS.map((v) => v.name).filter((n) => sizes.includes(n)) as Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>,
-        layout,
-        compareBaseline: layout && compareBaseline,
-        testNonResponsive: layout && testNonResponsive,
-        explore,
-        accessibility,
-        maxStates,
-        maxDepth,
-        terminology: terms.trim() === '' ? undefined : terms
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((l) => {
-            const [term, preferred] = l.split('=>').map((x) => x.trim());
-            return preferred ? { term: term!, preferred } : { term: term! };
-          }),
-        textExclusions: exclusions
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean),
-      });
-      onQueued(run.id);
-    } catch (err) {
-      setError(err instanceof ApiError ? [err.message, ...(err.issues?.map((i) => `${i.path.join('.')}: ${i.message}`) ?? [])].join(' ') : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <form className="card form" onSubmit={submit} aria-labelledby="new-scan-heading">
-      <h2 id="new-scan-heading">New scan</h2>
-      <p className="muted">
-        Captures the initial page (screenshot, title, final URL, JavaScript exceptions, console errors, failed requests, load timing), then optionally explores recognized
-        tabs, accordions, dialogs, Next/Back controls, and in-scope links without submitting forms or clicking unsafe controls. Every reached state is checked for broken
-        images and media, missing captions, and placeholder text, and every link destination is checked once. Private, loopback, and reserved network addresses are blocked.
-      </p>
-      <div className="field">
-        <label htmlFor="s-url">Course URL</label>
-        <input id="s-url" type="url" required inputMode="url" placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="s-profile">Client profile</label>
-        <select id="s-profile" value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-describedby="s-profile-help">
-          <option value="">None (neutral settings, no brand checks)</option>
-          {(profiles ?? []).map((pr) => (
-            <option key={pr.id} value={pr.id}>
-              {pr.name}
-            </option>
-          ))}
-        </select>
-        <p id="s-profile-help" className="help">
-          A profile holds a client's own settings: brand fonts and colours, terms, link policy, screen sizes. The scan keeps a copy, so editing the profile later does not change past reports. <a href="#/profiles">Manage profiles</a>
-        </p>
-      </div>
-      <div className="grid-2">
-        <div className="field">
-          <label htmlFor="s-origins">Additional allowed origins</label>
-          <textarea id="s-origins" rows={2} placeholder="https://cdn.example.com" value={origins} onChange={(e) => setOrigins(e.target.value)} aria-describedby="s-origins-help" />
-          <p id="s-origins-help" className="help">
-            The course URL's own origin is always allowed. One per line.
-          </p>
-        </div>
-        <div className="field">
-          <label htmlFor="s-prefixes">Allowed path prefixes</label>
-          <textarea id="s-prefixes" rows={2} placeholder="/course/" value={prefixes} onChange={(e) => setPrefixes(e.target.value)} aria-describedby="s-prefixes-help" />
-          <p id="s-prefixes-help" className="help">
-            Leave empty to allow the whole origin.
-          </p>
-        </div>
-      </div>
-      <div className="grid-2">
-        <div className="field">
-          <label htmlFor="s-timeout">Navigation timeout (seconds)</label>
-          <input id="s-timeout" type="number" min={1} max={120} required value={timeoutSec} onChange={(e) => setTimeoutSec(Number(e.target.value))} />
-        </div>
-      </div>
-      <fieldset className="fieldset">
-        <legend>Screen sizes</legend>
-        <p className="help">Simulated in a desktop browser at these CSS pixel sizes, not tested on real devices. The first one ticked is used to explore the course; the others re-check the first screens reached.</p>
-        <div className="checks-row">
-          {VIEWPORTS.map((v) => (
-            <label key={v.name} className="checkbox">
-              <input
-                type="checkbox"
-                checked={sizes.includes(v.name)}
-                disabled={!layout || (sizes.length === 1 && sizes.includes(v.name))}
-                onChange={(e) => (setSizesTouched(true), setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name))))}
-              />{' '}
-              {v.name} {v.width}×{v.height}
-            </label>
-          ))}
-        </div>
-        <label className="checkbox">
-          <input type="checkbox" checked={layout} onChange={(e) => setLayout(e.target.checked)} /> Check layout, screen sizes, and page load
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={testNonResponsive} disabled={!layout} onChange={(e) => setTestNonResponsive(e.target.checked)} /> Test other screen sizes even for Storyline courses (not recommended)
-        </label>
-        <p className="help">Storyline courses are a fixed-size stage that is not designed to be responsive. They are recognized automatically and tested at the first size only.</p>
-        <label className="checkbox">
-          <input type="checkbox" checked={compareBaseline} disabled={!layout} onChange={(e) => setCompareBaseline(e.target.checked)} /> Compare screenshots with the saved baseline (use on stable pages only)
-        </label>
-        <p className="help">A baseline is saved from a finished scan on its page. Only screenshots made with the same course, screen, size, browser version and settings are compared.</p>
-      </fieldset>
-      <fieldset className="fieldset">
-        <legend>Exploration</legend>
-        <label className="checkbox">
-          <input type="checkbox" checked={explore} onChange={(e) => setExplore(e.target.checked)} /> Explore course interactions (read-only)
-        </label>
-        <label className="checkbox">
-          <input type="checkbox" checked={accessibility} onChange={(e) => setAccessibility(e.target.checked)} /> Run accessibility and keyboard checks (adds time per screen)
-        </label>
-        <div className="grid-2">
-          <div className="field">
-            <label htmlFor="s-states">Maximum states</label>
-            <input id="s-states" type="number" min={1} max={200} required disabled={!explore} value={maxStates} onChange={(e) => setMaxStates(Number(e.target.value))} />
-          </div>
-          <div className="field">
-            <label htmlFor="s-depth">Maximum depth (actions from the start)</label>
-            <input id="s-depth" type="number" min={0} max={10} required disabled={!explore} value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} />
-          </div>
-        </div>
-      </fieldset>
-      <fieldset className="fieldset">
-        <legend>Text checks</legend>
-        <p className="help">Placeholder text (lorem ipsum, TBD, [Insert …], notes to the GD/developer) is always checked. This is not a grammar review.</p>
-        <div className="grid-2">
-          <div className="field">
-            <label htmlFor="s-terms">Terms to flag</label>
-            <textarea id="s-terms" rows={3} placeholder={'e-learning => eLearning'} value={terms} onChange={(e) => setTerms(e.target.value)} aria-describedby="s-terms-help" />
-            <p id="s-terms-help" className="help">
-              One per line. Use "term =&gt; preferred" to suggest a replacement.
-            </p>
-          </div>
-          <div className="field">
-            <label htmlFor="s-excl">Never flag text containing</label>
-            <textarea id="s-excl" rows={3} placeholder="XXX Series" value={exclusions} onChange={(e) => setExclusions(e.target.value)} aria-describedby="s-excl-help" />
-            <p id="s-excl-help" className="help">
-              One per line. For intentional uses of words like TBD.
-            </p>
-          </div>
-        </div>
-      </fieldset>
-      {error && (
-        <p className="alert alert-error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="actions">
-        <button type="submit" className="btn btn-primary" disabled={busy}>
-          {busy ? 'Validating…' : 'Validate and start scan'}
-        </button>
-      </div>
-    </form>
+      </TableScroll>
+    </>
   );
 }

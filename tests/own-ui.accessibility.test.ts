@@ -78,7 +78,16 @@ afterAll(async () => {
 
 describe("the application's own interface", () => {
   it('has no automated WCAG violations, reflows at 320 px, shows focus, and has no keyboard trap on the pages it renders', async () => {
-    const targets = [`${origin}/`, `${origin}/#/projects/${projectId}`, `${origin}/#/runs/${runId}`];
+    const targets = [
+      `${origin}/`,
+      `${origin}/#/projects/${projectId}`,
+      `${origin}/#/projects/${projectId}/new-scan`,
+      `${origin}/#/runs/${runId}`,
+      `${origin}/#/runs/${runId}/issues`,
+      `${origin}/#/runs/${runId}/coverage`,
+      `${origin}/#/runs/${runId}/technical`,
+      `${origin}/#/help`,
+    ];
     const problems: string[] = [];
     for (const url of targets) {
       const queued = h.queueScan(url, { accessibility: true, explore: false });

@@ -4,8 +4,8 @@ import type { CheckOutcome, FindingType, RunStatus, Severity } from '@cqa/shared
 export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
   queued: 'Queued',
   running: 'Running',
-  completed: 'Scan completed',
-  partial: 'Partial',
+  completed: 'Scan finished',
+  partial: 'Partial results',
   failed: 'Scan failed',
   cancelled: 'Cancelled',
 };
@@ -13,7 +13,7 @@ export const RUN_STATUS_LABEL: Record<RunStatus, string> = {
 export const RUN_STATUS_HELP: Record<RunStatus, string> = {
   queued: 'Waiting for the worker to start this scan.',
   running: 'The worker is scanning the course.',
-  completed: 'The configured scan finished. This does not mean the course passed QA; review the findings.',
+  completed: 'Scan finished. Review the results; a finished scan is not a QA pass.',
   partial: 'The scan finished but some content was outside scope, over budget, or could not be checked.',
   failed: 'The scan could not capture the course. See the reason below.',
   cancelled: 'The scan was cancelled. Checks that did not run are marked not tested.',
@@ -96,15 +96,20 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[], poll?: (da
   useEffect(() => {
     let cancelled = false;
     let timer: number | undefined;
+    let wasPolling = false;
     const run = async () => {
       try {
         const d = await loadRef.current();
         if (cancelled) return;
         setData(d);
         setError(undefined);
-        if (poll?.(d)) timer = window.setTimeout(run, intervalMs);
+        wasPolling = Boolean(poll?.(d));
+        if (wasPolling) timer = window.setTimeout(run, intervalMs);
       } catch (e) {
-        if (!cancelled) setError(e);
+        if (cancelled) return;
+        setError(e);
+        // A scan that was running keeps running when this page loses contact; keep asking, more slowly.
+        if (wasPolling) timer = window.setTimeout(run, intervalMs * 3);
       }
     };
     void run();
@@ -148,4 +153,129 @@ export function TableScroll({ label, children }: { label: string; children: Reac
       {children}
     </div>
   );
+}
+
+/** Splits a hash route such as `/runs/abc/issues?action=fix` into path parts and query. */
+export function splitRoute(route: string): { parts: string[]; query: URLSearchParams } {
+  const [path = '', q = ''] = route.split('?');
+  return { parts: path.split('/').filter(Boolean), query: new URLSearchParams(q) };
+}
+
+/** A short readable form of an address: host and path, no scheme or query. */
+export function hostPath(url?: string): string {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    const p = u.pathname === '/' ? '' : u.pathname;
+    return `${u.host}${p}`;
+  } catch {
+    return url;
+  }
+}
+
+export function Breadcrumb({ items }: { items: Array<{ label: string; to?: string }> }) {
+  return (
+    <nav aria-label="Breadcrumb" className="breadcrumb">
+      <ol>
+        {items.map((it, i) => (
+          <li key={`${it.label}-${i}`}>
+            {it.to ? <Link to={it.to}>{it.label}</Link> : <span aria-current="page">{it.label}</span>}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+export function PageHeader({ title, titleId, subtitle, actions }: { title: ReactNode; titleId?: string; subtitle?: ReactNode; actions?: ReactNode }) {
+  return (
+    <div className="page-header">
+      <div className="page-title">
+        <h1 id={titleId}>{title}</h1>
+        {subtitle && <p className="muted page-sub">{subtitle}</p>}
+      </div>
+      {actions && <div className="page-actions">{actions}</div>}
+    </div>
+  );
+}
+
+/** Link-based tabs: each tab is its own address, so refresh and deep links keep working. */
+export function TabNav({ label, tabs }: { label: string; tabs: Array<{ to: string; label: string; current: boolean; count?: number }> }) {
+  return (
+    <nav aria-label={label} className="tabs">
+      <ul>
+        {tabs.map((t) => (
+          <li key={t.to}>
+            <a href={`#${t.to}`} aria-current={t.current ? 'page' : undefined} className={t.current ? 'tab current' : 'tab'}>
+              {t.label}{' '}
+              {t.count !== undefined && <span className="tab-count">{t.count}</span>}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
+export function Alert({ tone = 'note', title, children, live }: { tone?: 'note' | 'warn' | 'error' | 'ok'; title?: string; children?: ReactNode; live?: boolean }) {
+  return (
+    <div className={`alert alert-${tone}`} role={live ? (tone === 'error' ? 'alert' : 'status') : undefined}>
+      {title && <strong>{title} </strong>}
+      {children}
+    </div>
+  );
+}
+
+export function Pagination({ page, pageSize, total, onPage, label }: { page: number; pageSize: number; total: number; onPage: (p: number) => void; label: string }) {
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+  if (total <= pageSize) return null;
+  const from = page * pageSize + 1;
+  const to = Math.min(total, (page + 1) * pageSize);
+  return (
+    <nav className="pagination" aria-label={`${label} pages`}>
+      <button type="button" className="btn btn-small" onClick={() => onPage(page - 1)} disabled={page === 0}>
+        Previous
+      </button>
+      <span role="status">
+        {from}–{to} of {total}
+      </span>
+      <button type="button" className="btn btn-small" onClick={() => onPage(page + 1)} disabled={page >= pages - 1}>
+        Next
+      </button>
+    </nav>
+  );
+}
+
+export function CopyButton({ text, label = 'Copy address' }: { text: string; label?: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setState('copied');
+    } catch {
+      setState('failed');
+    }
+    window.setTimeout(() => setState('idle'), 2500);
+  };
+  return (
+    <>
+      <button type="button" className="btn btn-small btn-quiet" onClick={copy}>
+        {label}
+      </button>
+      <span className="sr-only" role="status">
+        {state === 'copied' ? 'Copied' : state === 'failed' ? 'Could not copy' : ''}
+      </span>
+      {state !== 'idle' && (
+        <span className="muted" aria-hidden="true">
+          {state === 'copied' ? 'Copied' : 'Could not copy'}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** The captured course title when there is one, else a readable form of the address. */
+export function courseTitle(states: Array<{ title?: string }> | undefined, url?: string, fallback?: string): string {
+  const t = states?.find((s) => s.title && s.title.trim())?.title?.trim();
+  return t || fallback || hostPath(url) || 'Course';
 }

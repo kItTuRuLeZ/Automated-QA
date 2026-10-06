@@ -112,7 +112,7 @@ Limits on compressed bytes, expanded bytes, entry count, compression ratio, and 
 
 ## Local targets (administrator opt-in)
 
-Production policy denies loopback and private addresses. For the offline sample pack, an administrator can set `CQA_ALLOW_LOCAL_TARGETS` to exact `127.0.0.1:port` / `[::1]:port` pairs before starting the app and worker. Only loopback pairs are accepted (anything else is ignored with a warning), the value is read once at start-up, and it cannot be set from the API or UI. The About page shows when it is on.
+Production policy denies loopback and private addresses. For the offline sample pack, an administrator can set `CQA_ALLOW_LOCAL_TARGETS` to exact `127.0.0.1:port` / `[::1]:port` pairs before starting the app and worker. Only loopback pairs are accepted (anything else is ignored with a warning), the value is read once at start-up, and it cannot be set from the API or UI. Help → System status shows when it is on.
 
 ## Integrity
 

@@ -221,7 +221,8 @@ export function ProfilesPage() {
     );
   return (
     <>
-      <h1>Client profiles</h1>
+      <h1>Client settings</h1>
+      <p className="muted">Optional. Client settings hold one client’s brand fonts and colours, terms to flag, link and screen-size preferences, and any rules to switch off. Choose one when you start a scan so the same checks are applied the same way each time.</p>
       <p className="muted">
         A profile holds one client's own settings. Scans without a profile use neutral settings and run no brand checks. <a href="#/">Back to projects</a>
       </p>

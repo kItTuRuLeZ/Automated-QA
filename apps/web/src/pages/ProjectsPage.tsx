@@ -1,72 +1,108 @@
 import { type FormEvent, useState } from 'react';
 import { ApiError, api } from '../api';
-import { Empty, ErrorBox, Link, Loading, StatusBadge, formatDate, useLoader, TableScroll } from '../components/ui';
+import { CopyButton, Empty, ErrorBox, Link, Loading, PageHeader, StatusBadge, formatDate, hostPath, useLoader } from '../components/ui';
 
 export function ProjectsPage() {
   const { data, error, reload } = useLoader(() => api.listProjects(), []);
   const [showForm, setShowForm] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const q = search.trim().toLowerCase();
+  const shown = (data ?? []).filter((p) => !q || `${p.name} ${p.description ?? ''} ${p.courseUrl ?? ''}`.toLowerCase().includes(q));
 
   return (
     <section aria-labelledby="projects-heading">
-      <div className="page-header">
-        <h1 id="projects-heading">Projects</h1>
-        <button type="button" className="btn btn-primary" onClick={() => setShowForm((s) => !s)} aria-expanded={showForm}>
-          New project
-        </button>
-      </div>
+      <PageHeader
+        title="Projects"
+        titleId="projects-heading"
+        subtitle="Check published courses, review issues and track fixes."
+        actions={
+          <button type="button" className="btn btn-primary" onClick={() => setShowForm((s) => !s)} aria-expanded={showForm}>
+            New project
+          </button>
+        }
+      />
       {showForm && (
         <NewProjectForm
-          onCreated={(id) => {
-            window.location.hash = `/projects/${id}`;
+          onCreated={(id, hasUrl) => {
+            window.location.hash = hasUrl ? `/projects/${id}/new-scan` : `/projects/${id}`;
           }}
           onCancel={() => setShowForm(false)}
         />
       )}
-      {error ? <ErrorBox error={error} onRetry={reload} /> : !data ? <Loading /> : data.length === 0 ? (
+      {error ? (
+        <ErrorBox error={error} onRetry={reload} />
+      ) : !data ? (
+        <Loading />
+      ) : data.length === 0 ? (
         <Empty title="No projects yet">
-          <p>Create a project for a published course, then run a scan.</p>
+          <p>A project holds the scans, issues and reports for one course. Create one, then start a scan.</p>
+          <button type="button" className="btn btn-primary" onClick={() => setShowForm(true)}>
+            Create your first project
+          </button>
         </Empty>
       ) : (
-        <TableScroll label="Projects">
-<table className="table">
-          <caption className="sr-only">Projects</caption>
-          <thead>
-            <tr>
-              <th scope="col">Project</th>
-              <th scope="col">Course URL</th>
-              <th scope="col">Scans</th>
-              <th scope="col">Latest scan</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((p) => (
-              <tr key={p.id}>
-                <td>
-                  <Link to={`/projects/${p.id}`}>{p.name}</Link>
-                  {p.isDemo && <span className="badge">Demo data</span>}
-                </td>
-                <td className="mono truncate">{p.courseUrl ?? '—'}</td>
-                <td>{p.runCount}</td>
-                <td>
-                  {p.lastRun ? (
-                    <span className="inline">
-                      <StatusBadge status={p.lastRun.status} /> <span className="muted">{formatDate(p.lastRun.queuedAt)}</span>
-                    </span>
-                  ) : (
-                    <span className="muted">Never scanned</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-</TableScroll>
+        <>
+          {data.length > 4 && (
+            <div className="field search">
+              <label htmlFor="project-search">Search projects</label>
+              <input id="project-search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name, description or address" />
+            </div>
+          )}
+          <p className="muted" role="status">
+            {shown.length === data.length ? `${data.length} project${data.length === 1 ? '' : 's'}` : `${shown.length} of ${data.length} projects match`}
+          </p>
+          {shown.length === 0 ? (
+            <Empty title="No projects match your search" />
+          ) : (
+            <ul className="project-list">
+              {shown.map((p) => (
+                <li key={p.id} className="card project-card">
+                  <div className="project-main">
+                    <h2 className="project-name">
+                      <Link to={`/projects/${p.id}`}>{p.name}</Link>
+                      {p.isDemo && <span className="badge">Demo data</span>}
+                    </h2>
+                    {p.description && <p className="muted">{p.description}</p>}
+                    {p.courseUrl && (
+                      <p className="project-url">
+                        <span className="label">Course:</span> <span title={p.courseUrl}>{hostPath(p.courseUrl)}</span> <CopyButton text={p.courseUrl} label="Copy full address" />
+                      </p>
+                    )}
+                  </div>
+                  <div className="project-side">
+                    {p.lastRun ? (
+                      <>
+                        <p className="inline">
+                          <span className="label">Latest scan:</span> <StatusBadge status={p.lastRun.status} />
+                        </p>
+                        <p className="muted">
+                          {formatDate(p.lastRun.queuedAt)} · {p.runCount} scan{p.runCount === 1 ? '' : 's'} in total
+                        </p>
+                        <a className="btn" href={`#/runs/${p.lastRun.id}`}>
+                          View latest results<span className="sr-only"> for {p.name}</span>
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        <p className="muted">No scans yet</p>
+                        <a className="btn btn-primary" href={`#/projects/${p.id}/new-scan`}>
+                          Start first scan<span className="sr-only"> for {p.name}</span>
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
     </section>
   );
 }
 
-function NewProjectForm({ onCreated, onCancel }: { onCreated: (id: string) => void; onCancel: () => void }) {
+function NewProjectForm({ onCreated, onCancel }: { onCreated: (id: string, hasUrl: boolean) => void; onCancel: () => void }) {
   const [name, setName] = useState('');
   const [courseUrl, setCourseUrl] = useState('');
   const [description, setDescription] = useState('');
@@ -75,28 +111,31 @@ function NewProjectForm({ onCreated, onCancel }: { onCreated: (id: string) => vo
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy) return;
     setBusy(true);
     setError(undefined);
     try {
       const p = await api.createProject({ name, courseUrl: courseUrl || undefined, description: description || undefined });
-      onCreated(p.id);
+      onCreated(p.id, Boolean(courseUrl));
     } catch (err) {
       setError(err instanceof ApiError ? (err.issues?.map((i) => i.message).join(' ') || err.message) : String(err));
-    } finally {
       setBusy(false);
     }
   };
 
   return (
-    <form className="card form" onSubmit={submit} aria-labelledby="new-project-heading">
+    <form className="card form narrow" onSubmit={submit} aria-labelledby="new-project-heading">
       <h2 id="new-project-heading">New project</h2>
       <div className="field">
         <label htmlFor="p-name">Project name</label>
-        <input id="p-name" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} />
+        <input id="p-name" required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
       </div>
       <div className="field">
-        <label htmlFor="p-url">Published course URL (optional)</label>
-        <input id="p-url" type="url" inputMode="url" placeholder="https://" value={courseUrl} onChange={(e) => setCourseUrl(e.target.value)} />
+        <label htmlFor="p-url">Published course link (optional)</label>
+        <input id="p-url" type="url" inputMode="url" placeholder="https://" value={courseUrl} onChange={(e) => setCourseUrl(e.target.value)} aria-describedby="p-url-help" />
+        <p id="p-url-help" className="help">
+          If you add it now, it is filled in for your first scan. You can also upload a course ZIP later.
+        </p>
       </div>
       <div className="field">
         <label htmlFor="p-desc">Description (optional)</label>

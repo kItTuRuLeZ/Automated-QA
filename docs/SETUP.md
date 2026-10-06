@@ -16,7 +16,7 @@ npm install
 npm run browsers:install
 ```
 
-`browsers:install` downloads the Chromium build the scanner uses. Without it, scans and PDF reports cannot run (the About page shows this as "Blocked"). Do it before going offline.
+`browsers:install` downloads the Chromium build the scanner uses. Without it, scans and PDF reports cannot run (Help → System status shows this as "Not ready to scan"). Do it before going offline.
 
 ## Start
 
@@ -26,7 +26,7 @@ npm start
 
 Open <http://127.0.0.1:4317>. Use `127.0.0.1`, not `localhost`. The app listens on this computer only. Data (database and screenshots) is stored in `./data`; set `CQA_DATA_DIR` to put it elsewhere.
 
-**About this installation** (link at the top of the app) lists what works, what is blocked, and what is not included in this version.
+**Help → System status** (link at the top of the app) says whether this computer is ready to scan, and lists what works, what is blocked, and what is not included in this version.
 
 ## Scanning without the internet: the sample course pack
 
@@ -89,7 +89,7 @@ Restore checks every checksum and the database's own integrity check before chan
 
 | Symptom | Likely cause |
 | --- | --- |
-| "Blocked" next to the scanning browser on the About page | Run `npm run browsers:install`, then restart |
+| "Not ready to scan" in Help → System status (scanning browser blocked) | Run `npm run browsers:install`, then restart |
 | A scan of a local or intranet address is refused (NET-001) | Local and private addresses are blocked by design; see the sample pack section for the offline exception |
 | PDF download fails but HTML and Excel work | The scanning browser is missing (see above) |
 | `npm run restore` says the app is running | Stop `npm start` first |

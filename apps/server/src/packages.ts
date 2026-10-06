@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { CheckResultId, FindingId, Finding, ProjectId, RuleId, ScanRun } from '@cqa/shared';
 import {
   ArchiveError,
+  DEFAULT_ARCHIVE_LIMITS,
   type CoursePackage,
   type LaunchChoice,
   type NetworkPolicy,
@@ -164,6 +165,9 @@ const REMEDIATION: Record<string, string> = {
 export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDeps): void {
   const { store, policy, packagesDir } = deps;
   const pkgDir = (id: string) => path.join(packagesDir, id);
+
+  // The limits the upload form quotes, so the screen never states a number the server does not enforce.
+  app.get('/api/package-limits', async () => ({ maxUploadBytes: MAX_UPLOAD_BYTES, maxEntries: DEFAULT_ARCHIVE_LIMITS.maxEntries, maxExpandedBytes: DEFAULT_ARCHIVE_LIMITS.maxExpandedBytes, maxLessonsPerScan: MAX_LAUNCHES, formats: ['SCORM 1.2', 'SCORM 2004', 'HTML5'] }));
 
   // Raw ZIP bytes. The global body limit stays small for every other route.
   app.addContentTypeParser('application/zip', { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES }, (_req, body, done) => done(null, body));
