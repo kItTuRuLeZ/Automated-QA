@@ -20,3 +20,5 @@ export * from './net/local-targets.js';
 export * from './package/archive.js';
 export * from './package/inspect.js';
 export * from './package/authoring.js';
+export * from './db/qa-store.js';
+export * from './qa/aggregation.js';

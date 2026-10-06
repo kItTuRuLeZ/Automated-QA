@@ -4,3 +4,4 @@ export * from './scan.js';
 export * from './results.js';
 export * from './profile.js';
 export * from './providers.js';
+export * from './qa.js';
