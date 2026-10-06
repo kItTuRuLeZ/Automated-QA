@@ -192,6 +192,8 @@ export interface ScormSettings {
 }
 
 export interface ScanConfig {
+  /** The preset chosen when the scan was set up. Absent in older scans. */
+  qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
   projectId: ProjectId;
   target: ScanTarget;
   scope: ScanScope;

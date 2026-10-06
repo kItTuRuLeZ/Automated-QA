@@ -678,6 +678,36 @@ export const PACKAGE_RULES: readonly RuleDefinition[] = [
 ];
 
 /** SCORM runtime harness checks (Phase 7). Separate rule sets for 1.2 and 2004; these are harness results, not LMS results. */
+/** Functional behavior tests from the test library. A failure always names the case, the expected result and its source. */
+export const FUNCTIONAL_RULES: readonly RuleDefinition[] = [
+  rule({
+    id: 'FUN-001',
+    name: 'Interaction behaves as its test case expects',
+    category: 'functional',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'medium',
+    capability: 'heuristic',
+    phase: 10,
+    applicability: 'Screens where the scanner detected a tab, accordion, dialog or Next/Previous control',
+    evidenceCollected: ['Ordered action trace', 'State before and after', 'Screenshot on failure'],
+    limitations: ['Judged against the starter baseline unless a reviewed case or specification says otherwise. The baseline is not a client requirement.'],
+  }),
+  rule({
+    id: 'FUN-002',
+    name: 'Configured behavior rule holds',
+    category: 'functional',
+    defaultFindingType: 'automated_defect',
+    defaultSeverity: 'high',
+    defaultConfidence: 'high',
+    capability: 'implemented',
+    phase: 10,
+    applicability: 'Screens with a behavior rule configured by a reviewer',
+    evidenceCollected: ['Ordered action trace', 'Unique required items completed', 'Observation window', 'Screenshot on failure'],
+    limitations: ['Only the rule as configured is tested. Representative click orders are tried, not every possible order.'],
+  }),
+];
+
 export const SCORM_RULES: readonly RuleDefinition[] = [
   rule({
     id: 'SCO12-001',
@@ -901,6 +931,7 @@ export const ALL_RULES: readonly RuleDefinition[] = [
   ...BRAND_RULES,
   ...PACKAGE_RULES,
   ...SCORM_RULES,
+  ...FUNCTIONAL_RULES,
 ];
 
 const BY_ID = new Map(ALL_RULES.map((r) => [r.id, r]));
@@ -968,6 +999,7 @@ export function rulesForEngines(engines: EngineSelection): readonly RuleDefiniti
     ...(engines.performance ? LAYOUT_RULES.filter((r) => r.id === 'PERF-001') : []),
     ...(engines.visualBaseline ? LAYOUT_RULES.filter((r) => r.id === 'VIS-001') : []),
     ...(engines.brand ? BRAND_RULES : []),
+    ...(engines.functional ? FUNCTIONAL_RULES : []),
     ...(engines.scorm ? SCORM_RULES.filter((r) => r.id.startsWith(engines.scorm === '1.2' ? 'SCO12-' : 'SCO04-')) : []),
   ];
 }

@@ -87,7 +87,7 @@ const pathAndHash = (url: string): string => {
  * source ID when there is one. Otherwise a runtime unit is created, so a screen the course list did not show is
  * visible as an extra rather than silently merged.
  */
-export function unitForState(state: Pick<CourseState, 'lessonId' | 'lessonTitle' | 'title' | 'url'>, known: ReadonlyArray<Pick<ContentUnit, 'id' | 'kind' | 'sourceId'>>): { existingId?: string; unit?: NewUnit } {
+export function unitForState(state: Pick<CourseState, 'lessonId' | 'lessonTitle' | 'title' | 'url'>, known: ReadonlyArray<Pick<ContentUnit, 'id' | 'kind' | 'sourceId' | 'title'>>): { existingId?: string; unit?: NewUnit } {
   if (state.lessonId) {
     const hit = known.find((u) => u.sourceId === state.lessonId && (u.kind === 'lesson' || u.kind === 'slide'));
     if (hit) return { existingId: hit.id };
@@ -97,11 +97,14 @@ export function unitForState(state: Pick<CourseState, 'lessonId' | 'lessonTitle'
   const existing = known.find((u) => u.id === id);
   if (existing) return { existingId: existing.id };
   const title = state.lessonTitle?.trim() || state.title?.trim();
+  const where = pathAndHash(state.url) || '/';
+  // Two screens that report the same page title stay distinguishable by where they are.
+  const clash = title ? known.some((u) => u.title === title) : false;
   return {
     unit: {
       id,
       kind: 'screen',
-      title: title || `Screen at ${pathAndHash(state.url) || '/'}`,
+      title: title ? (clash ? `${title} (${state.lessonId ? `lesson ${state.lessonId}` : where})` : title) : `Screen at ${where}`,
       titleIsFallback: !title,
       sourceId: state.lessonId,
       source: 'runtime',

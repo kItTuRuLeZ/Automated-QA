@@ -3,7 +3,9 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
 import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
-import { DEFAULT_LAYOUT_SETTINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, newId, nowIso, rulesForEngines, unitsFromPackage } from '@cqa/core';
+import { DEFAULT_LAYOUT_SETTINGS, MAPPINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, deriveMappedExecutions, newId, nowIso, rulesForEngines, seedStarterLibrary, unitsFromPackage } from '@cqa/core';
+import { createHash } from 'node:crypto';
+import { ENGINE_VERSION, recordRunLevelCases, runFunctionalTests } from './engines/functional.js';
 import { RunRecorder } from './recorder.js';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
@@ -65,7 +67,9 @@ type AbortReason = 'cancelled' | 'budget_runtime' | 'worker_lost';
  * status and cleans up the browser, proxy, and temp directory.
  */
 export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus> {
-  const rec = new RunRecorder(new QaStore(deps.store.db), run.id);
+  const qaStore = new QaStore(deps.store.db);
+  seedStarterLibrary(qaStore);
+  const rec = new RunRecorder(qaStore, run.id);
   rec.begin();
   let status: RunStatus;
   try {
@@ -355,6 +359,44 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       }
     }
 
+    // ---- functional tests: interaction cases and behavior rules, each in a fresh context at the screen it belongs to ----
+    const qa = new QaStore(store.db);
+    const configHash = createHash('sha256').update(JSON.stringify({ engines: run.config.engines, scope: run.config.scope, budgets: run.config.budgets, viewports: run.config.viewports, target: run.config.target })).digest('hex').slice(0, 16);
+    const pkgForHash = run.config.target.kind === 'package' && run.config.target.packageId ? store.getPackage(run.config.target.packageId) : undefined;
+    const contentHash = pkgForHash?.sha256?.slice(0, 16) ?? out.state?.signature.slice(0, 16);
+    if (run.config.engines.functional && pageUsable && out.state) {
+      rec.stage('running', 'Testing interactions and behavior rules');
+      try {
+        const defs = new Map(qa.listDefinitions().map((d) => [d.id, d]));
+        const fr = await runFunctionalTests({
+          browser,
+          run,
+          targetUrl,
+          replay: traversal?.replay ?? [{ stateId: out.state.id, steps: [] }],
+          states: traversal?.states ?? [out.state],
+          qa,
+          rec,
+          definitions: defs,
+          rules: qa.listRules(run.projectId),
+          deadline: runStartedAt + run.config.budgets.maxRuntimeMs,
+          signal: controller.signal,
+          evidence: sink,
+          contentHash,
+          configHash,
+          newContext: async () => {
+            const c = await browser!.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.deviceScaleFactor, isMobile: viewport.isMobile, hasTouch: viewport.hasTouch, serviceWorkers: 'block', acceptDownloads: false });
+            await c.addInitScript({ content: 'globalThis.__name ??= (fn) => fn;' });
+            if (run.config.engines.scorm && run.config.scorm) await c.addInitScript({ content: harnessInitScript({ version: run.config.scorm.version, learner: { id: 'cqa-test-learner', name: 'Test Learner' }, restore: {}, entry: 'ab-initio', launchData: run.config.scorm.launchData, masteryScore: run.config.scorm.masteryScore, priorTotalSeconds: 0 }) });
+            return c;
+          },
+        });
+        persistResults({ checks: fr.checks, findings: fr.findings });
+      } catch (err) {
+        if (controller.signal.aborted) throw err;
+        contentErrors.push(`Functional tests failed: ${truncateLine((err as Error).message)}`);
+      }
+    }
+
     // ---- link destinations (once per run, from every reached state) ----
     let linkCoverage: EngineResult['coverage'] = [];
     if (run.config.engines.links && pageUsable) {
@@ -364,6 +406,25 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       if (policyLinks.skipped) lr.checkResults?.push?.({ ruleId: 'LNK-001', outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `${policyLinks.skipped} link(s) were not requested: ${run.config.skipExternalLinks ? 'uploaded packages are not allowed to make outside requests' : `the link policy in client profile "${profile?.name}" excludes them`}.`, durationMs: 0, evidenceIds: [], executedAt: nowIso() } as never);
       persistResults(lr);
       linkCoverage = lr.coverage;
+    }
+
+    // Mapped cases report what the engines above recorded; everything else with no automation joins the manual queue.
+    const quick = !run.config.engines.functional && run.config.qaProfile === 'quick';
+    if (run.config.engines.functional || quick) {
+      const defs = new Map(qa.listDefinitions().map((d) => [d.id, d]));
+      const unitOfState = new Map<string, string>();
+      for (const s of store.listStates(run.id)) {
+        const u = rec.unitOf(s);
+        if (u) unitOfState.set(s.id, u);
+      }
+      // Package file results belong to the screen the launch page opened as; failing that, to the package item itself.
+      const staticUnit = (out.state ? rec.unitOf(out.state) : undefined) ?? qa.listUnits(run.id).find((u) => u.kind === 'sco')?.id;
+      for (const e of deriveMappedExecutions({ runId: run.id, checks: store.listCheckResults(run.id), unitOfState, engines: run.config.engines, staticUnitId: staticUnit, onlyStatic: quick, definitions: defs, engineVersion: ENGINE_VERSION, contentHash, configHash, now: nowIso })) qa.insertExecution(e);
+      if (!quick) recordRunLevelCases({ qa, runId: run.id, definitions: defs, hasRules: qa.listRules(run.projectId).some((r) => r.reviewState !== 'retired'), mappedIds: new Set(MAPPINGS.map((m) => m.caseId)), contentHash, configHash });
+      // The functional rules themselves: not applicable (with the reason) when nothing applied, never a silent pass.
+      const haveFun = new Set(store.listCheckResults(run.id).map((c) => c.ruleId));
+      if (run.config.engines.functional) for (const id of ['FUN-001', 'FUN-002']) if (!haveFun.has(id)) store.insertCheckResult({ id: newId<CheckResultId>(), runId: run.id, ruleId: id, outcome: pageUsable ? 'not_applicable' : 'not_tested', reason: pageUsable ? undefined : 'state_unreachable', reasonDetail: pageUsable ? (id === 'FUN-002' ? 'No behavior rule is configured for this course.' : 'No tab, accordion, dialog or Next/Previous control was detected on a visited screen.') : 'The course could not be opened.', durationMs: 0, evidenceIds: [], executedAt: nowIso() });
+      qa.recount(run.id);
     }
 
     // Every owned rule ends with a result or a reason; never an implicit pass.

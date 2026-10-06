@@ -28,10 +28,6 @@ Open <http://127.0.0.1:4317>. Use `127.0.0.1`, not `localhost`. The app listens 
 
 **Help → System status** (link at the top of the app) says whether this computer is ready to scan, and lists what works, what is blocked, and what is not included in this version.
 
-## Showing the app to others on your network (optional)
-
-By default the app is reachable from this computer only. For a demo, an optional LAN demo mode makes it reachable from one private network address with a sign-in. See [LAN_DEMO.md](LAN_DEMO.md) for the exact Windows steps and its limits (plain HTTP, one shared sign-in).
-
 ## Scanning without the internet: the sample course pack
 
 The `fixtures/` folder is a small pack of local sample courses with known problems (see `fixtures/README.md`). Because private and local addresses are blocked by default, scanning them needs an administrator to allow exact local ports:

@@ -58,6 +58,7 @@ export const RULE_CATEGORIES = [
   'brand',
   'package',
   'scorm',
+  'functional',
   'fidelity',
   'manual',
 ] as const;

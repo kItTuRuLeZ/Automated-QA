@@ -54,10 +54,6 @@ export function ExportMenu({ label = 'Download report', items, technical = [], a
     setMessage(undefined);
     try {
       const res = await fetch(item.href);
-      if (res.status === 401) {
-        window.location.assign('/login');
-        return;
-      }
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(data.error ?? `The server answered ${res.status}.`);

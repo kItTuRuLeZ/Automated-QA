@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>All-click: delayed event</title>
+<style>body{font-family:sans-serif;max-width:40rem;margin:2rem auto}button{font:inherit;padding:.5rem 1rem;margin:.25rem}button:disabled{opacity:.5}</style>
+</head>
+<body>
+  <main>
+    <h1>All-click: delayed event</h1>
+    <p>Next becomes available 1.2 seconds after the fourth different item.</p>
+    <div id="items">
+      <button type="button" class="item" id="item-a">Alpha</button>
+      <button type="button" class="item" id="item-b">Bravo</button>
+      <button type="button" class="item" id="item-c">Charlie</button>
+      <button type="button" class="item" id="item-d">Delta</button>
+    </div>
+    <p><button type="button" id="optional-x">Extra reading</button></p>
+    <p id="progress" role="status">0 of 4 reviewed</p>
+    <p><button type="button" id="next" disabled>Next</button></p>
+    <p id="after" hidden>Lesson 2: Summary</p>
+  </main>
+  <script>
+    var next = document.getElementById('next');
+    var progress = document.getElementById('progress');
+    var seen = {};
+    var count = function () { return Object.keys(seen).length; };
+    var enable = function () { next.disabled = false; };
+    next.addEventListener('click', function () { document.getElementById('after').hidden = false; });
+    var items = [].slice.call(document.querySelectorAll('.item'));
+    items.forEach(function (b) {
+      b.addEventListener('click', function () { seen[b.id] = true; progress.textContent = count() + ' of 4 reviewed'; if (count() === 4) setTimeout(enable, 1200); });
+    });
+  </script>
+</body>
+</html>

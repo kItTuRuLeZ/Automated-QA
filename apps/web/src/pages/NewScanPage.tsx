@@ -1,6 +1,8 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../api';
+import { qaApi } from '../api-qa';
 import { UploadBox } from '../components/Packages';
+import { WorkflowSteps } from '../components/qa/WorkflowSteps';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, hostPath, useLoader } from '../components/ui';
 
 const VIEWPORTS = [
@@ -48,8 +50,19 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
   const [urlTouched, setUrlTouched] = useState(false);
   const [seeded, setSeeded] = useState(Boolean(presetUrl));
 
+  const [qaProfile, setQaProfile] = useState<'quick' | 'functional' | 'full' | 'custom'>('full');
+  const [functional, setFunctional] = useState(true);
+  const library = useLoader(() => qaApi.library(), []);
   const [explore, setExplore] = useState(true);
   const [accessibility, setAccessibility] = useState(true);
+  // Choosing a preset sets the individual checks; changing one of them by hand makes it Custom.
+  const choose = (p: 'quick' | 'functional' | 'full' | 'custom') => {
+    setQaProfile(p);
+    if (p === 'quick') (setExplore(false), setAccessibility(false), setLayout(false), setFunctional(false));
+    if (p === 'functional') (setExplore(true), setAccessibility(false), setLayout(false), setFunctional(true));
+    if (p === 'full') (setExplore(true), setAccessibility(true), setLayout(true), setFunctional(true));
+  };
+  const custom = <T,>(set: (v: T) => void) => (v: T) => (set(v), setQaProfile('custom'));
   const [layout, setLayout] = useState(true);
   const [sizes, setSizes] = useState<VpName[]>(['desktop']);
   const [sizesTouched, setSizesTouched] = useState(false);
@@ -134,6 +147,8 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
         testNonResponsive: layout && testNonResponsive,
         explore,
         accessibility,
+        functional,
+        qaProfile,
         maxStates,
         maxDepth,
         terminology:
@@ -165,6 +180,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
       <Breadcrumb items={[{ label: 'Projects', to: '/' }, { label: p.name, to: `/projects/${projectId}` }, { label: 'New scan' }]} />
       <PageHeader title="Start a new scan" titleId="scan-heading" subtitle={`For ${p.name}`} />
 
+      <WorkflowSteps current={step === 0 ? 0 : step === 1 ? 1 : 2} />
       <ol className="steps-bar" aria-label="Scan setup steps">
         {STEPS.map((label, i) => (
           <li key={label} aria-current={i === step ? 'step' : undefined} className={i === step ? 'current' : i < step ? 'done' : ''}>
@@ -238,15 +254,52 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
               </li>
             </ul>
             <fieldset className="fieldset">
-              <legend>Optional checks</legend>
+              <legend>How thorough?</legend>
+              {(
+                [
+                  ['quick', 'Quick check', 'Opens the first page and reads the files. Interaction behavior is not executed.'],
+                  ['functional', 'Functional check', 'Opens the course in a browser, clicks through it, and runs the interaction cases and your behavior rules.'],
+                  ['full', 'Full available check', 'Everything this tool can actually run, plus a queue of cases that only a person can do. It does not cover all possible course behavior.'],
+                  ['custom', 'Custom', 'You choose the checks and screen sizes below.'],
+                ] as const
+              ).map(([id, label, help]) => (
+                <label key={id} className="choice">
+                  <input type="radio" name="qa-profile" checked={qaProfile === id} onChange={() => choose(id)} />{' '}
+                  <span>
+                    <strong>{label}</strong>
+                    <span className="help">{help}</span>
+                  </span>
+                </label>
+              ))}
+              <div className="profile-lists" aria-live="polite">
+                <p>
+                  <strong>Will run:</strong> opening page, scripts, images and media, links, placeholder text{explore ? ', click-through exploration' : ''}
+                  {functional ? ', interaction cases (tabs, accordions, dialogs, Next/Previous) and your behavior rules' : ''}
+                  {accessibility ? ', accessibility and keyboard checks' : ''}
+                  {layout ? ', layout and page load' : ''}.
+                </p>
+                {functional && library.data && (
+                  <p>
+                    <strong>Manual review queue:</strong> {library.data.definitions.filter((d) => d.effectiveAutomation === 'manual' && d.reviewState !== 'retired').length} cases the tool has no automation for (quizzes, drag and drop, media playback and others) are listed for a person. They are never marked passed.
+                  </p>
+                )}
+                {!functional && <p><strong>Not run:</strong> interaction cases and behavior rules. Interaction behavior is not executed in this profile, so a clean result says nothing about it.</p>}
+                <p><strong>Not available in this tool:</strong> real-device testing, a real LMS, drag and drop, video and audio playback, quiz scoring, and exhaustive click orders.</p>
+              </div>
+            </fieldset>
+            <fieldset className="fieldset">
+              <legend>Checks in detail</legend>
               <label className="checkbox">
-                <input type="checkbox" checked={explore} onChange={(e) => setExplore(e.target.checked)} /> <span>Click through the course (read-only)<span className="help">Opens recognized tabs, accordions, pop-ups and Next/Back buttons without submitting anything. A scan with this off only checks the opening page.</span></span>
+                <input type="checkbox" checked={explore} onChange={(e) => custom(setExplore)(e.target.checked)} /> <span>Click through the course (read-only)<span className="help">Opens recognized tabs, accordions, pop-ups and Next/Back buttons without submitting anything. A scan with this off only checks the opening page.</span></span>
               </label>
               <label className="checkbox">
-                <input type="checkbox" checked={accessibility} onChange={(e) => setAccessibility(e.target.checked)} /> <span>Accessibility and keyboard checks<span className="help">Automated checks find only some problems and cannot confirm the course is accessible. Adds time per screen.</span></span>
+                <input type="checkbox" checked={accessibility} onChange={(e) => custom(setAccessibility)(e.target.checked)} /> <span>Accessibility and keyboard checks<span className="help">Automated checks find only some problems and cannot confirm the course is accessible. Adds time per screen.</span></span>
               </label>
               <label className="checkbox">
-                <input type="checkbox" checked={layout} onChange={(e) => setLayout(e.target.checked)} /> <span>Layout, screen sizes and page load<span className="help">Looks for text running off screen and elements overlapping, and measures one sample of page load.</span></span>
+                <input type="checkbox" checked={layout} onChange={(e) => custom(setLayout)(e.target.checked)} /> <span>Layout, screen sizes and page load<span className="help">Looks for text running off screen and elements overlapping, and measures one sample of page load.</span></span>
+              </label>
+              <label className="checkbox">
+                <input type="checkbox" checked={functional} disabled={!explore && qaProfile !== 'custom'} onChange={(e) => custom(setFunctional)(e.target.checked)} /> <span>Interaction cases and behavior rules<span className="help">Runs the test library’s cases on tabs, accordions, dialogs and Next/Previous, and the behavior rules you set up for this project. Each runs on a fresh copy of the screen.</span></span>
               </label>
             </fieldset>
             <fieldset className="fieldset">

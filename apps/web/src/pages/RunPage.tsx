@@ -9,9 +9,13 @@ import { SummaryTab } from '../components/run/SummaryTab';
 import { TechnicalTab } from '../components/run/TechnicalTab';
 import { isOpenWork } from '../components/IssueStatus';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TabNav, courseTitle, formatDate, hostPath, useLoader } from '../components/ui';
+import { CoveragePanel } from '../components/qa/CoveragePanel';
+import { ProgressPanel, useLiveRun } from '../components/qa/ProgressPanel';
+import { ScreensTab } from '../components/qa/ScreensTab';
+import { WorkflowSteps } from '../components/qa/WorkflowSteps';
 
 const active = (s: RunStatus) => s === 'queued' || s === 'running';
-const TABS = ['summary', 'issues', 'coverage', 'manual', 'technical'] as const;
+const TABS = ['summary', 'screens', 'issues', 'coverage', 'manual', 'technical'] as const;
 type Tab = (typeof TABS)[number];
 
 function Elapsed({ since }: { since?: string }) {
@@ -31,7 +35,10 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
   const project = useLoader(() => (run.data ? api.getProject(run.data.projectId) : Promise.resolve(undefined)), [run.data?.projectId]);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<unknown>();
-  const current: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : 'summary';
+  const live = useLiveRun(id, run.data ? active(run.data.status) : true);
+  const recorded = Boolean(live.progress);
+  // Scans made with step-by-step records open on the screen review; older scans have no such records and open on the summary.
+  const current: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : recorded ? 'screens' : 'summary';
 
   if (run.error && !run.data) return <ErrorBox error={run.error} onRetry={run.reload} />;
   if (!run.data) return <Loading />;
@@ -55,12 +62,25 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
     }
   };
 
+  const qaExports: ExportItem[] = recorded
+    ? [
+        { key: 'qa-xlsx', label: 'QA results workbook (Excel)', scope: 'This scan: Summary, Course Coverage, Findings, Test Results, Manual Review, Interaction Logic and Run Details sheets.', href: `/api/runs/${id}/qa-export.xlsx` },
+        { key: 'qa-csv', label: 'Test results (CSV)', scope: 'This scan: one row per test attempt.', href: `/api/runs/${id}/qa-export.csv?table=Test%20Results` },
+        { key: 'qa-cov-csv', label: 'Course coverage (CSV)', scope: 'This scan: one row per screen, including passed and never-tested ones.', href: `/api/runs/${id}/qa-export.csv?table=Course%20Coverage` },
+      ]
+    : [];
   const exports: ExportItem[] = [
     { key: 'xlsx', label: 'Excel issue tracker', scope: 'This scan only: issues with owner and status columns, plus Not checked, Manual checks and Screens sheets.', href: `/api/runs/${id}/export.xlsx` },
     { key: 'pdf', label: 'PDF report', scope: 'This scan only. Made offline with the scanning browser.', href: `/api/runs/${id}/export.pdf`, recovery: 'The PDF needs the scanning browser. Check Help → System status, or download the HTML report instead.' },
     { key: 'html', label: 'HTML report', scope: 'This scan only: one file you can open or attach, screenshots included.', href: `/api/runs/${id}/export.html` },
+    ...qaExports.slice(0, 1),
   ];
-  const technical: ExportItem[] = [{ key: 'json', label: 'JSON (report data)', scope: 'This scan only, for other tools.', href: `/api/runs/${id}/export.json` }];
+  const technical: ExportItem[] = [
+    { key: 'json', label: 'JSON (report data)', scope: 'This scan only, for other tools.', href: `/api/runs/${id}/export.json` },
+    ...qaExports.slice(1),
+    ...(recorded ? [{ key: 'qa-evidence', label: 'Evidence archive (ZIP)', scope: 'This scan: the screenshots kept for test results, with a manifest tying each file to its result, screen and attempt.', href: `/api/runs/${id}/evidence-archive.zip` }] : []),
+    ...(recorded ? [{ key: 'qa-json', label: 'Complete QA results (JSON)', scope: 'This scan: every table, every test attempt, inventory, interactions, decisions and events.', href: `/api/runs/${id}/qa-export.json` }] : []),
+  ];
 
   const base = `/runs/${id}`;
   return (
@@ -88,7 +108,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
         }
         actions={
           <>
-            {isActive && (
+            {isActive && !recorded && (
               <button type="button" className="btn btn-danger" onClick={cancel} disabled={cancelRequested}>
                 {cancelRequested ? 'Cancelling…' : 'Cancel scan'}
               </button>
@@ -97,6 +117,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
           </>
         }
       />
+      {recorded && <WorkflowSteps current={isActive ? 2 : 3} />}
       {cancelError !== undefined && <ErrorBox error={cancelError} />}
       {run.error !== undefined && run.data && (
         <Alert tone="warn" live title="Lost contact with the app.">
@@ -104,14 +125,19 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
         </Alert>
       )}
 
-      <StatusBlock run={r} report={rep} cancelRequested={cancelRequested} />
+      {isActive && recorded ? (
+        <ProgressPanel live={live} runStatus={r.status} queuedAt={r.queuedAt} onCancel={cancel} cancelRequested={cancelRequested} />
+      ) : (
+        <StatusBlock run={r} report={rep} cancelRequested={cancelRequested} statement={live.inventory?.coverage.statement} stage={live.progress?.progress.stage} />
+      )}
 
       {finished && (r.status === 'completed' || r.status === 'partial' || r.summary.findingCount > 0 || r.states.length > 0) ? (
         <>
           <TabNav
             label="Result sections"
             tabs={[
-              { to: base, label: 'Summary', current: current === 'summary' },
+              { to: `${base}/summary`, label: 'Summary', current: current === 'summary' },
+              ...(recorded ? [{ to: `${base}/screens`, label: 'Screens', current: current === 'screens' }] : []),
               { to: `${base}/issues`, label: 'Issues', current: current === 'issues', count: openCount },
               { to: `${base}/coverage`, label: 'Coverage', current: current === 'coverage' },
               { to: `${base}/manual`, label: 'Manual review', current: current === 'manual' },
@@ -123,7 +149,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
           ) : !rep ? (
             <Loading />
           ) : (
-            <TabBody tab={current} run={r} report={rep} query={query} isActive={isActive} onChanged={report.reload} />
+            <TabBody tab={current} run={r} report={rep} query={query} isActive={isActive} onChanged={report.reload} live={live} />
           )}
         </>
       ) : null}
@@ -131,10 +157,17 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
   );
 }
 
-function TabBody({ tab, run, report, query, isActive, onChanged }: { tab: Tab; run: RunDetail; report: RunReport; query: URLSearchParams; isActive: boolean; onChanged: () => void }) {
+function TabBody({ tab, run, report, query, isActive, onChanged, live }: { tab: Tab; run: RunDetail; report: RunReport; query: URLSearchParams; isActive: boolean; onChanged: () => void; live: ReturnType<typeof useLiveRun> }) {
   const canRetest = run.status === 'completed' || run.status === 'partial';
   if (tab === 'issues') return <IssuesTab key={query.toString()} runId={run.id} report={report} query={query} canRetest={canRetest} isRetest={Boolean(run.retestOfRunId)} onChanged={onChanged} />;
-  if (tab === 'coverage') return <CoverageTab run={run} report={report} isActive={isActive} />;
+  if (tab === 'screens') return <ScreensTab runId={run.id} runStatus={run.status} />;
+  if (tab === 'coverage')
+    return (
+      <>
+        {live.inventory && <CoveragePanel c={live.inventory.coverage} noun={live.inventory.unitNoun} />}
+        <CoverageTab run={run} report={report} isActive={isActive} />
+      </>
+    );
   if (tab === 'manual') return <ManualReview run={run} />;
   if (tab === 'technical') return <TechnicalTab run={run} />;
   return <SummaryTab runId={run.id} report={report} isRetest={Boolean(run.retestOfRunId)} />;
@@ -154,7 +187,7 @@ function ManualReview({ run }: { run: RunDetail }) {
 }
 
 /** Honest status for every state, with the reason, the coverage limit, and what to do next. */
-function StatusBlock({ run, report, cancelRequested }: { run: RunDetail; report?: RunReport; cancelRequested: boolean }) {
+function StatusBlock({ run, report, cancelRequested, statement, stage }: { run: RunDetail; report?: RunReport; cancelRequested: boolean; statement?: string; stage?: string }) {
   const s = run.status;
   const explored = run.config.engines.traversal;
   const hasResults = run.summary.findingCount > 0 || run.states.length > 0;
@@ -164,7 +197,7 @@ function StatusBlock({ run, report, cancelRequested }: { run: RunDetail; report?
   let headline: string;
   if (s === 'queued') headline = 'Waiting to start';
   else if (s === 'running') headline = cancelRequested ? 'Cancelling the scan…' : 'Scanning the course';
-  else if (s === 'completed') headline = 'Scan finished — review the results';
+  else if (s === 'completed') headline = stage === 'completed_with_gaps' ? 'Scan finished with gaps — review the results' : 'Scan finished — review the results';
   else if (s === 'partial') headline = 'Scan finished with partial results';
   else if (s === 'failed') headline = 'The scan could not be completed';
   else headline = 'Scan cancelled';
@@ -187,6 +220,11 @@ function StatusBlock({ run, report, cancelRequested }: { run: RunDetail; report?
             ? `${report ? report.coverage.screensScanned : run.states.length} screen${(report ? report.coverage.screensScanned : run.states.length) === 1 ? '' : 's'} or view${(report ? report.coverage.screensScanned : run.states.length) === 1 ? '' : 's'} checked${budgets.length ? ', and the scan stopped at a limit, so other screens were not looked at' : ''}. `
             : 'Only the opening page was checked; course exploration was off. '}
           A finished scan is not a QA pass: see <a href={`#/runs/${run.id}/coverage`}>Coverage</a> for what was not reached.
+        </p>
+      )}
+      {statement && (s === 'completed' || s === 'partial') && (
+        <p>
+          <strong>Coverage, in one statement:</strong> {statement}
         </p>
       )}
       {s !== 'completed' && run.statusDetail && (

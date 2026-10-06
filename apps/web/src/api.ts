@@ -96,7 +96,7 @@ export interface PackageView {
     launchChoices: Array<{ key: string; title: string; path: string }>;
     externalDependencies: Array<{ host: string; urls: string[] }>;
     runtimeReferences?: Array<{ host: string; urls: string[] }>;
-    authoringTool?: { tool: 'rise' | 'storyline'; product: string; version?: string; facts: Array<{ label: string; value: string }>; scenarios: string[]; adapterVersion: string; defaultJourney?: { name: string } };
+    authoringTool?: { tool: 'rise' | 'storyline'; product: string; version?: string; facts: Array<{ label: string; value: string }>; scenarios: string[]; adapterVersion: string; defaultJourney?: { name: string }; outline?: Array<{ kind: 'lesson' | 'block' | 'scene' | 'slide' | 'layer'; id: string; title: string; titleIsFallback: boolean; parentId?: string }> };
     issues: Array<{ ruleId: string; outcome: 'passed' | 'failed' | 'needs_review' | 'not_applicable' | 'not_tested'; title?: string; detail: string }>;
     limits: string[];
   };
@@ -114,16 +114,11 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = {};
   if (method !== 'GET') headers['X-QA-Request'] = '1';
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
-  // LAN demo mode: a session that ended sends the person back to the sign-in page.
-  if (res.status === 401 && url !== '/api/session') {
-    window.location.assign('/login');
-    throw new ApiError('Sign in again.', 401);
-  }
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: ApiError['issues']; ruleId?: string; reason?: string };
   if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues, data.ruleId ?? data.reason);
@@ -131,8 +126,6 @@ async function request<T>(method: string, url: string, body?: unknown): Promise<
 }
 
 export const api = {
-  session: () => request<{ lan: boolean; user?: string }>('GET', '/api/session'),
-  logout: () => request<{ ok: boolean }>('POST', '/api/auth/logout', {}),
   listProjects: () => request<ProjectListItem[]>('GET', '/api/projects'),
   createProject: (input: { name: string; description?: string; courseUrl?: string }) => request<Project>('POST', '/api/projects', input),
   getProject: (id: string) => request<Project>('GET', `/api/projects/${encodeURIComponent(id)}`),
@@ -150,6 +143,8 @@ export const api = {
       accessibility?: boolean;
       layout?: boolean;
       compareBaseline?: boolean;
+      functional?: boolean;
+      qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
       testNonResponsive?: boolean;
       viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>;
       maxStates?: number;

@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Functional Widgets (working)</title>
+<style>[role="dialog"]{position:fixed;inset:20%;background:#fff;border:2px solid #333;padding:1rem}[hidden]{display:none!important}button{font:inherit;padding:.4rem .8rem;margin:.2rem}</style>
+</head>
+<body>
+  <main>
+    <h1 id="lesson-title">Lesson 1: Widgets</h1>
+
+    <div role="tablist" aria-label="Topics">
+      <button role="tab" id="tab-1" aria-selected="true" aria-controls="panel-1" type="button">Overview</button>
+      <button role="tab" id="tab-2" aria-selected="false" aria-controls="panel-2" type="button">Detail</button>
+    </div>
+    <div role="tabpanel" id="panel-1" aria-labelledby="tab-1">Overview text.</div>
+    <div role="tabpanel" id="panel-2" aria-labelledby="tab-2" hidden>Detail text.</div>
+
+    <h2><button type="button" id="acc-1" aria-expanded="false" aria-controls="region-1">First topic</button></h2>
+    <div id="region-1" hidden>First topic content.</div>
+    <h2><button type="button" id="acc-2" aria-expanded="false" aria-controls="region-2">Second topic</button></h2>
+    <div id="region-2" hidden>Second topic content.</div>
+    <details id="more"><summary>More information</summary><p>Details content.</p></details>
+
+    <button type="button" id="open-glossary" aria-haspopup="dialog" aria-controls="dlg">Open glossary</button>
+    <div role="dialog" id="dlg" aria-modal="true" aria-labelledby="dlg-title" hidden>
+      <h2 id="dlg-title">Glossary</h2>
+      <p>Terms used in this course.</p>
+      <button type="button" id="dlg-close">Close</button>
+    </div>
+
+    <nav aria-label="Lesson navigation">
+      <button type="button" id="back">Back</button>
+      <button type="button" id="next">Next</button>
+    </nav>
+  </main>
+  <script>
+    function selectTab(n) {
+      [1, 2].forEach(function (i) {
+        document.getElementById('tab-' + i).setAttribute('aria-selected', String(i === n));
+        document.getElementById('panel-' + i).hidden = i !== n;
+      });
+    }
+    document.getElementById('tab-1').addEventListener('click', function () { selectTab(1); });
+    document.getElementById('tab-2').addEventListener('click', function () { selectTab(2); });
+    function accordion(id, region, single) {
+      document.getElementById(id).addEventListener('click', function () {
+        var open = this.getAttribute('aria-expanded') === 'true';
+        this.setAttribute('aria-expanded', String(!open));
+        document.getElementById(region).hidden = open;
+      });
+    }
+    accordion('acc-1', 'region-1');
+    accordion('acc-2', 'region-2');
+    var opener = document.getElementById('open-glossary');
+    var dlg = document.getElementById('dlg');
+    opener.addEventListener('click', function () { dlg.hidden = false; document.getElementById('dlg-close').focus(); });
+    function closeDlg() { dlg.hidden = true; opener.focus(); }
+    document.getElementById('dlg-close').addEventListener('click', closeDlg);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !dlg.hidden) closeDlg(); });
+    var titles = ['Lesson 1: Widgets', 'Lesson 2: Summary'];
+    function current() { var m = location.hash.match(/^#\/lessons\/(\d+)/); return m ? Math.min(Math.max(Number(m[1]), 1), 2) : 1; }
+    function render() { var n = current(); document.getElementById('lesson-title').textContent = titles[n - 1]; document.getElementById('back').disabled = n === 1; document.getElementById('next').disabled = n === 2; }
+    document.getElementById('next').addEventListener('click', function () { location.hash = '#/lessons/' + (current() + 1); });
+    document.getElementById('back').addEventListener('click', function () { location.hash = '#/lessons/' + (current() - 1); });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>

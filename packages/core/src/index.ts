@@ -24,3 +24,5 @@ export * from './db/qa-store.js';
 export * from './qa/aggregation.js';
 export * from './qa/inventory.js';
 export * from './qa/library.js';
+export * from './qa/mapping.js';
+export * from './qa/zip.js';

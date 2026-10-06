@@ -175,6 +175,9 @@ export function buildScanConfig(input: {
   perf?: Partial<LayoutSettings['perf']>;
   /** Test other screen sizes even on non-responsive platforms (Storyline). */
   testNonResponsive?: boolean;
+  /** Functional behavior tests (interaction cases and behavior rules). */
+  functional?: boolean;
+  qaProfile?: ScanConfig['qaProfile'];
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -203,6 +206,7 @@ export function buildScanConfig(input: {
       performance: input.layout ?? true,
       visualBaseline: input.compareBaseline ?? false,
       brand: hasBrandValues(input.profile),
+      ...(input.functional ? { functional: true } : {}),
     },
     actionPolicy: {
       allowedKinds: ['navigate', 'select_tab', 'expand', 'open_dialog', 'close_dialog', 'next', 'back'],
@@ -215,6 +219,7 @@ export function buildScanConfig(input: {
     mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
     layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf }, testNonResponsive: input.testNonResponsive ?? false },
     configVersion: 1,
+    ...(input.qaProfile ? { qaProfile: input.qaProfile } : {}),
     ...(input.profile ? { profileId: input.profile.id, profile: input.profile } : {}),
   };
 }

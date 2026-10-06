@@ -15,8 +15,6 @@ export interface CapabilityOptions {
   browserExecutable?: () => string | undefined;
   localTargets?: Array<{ ip: string; port: number }>;
   retentionDays?: number;
-  /** Set only in LAN demo mode: the address:port the app listens on. */
-  lanHost?: string;
 }
 
 function defaultBrowserExecutable(): string | undefined {
@@ -49,10 +47,7 @@ export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
     { id: 'retention', name: 'Automatic clean-up of old scans', status: opts.retentionDays ? 'available' : 'unavailable', detail: opts.retentionDays ? `Scans older than ${opts.retentionDays} days are deleted at start-up, except the latest scan of each course and scans that hold a visual baseline.` : 'Off. Scans are kept until you delete them or run "npm run retention".' },
     { id: 'backup', name: 'Backup and restore', status: 'available', detail: 'Command line: "npm run backup" and "npm run restore -- <file>". There is no button for it in the app.' },
     { id: 'packages', name: 'Course package upload (ZIP)', status: 'available', detail: 'Inspects SCORM 1.2, SCORM 2004, and HTML5 ZIPs without running them, then scans them from a separate local address with outside requests blocked. Scans run the course’s own JavaScript in a browser on this computer, not in a container, so only scan packages you are willing to run.' },
-    opts.lanHost
-      ? { id: 'lan', name: 'Access from other computers', status: 'available', detail: `LAN demo mode: listening only on ${opts.lanHost}, sign-in required for everything, plain HTTP (not encrypted). The package server stays on this computer only. See docs/LAN_DEMO.md.` }
-      : { id: 'lan', name: 'Access from other computers', status: 'unavailable', detail: 'Off. The app listens on this computer only (127.0.0.1). An optional LAN demo mode with sign-in can be turned on at start-up; see docs/LAN_DEMO.md.' },
-    { id: 'multi-user', name: 'Shared use by a team, sign-in', status: 'not_included', detail: 'Not built. The optional LAN demo mode has one shared demo sign-in, not separate accounts, roles or encrypted connections.' },
+    { id: 'multi-user', name: 'Shared use by a team, sign-in', status: 'not_included', detail: 'This version runs on one computer for one person and is bound to that computer only. Shared hosting needs sign-in first and is not built.' },
     { id: 'docker-worker', name: 'Containerized scan worker', status: 'not_included', detail: 'Not built. Scans, including scans of uploaded packages, run in a Chromium process on this computer under your account.' },
     { id: 'ai', name: 'AI recommendations', status: 'not_included', detail: 'Not included. No AI service is used for any result, and there is nowhere to enter an AI key.' },
     { id: 'scorm', name: 'SCORM test harness (not an LMS)', status: 'available', detail: 'A built-in stand-in for the LMS side of SCORM 1.2 and SCORM 2004 checks what a course sends: start, saving, errors, status, bookmark, and your own pass/fail journeys. It is not an LMS, does not evaluate sequencing, and tests one lesson per scan. Nothing it shows says how a particular LMS will behave.' },

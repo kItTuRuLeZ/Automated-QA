@@ -1,11 +1,44 @@
 import { useState } from 'react';
-import { ApiError, api } from '../api';
+import { ApiError, type PackageView, api } from '../api';
 import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi } from '../components/ScormJourneys';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TableScroll, useLoader } from '../components/ui';
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
 const OUTCOME = { passed: 'Passed', failed: 'Problem', needs_review: 'Check by hand', not_applicable: 'Not applicable', not_tested: 'Not checked' } as const;
 const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+
+/** Plain-language summary of what the package says it contains, and how sure that is, before anything is run. */
+function ReadinessCard({ ins }: { ins: PackageView['inspection'] }) {
+  const outline = ins.authoringTool?.outline ?? [];
+  const count = (k: string) => outline.filter((e) => e.kind === k).length;
+  const kind = KIND[ins.kind];
+  let listed: string;
+  let discovery: string;
+  if (ins.authoringTool?.tool === 'rise' && outline.length) {
+    listed = `${count('lesson')} lessons and ${count('block')} blocks`;
+    discovery = 'Complete as far as the Rise export shows. The scan opens lessons and shows which were reached; blocks are listed, not tracked one by one.';
+  } else if (ins.authoringTool?.tool === 'storyline' && outline.length) {
+    listed = `${count('scene')} scene${count('scene') === 1 ? '' : 's'}, ${count('slide')} slides${count('layer') ? ` and ${count('layer')} layers` : ''}`;
+    discovery = 'Complete as far as the Storyline export shows. The scan follows the player’s own menu and records each slide it opens.';
+  } else if (ins.kind === 'html5') {
+    listed = 'no list of lessons (a plain HTML5 package has no manifest)';
+    discovery = 'Unknown. The scan can only report what it reaches from the launch file.';
+  } else {
+    listed = `${ins.launchChoices.length} launchable item${ins.launchChoices.length === 1 ? '' : 's'} in the manifest`;
+    discovery = 'Partial. The manifest lists items, but the screens inside each item are only known once a browser opens them.';
+  }
+  return (
+    <div className="card" aria-labelledby="ready-h">
+      <h2 id="ready-h">Ready to check?</h2>
+      <dl className="kv">
+        <div><dt>Made with</dt><dd>{ins.authoringTool ? `${ins.authoringTool.product}${ins.authoringTool.version ? ` (build ${ins.authoringTool.version})` : ''}` : 'Not recognized as Rise or Storyline'} · {kind}</dd></div>
+        <div><dt>The package lists</dt><dd>{listed}</dd></div>
+        <div><dt>Discovery</dt><dd>{discovery}</dd></div>
+      </dl>
+      <p className="help">This is read from the files. Nothing has been opened in a browser, so it says nothing about which screens work. Whatever the scan cannot reach is listed as not reached, never as passed.</p>
+    </div>
+  );
+}
 
 export function PackagePage({ id }: { id: string }) {
   const { data, error, reload } = useLoader(() => api.getPackage(id), [id]);
@@ -68,6 +101,8 @@ export function PackagePage({ id }: { id: string }) {
       <Alert tone="ok" title="Upload inspected. Nothing has been run yet.">
         The checks below were read from the files only. {choices.length > 1 ? 'Choose the lessons to scan, then' : 'When you are ready,'} confirm that you want the course’s own JavaScript to run in a browser on this computer. That is what “Scan this package” does.
       </Alert>
+
+      <ReadinessCard ins={ins} />
 
       <div className="card">
         <h2>Checks on the package files</h2>

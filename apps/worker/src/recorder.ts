@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CourseState, InteractionInstance, InteractionType, RunStage } from '@cqa/shared';
-import { type NewUnit, type QaStore, finalStage, summarizeCoverage, unitForState } from '@cqa/core';
+import { type NewUnit, type QaStore, finalStage, isPrimaryUnit, summarizeCoverage, unitForState } from '@cqa/core';
 import type { CandidateAction } from './adapters/generic-html.js';
 
 /**
@@ -100,7 +100,8 @@ export class RunRecorder {
 
   /** Unreached units get a reason where one is known. */
   explainUnreached(reason: (unitTitle: string) => string): void {
-    for (const u of this.qa.listUnits(this.runId)) if (!u.visitedAt && (u.kind === 'lesson' || u.kind === 'slide' || u.kind === 'screen')) this.qa.setNotReached(this.runId, u.id, reason(u.title));
+    const all = this.qa.listUnits(this.runId);
+    for (const u of all) if (!u.visitedAt && isPrimaryUnit(u, all)) this.qa.setNotReached(this.runId, u.id, reason(u.title));
   }
 
   /**

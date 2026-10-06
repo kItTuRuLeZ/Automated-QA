@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Functional Widgets (broken)</title>
+<style>[role="dialog"]{position:fixed;inset:20%;background:#fff;border:2px solid #333;padding:1rem}[hidden]{display:none!important}button{font:inherit;padding:.4rem .8rem;margin:.2rem}</style>
+</head>
+<body>
+  <main>
+    <h1>Lesson 1: Widgets with defects</h1>
+    <div role="tablist" aria-label="Topics">
+      <button role="tab" id="tab-1" aria-selected="true" aria-controls="panel-1" type="button">Overview</button>
+      <button role="tab" id="tab-2" aria-selected="false" aria-controls="panel-2" type="button">Detail</button>
+    </div>
+    <div role="tabpanel" id="panel-1">Overview text.</div>
+    <div role="tabpanel" id="panel-2" hidden>Detail text that never appears.</div>
+
+    <h2><button type="button" id="acc-1" aria-expanded="false" aria-controls="region-1">Works</button></h2>
+    <div id="region-1" hidden>Content.</div>
+    <h2><button type="button" id="acc-2" aria-expanded="false" aria-controls="region-2">Never opens</button></h2>
+    <div id="region-2" hidden>Never shown.</div>
+
+    <button type="button" id="open-glossary" aria-haspopup="dialog" aria-controls="dlg">Open glossary</button>
+    <div role="dialog" id="dlg" aria-modal="true" aria-labelledby="dlg-title" hidden>
+      <h2 id="dlg-title">Glossary</h2>
+      <p>Terms used in this course.</p>
+      <button type="button" id="dlg-close">Close</button>
+    </div>
+
+    <nav aria-label="Lesson navigation"><button type="button" id="next">Next</button></nav>
+  </main>
+  <script>
+    // Tab 2: becomes selected, but its panel is never shown.
+    document.getElementById('tab-2').addEventListener('click', function () {
+      document.getElementById('tab-1').setAttribute('aria-selected', 'false');
+      this.setAttribute('aria-selected', 'true');
+      document.getElementById('panel-1').hidden = true;
+    });
+    document.getElementById('acc-1').addEventListener('click', function () {
+      var open = this.getAttribute('aria-expanded') === 'true';
+      this.setAttribute('aria-expanded', String(!open));
+      document.getElementById('region-1').hidden = open;
+    });
+    // acc-2 has no handler.
+    var dlg = document.getElementById('dlg');
+    document.getElementById('open-glossary').addEventListener('click', function () { dlg.hidden = false; document.getElementById('dlg-close').focus(); });
+    // Closing hides the dialog but does not return focus to the opener.
+    document.getElementById('dlg-close').addEventListener('click', function () { dlg.hidden = true; document.body.focus(); document.activeElement && document.activeElement.blur(); });
+    // Next does nothing.
+  </script>
+</body>
+</html>

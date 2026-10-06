@@ -35,7 +35,7 @@ beforeEach(() => {
 describe('starter library', () => {
   it('has a full definition for every row of the baseline matrix, and nothing extra', () => {
     const ids = starterDefinitions().map((d) => d.id);
-    expect(ids.sort()).toEqual([...EXPECTED_IDS].sort());
+    expect(ids.sort()).toEqual([...EXPECTED_IDS, 'STAT-01', 'STAT-02', 'STAT-03'].sort());
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -64,7 +64,7 @@ describe('starter library', () => {
   });
 
   it('seeds once, never overwrites a case a person edited, and keeps history', () => {
-    expect(seedStarterLibrary(qa)).toEqual({ added: EXPECTED_IDS.length, total: EXPECTED_IDS.length });
+    expect(seedStarterLibrary(qa)).toEqual({ added: EXPECTED_IDS.length + 3, total: EXPECTED_IDS.length + 3 });
     expect(seedStarterLibrary(qa).added).toBe(0);
     const d = qa.getDefinition('ACC-01')!;
     const edited = qa.saveDefinition({ ...d, title: 'Team wording for accordions', reviewState: 'reviewed' }, 'Sam', 'Aligned with team case TC-12');

@@ -1,6 +1,7 @@
 import { api } from '../api';
 import { ExportMenu, type ExportItem } from '../components/ExportMenu';
 import { PackagesPanel } from '../components/Packages';
+import { RulesPanel } from '../components/qa/RulesPanel';
 import { Alert, Breadcrumb, Empty, ErrorBox, Link, Loading, PageHeader, StatusBadge, TabNav, TableScroll, duration, formatDate, hostPath, useLoader } from '../components/ui';
 
 const FINISHED = ['completed', 'partial', 'failed'];
@@ -8,7 +9,7 @@ const FINISHED = ['completed', 'partial', 'failed'];
 export function ProjectPage({ id, tab }: { id: string; tab?: string }) {
   const project = useLoader(() => api.getProject(id), [id]);
   const runs = useLoader(() => api.listRuns(id), [id], (rs) => rs.some((r) => r.status === 'queued' || r.status === 'running'));
-  const current = tab === 'files' ? 'files' : tab === 'history' ? 'history' : 'overview';
+  const current = tab === 'files' ? 'files' : tab === 'history' ? 'history' : tab === 'rules' ? 'rules' : 'overview';
 
   if (project.error) return <ErrorBox error={project.error} onRetry={project.reload} />;
   if (!project.data) return <Loading />;
@@ -47,12 +48,14 @@ export function ProjectPage({ id, tab }: { id: string; tab?: string }) {
         tabs={[
           { to: `/projects/${id}`, label: 'Overview', current: current === 'overview' },
           { to: `/projects/${id}/files`, label: 'Course files', current: current === 'files' },
+          { to: `/projects/${id}/rules`, label: 'Behavior rules', current: current === 'rules' },
           { to: `/projects/${id}/history`, label: 'Scan history', current: current === 'history', count: runs.data?.length },
         ]}
       />
 
       {current === 'overview' && <Overview projectId={id} courseUrl={p.courseUrl} runs={runs} />}
       {current === 'files' && <PackagesPanel projectId={id} />}
+      {current === 'rules' && <RulesPanel projectId={id} />}
       {current === 'history' && <History runs={runs} />}
     </section>
   );

@@ -36,6 +36,10 @@ export const CreateScanInput = z.object({
   accessibility: z.boolean().optional(),
   layout: z.boolean().optional(),
   compareBaseline: z.boolean().optional(),
+  /** Run the test library's interaction cases and the project's behavior rules. */
+  functional: z.boolean().optional(),
+  /** Which preset the person chose, kept on the scan so a report can say what was selected. */
+  qaProfile: z.enum(['quick', 'functional', 'full', 'custom']).optional(),
   testNonResponsive: z.boolean().optional(),
   /** Viewport preset names: desktop, laptop, tablet, mobile. The first is the primary viewport. */
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
