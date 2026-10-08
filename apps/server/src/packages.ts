@@ -7,6 +7,7 @@ import type { CheckResultId, FindingId, Finding, ProjectId, RuleId, ScanRun } fr
 import {
   ArchiveError,
   DEFAULT_ARCHIVE_LIMITS,
+  DEFAULT_BUDGETS,
   type CoursePackage,
   type LaunchChoice,
   type NetworkPolicy,
@@ -274,6 +275,11 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         subrequestPolicy: 'same_scope_only' as const,
         allowedPorts: [deps.packagePort],
       };
+      const outline = pkg.inspection.authoringTool?.outline ?? [];
+      const primaryUnitsCount = outline.filter((e) => e.kind === 'slide' || e.kind === 'lesson').length;
+      const recommendedMaxStates = primaryUnitsCount > 0 ? Math.max(DEFAULT_BUDGETS.maxStates, Math.min(200, primaryUnitsCount * 2 + 10)) : DEFAULT_BUDGETS.maxStates;
+      const recommendedMaxDepth = primaryUnitsCount > 0 ? Math.max(DEFAULT_BUDGETS.maxDepth, Math.min(20, Math.ceil(primaryUnitsCount / 2) + 4)) : DEFAULT_BUDGETS.maxDepth;
+
       const config = buildScanConfig({
         projectId: pkg.projectId as ProjectId,
         url: new URL(url),
@@ -285,8 +291,8 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         functional: input.functional,
         qaProfile: input.qaProfile,
         viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
-        maxStates: input.maxStates,
-        maxDepth: input.maxDepth,
+        maxStates: input.maxStates ?? recommendedMaxStates,
+        maxDepth: input.maxDepth ?? recommendedMaxDepth,
       });
       config.target = { kind: 'package', url, packageId: pkg.id, launchEntry: c.key, packageName: pkg.name };
       if (scormVersion) {

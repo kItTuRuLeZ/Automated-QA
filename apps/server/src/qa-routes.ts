@@ -114,7 +114,7 @@ export function registerQaRoutes(app: FastifyInstance, opts: QaRouteOptions): Qa
     const interactions = qa.listInteractions(run.id);
     const screens = units.map((u) => {
       const primary = isPrimaryUnit(u, units);
-      const result = screenStatus(u, executions, dispositions);
+      const result = screenStatus(u, executions, dispositions, interactions);
       return { unit: u, primary, result: primary || executions.some((e) => e.unitId === u.id) ? result : undefined, interactions: interactions.filter((i) => i.unitId === u.id).length };
     });
     return { recorded: true, revision: qa.inventoryRevision(run.id), units: screens, coverage, unitNoun: nounFor(units) };

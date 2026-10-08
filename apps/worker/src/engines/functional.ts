@@ -20,7 +20,7 @@ import type { RunRecorder } from '../recorder.js';
 export const ENGINE_VERSION = 'functional-1.0';
 const STEP_TIMEOUT_MS = 4_000;
 const MAX_TESTS_PER_UNIT = 24;
-const MAX_OMISSIONS = 6;
+const MAX_OMISSIONS = 12;
 
 export interface FunctionalInput {
   browser: Browser;
@@ -161,7 +161,31 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
     const room = () => count < MAX_TESTS_PER_UNIT;
     const plan = (id: string, i?: InteractionInstance) => {
       const def = usable(id);
-      if (!def || !room()) return;
+      if (!def) return;
+      if (!room()) {
+        qa.insertExecution({
+          runId: run.id,
+          definitionId: def.id,
+          definitionVersion: def.version,
+          externalId: def.externalId,
+          unitId: unit.id,
+          instanceId: i?.id,
+          statePath: stateId,
+          status: 'skipped',
+          reason: `Skipped: reached the per-unit limit of ${MAX_TESTS_PER_UNIT} functional tests on this screen. Additional detected interaction "${i?.label ?? id}" was not executed.`,
+          expected: def.body.expectedResult,
+          expectedSource: def.body.expectationSource,
+          trace: [],
+          evidenceIds: [],
+          scope: 'functional',
+          engineVersion: ENGINE_VERSION,
+          contentHash: input.contentHash,
+          configHash: input.configHash,
+          startedAt: nowIso(),
+          finishedAt: nowIso(),
+        });
+        return;
+      }
       addPlan(def, unit, stateId, { instance: i });
       count++;
     };
@@ -242,7 +266,9 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
     } else {
       outcome = await dispatch(page, p, input, navTimeout, tracer);
     }
-    if (outcome.status === 'failed' || outcome.status === 'manual_review_required') shot = await screenshot(page, input, state, `${p.def.id}: ${p.def.title}`);
+    if (outcome.status === 'failed' || outcome.status === 'manual_review_required' || outcome.status === 'passed') {
+      shot = await screenshot(page, input, state, `${p.def.id}: ${p.def.title}`);
+    }
   } catch (err) {
     if (input.signal.aborted) throw err;
     outcome = { status: 'error', reason: `The test runner failed: ${truncate((err as Error).message, 200)}. This is not a confirmed defect in the course.`, actual: 'No result.' };
@@ -575,12 +601,12 @@ async function testRule(page: Page, p: Planned, cap: string, input: FunctionalIn
       if (!obs.ok) return { status: 'blocked', reason: obs.why };
       const r = await runScenario(usePage, rule, sc, obs, t, navTimeout);
       done.push(sc.name);
-      if (r.status !== 'passed') return { ...r, actual: `${r.actual ?? ''} (scenario: ${sc.name}; ${done.length} of ${scenarios.length} run${required.length > MAX_OMISSIONS && cap === 'rule_premature' ? `; only the first ${MAX_OMISSIONS} omissions were tried` : ''})`.trim() };
+      if (r.status !== 'passed') return { ...r, actual: `${r.actual ?? ''} (scenario: ${sc.name}; ${done.length} of ${scenarios.length} run${required.length > MAX_OMISSIONS && cap === 'rule_premature' ? `; sampled: only the first ${MAX_OMISSIONS} of ${required.length} omissions were tried` : ''})`.trim() };
     } finally {
       await useCtx?.close().catch(() => undefined);
     }
   }
-  const limited = cap === 'rule_premature' && required.length > MAX_OMISSIONS ? ` Only the first ${MAX_OMISSIONS} of ${required.length} omissions were tried.` : '';
+  const limited = cap === 'rule_premature' && required.length > MAX_OMISSIONS ? ` (Sampled omission coverage: the first ${MAX_OMISSIONS} of ${required.length} omissions were tested).` : '';
   return { status: 'passed', actual: `${done.length} scenario${done.length === 1 ? '' : 's'} behaved as the rule says: ${done.join('; ')}.${limited}` };
 }
 

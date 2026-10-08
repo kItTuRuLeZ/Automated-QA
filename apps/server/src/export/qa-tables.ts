@@ -56,7 +56,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
   const coverage = summarizeCoverage({ units, executions: execs, interactions, definitions: defs, unitNoun: noun });
   const stateToUnit = new Map<string, string>();
   for (const u of units) for (const s of u.visitedStateIds) stateToUnit.set(s, u.id);
-  const statusOf = (u: (typeof units)[number]) => screenStatus(u, execs, dispositions);
+  const statusOf = (u: (typeof units)[number]) => screenStatus(u, execs, dispositions, interactions);
   const pkg = run.config.target.kind === 'package' && run.config.target.packageId ? store.getPackage(run.config.target.packageId) : undefined;
   const libraryDigest = createHash('sha1').update([...defs.values()].map((d) => `${d.id}@${d.version}`).sort().join('|')).digest('hex').slice(0, 10);
   const ratioText = (r: ReturnType<typeof summarizeCoverage>['visit']) => (r.available ? `${r.numerator} of ${r.denominator} (${r.percent}%)` : `Not available: ${r.reason}`);

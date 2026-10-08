@@ -104,6 +104,16 @@ describe('screen status rules', () => {
   it('only counts executions that belong to the screen', () => {
     expect(screenStatus(unit({ id: 'u2' }), [exec('failed')]).status).toBe('not_tested');
   });
+
+  it('unexercised detected interactions prevent clean screen pass and require manual review', () => {
+    const inter = (id: string): InteractionInstance => ({ id, runId: 'r1', unitId: 'u1', type: 'tab', label: id, confidence: 'high', capabilities: ['activate'], detectedBy: 't' });
+    const interactions = Array.from({ length: 25 }, (_, i) => inter(`tab-${i + 1}`));
+    const executions = Array.from({ length: 24 }, (_, i) => exec('passed', { instanceId: `tab-${i + 1}`, definitionId: 'TAB-01' }));
+    const r = screenStatus(unit(), executions, [], interactions);
+    expect(r.status).toBe('needs_manual_review');
+    expect(r.badges).toContain('partially_checked');
+    expect(r.reasons.join(' ')).toMatch(/1 detected interaction on this screen was not tested/);
+  });
 });
 
 describe('coverage numbers', () => {
@@ -154,6 +164,15 @@ describe('coverage numbers', () => {
     const inter = (id: string): InteractionInstance => ({ id, runId: 'r1', unitId: 'u1', type: 'tab', label: id, confidence: 'high', capabilities: ['activate'], detectedBy: 't' });
     const c = summarizeCoverage({ units: [unit()], executions: [exec('passed', { instanceId: 'i1' }), exec('blocked', { instanceId: 'i2', definitionId: 'Q' })], interactions: [inter('i1'), inter('i2'), inter('i3')], definitions: new Map() });
     expect(c.interactions.exercised).toMatchObject({ available: true, numerator: 1, denominator: 3 });
+  });
+
+  it('reports untested interactions in the coverage statement and marks the final stage completed_with_gaps', () => {
+    const inter = (id: string): InteractionInstance => ({ id, runId: 'r1', unitId: 'u1', type: 'tab', label: id, confidence: 'high', capabilities: ['activate'], detectedBy: 't' });
+    const interactions = Array.from({ length: 25 }, (_, i) => inter(`tab-${i + 1}`));
+    const executions = Array.from({ length: 24 }, (_, i) => exec('passed', { instanceId: `tab-${i + 1}`, definitionId: 'TAB-01' }));
+    const c = summarizeCoverage({ units: [unit({ source: 'manifest' })], executions, interactions, definitions: new Map() });
+    expect(c.statement).toMatch(/24 of 25 detected interactions exercised \(1 untested\)/);
+    expect(finalStage({ runStatus: 'completed', coverage: c })).toBe('completed_with_gaps');
   });
 
   it('a finished run with gaps is completed with gaps, never plain completed', () => {

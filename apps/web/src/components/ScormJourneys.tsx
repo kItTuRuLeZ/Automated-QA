@@ -12,6 +12,36 @@ export interface JourneyDraft {
 
 export const emptyJourney = (name: string): JourneyDraft => ({ name, steps: '', status: '', completion: '', success: '', scoreMin: '', scoreMax: '' });
 
+export const presetJourneys = (version: '1.2' | '2004'): JourneyDraft[] => [
+  {
+    name: 'Pass journey',
+    steps: '',
+    status: version === '1.2' ? 'passed' : '',
+    completion: version === '2004' ? 'completed' : '',
+    success: version === '2004' ? 'passed' : '',
+    scoreMin: '',
+    scoreMax: '',
+  },
+  {
+    name: 'Fail journey',
+    steps: '',
+    status: version === '1.2' ? 'failed' : '',
+    completion: version === '2004' ? 'incomplete' : '',
+    success: version === '2004' ? 'failed' : '',
+    scoreMin: '',
+    scoreMax: '',
+  },
+  {
+    name: 'Leave part-way & resume',
+    steps: '',
+    status: version === '1.2' ? 'incomplete' : '',
+    completion: version === '2004' ? 'incomplete' : '',
+    success: '',
+    scoreMin: '',
+    scoreMax: '',
+  },
+];
+
 type Step = { action: string; target?: string; value?: string; ms?: number };
 
 /** Lines like `click: text=Start`, `fill: #name = Sam`, `press: Enter`, `wait: 1500`. */

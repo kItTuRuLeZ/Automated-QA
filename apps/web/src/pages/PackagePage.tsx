@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ApiError, type PackageView, api } from '../api';
-import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi } from '../components/ScormJourneys';
+import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi, presetJourneys } from '../components/ScormJourneys';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TableScroll, useLoader } from '../components/ui';
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
@@ -49,7 +49,7 @@ export function PackagePage({ id }: { id: string }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
   const [harness, setHarness] = useState(true);
-  const [journeys, setJourneys] = useState<JourneyDraft[]>([emptyJourney('Pass journey'), emptyJourney('Fail journey'), emptyJourney('Leave part-way')]);
+  const [journeys, setJourneys] = useState<JourneyDraft[]>(presetJourneys('2004'));
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading />;

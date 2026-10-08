@@ -83,7 +83,12 @@ export const gapCount = (c: StatusCounts): number => c.blocked + c.error + c.ski
  *  - not tested: nothing executed and nothing waits for review
  *  - needs manual review: everything else (no failure, but gaps, or nothing executed while manual work is open)
  */
-export function screenStatus(unit: ContentUnit, executions: readonly TestExecution[], dispositions: readonly ReviewDisposition[] = []): ScreenResult {
+export function screenStatus(
+  unit: ContentUnit,
+  executions: readonly TestExecution[],
+  dispositions: readonly ReviewDisposition[] = [],
+  interactions: readonly InteractionInstance[] = [],
+): ScreenResult {
   const mine = executions.filter((e) => e.unitId === unit.id);
   const counts = countStatuses(mine);
   const gaps = gapCount(counts);
@@ -93,8 +98,16 @@ export function screenStatus(unit: ContentUnit, executions: readonly TestExecuti
   const reasons: string[] = [];
   const badges: ScreenBadge[] = [];
 
+  const unitInteractions = interactions.filter((i) => i.unitId === unit.id);
+  const exercisedIds = new Set(
+    executions
+      .filter((e) => (e.status === 'passed' || e.status === 'failed') && e.instanceId)
+      .map((e) => e.instanceId!),
+  );
+  const unexercisedInteractions = unitInteractions.filter((i) => !exercisedIds.has(i.id));
+
   if (!visited && !staticOnly) badges.push('runtime_not_visited');
-  if (counts.passed > 0 && gaps > 0) badges.push('partially_checked');
+  if (counts.passed > 0 && (gaps > 0 || unexercisedInteractions.length > 0)) badges.push('partially_checked');
   if (counts.manual > 0) badges.push('manual_checks_pending');
   if (counts.blocked > 0) badges.push('blocked_checks');
   if (counts.error > 0) badges.push('runner_errors');
@@ -115,11 +128,14 @@ export function screenStatus(unit: ContentUnit, executions: readonly TestExecuti
     status = 'not_tested';
     reasons.push(mine.length === 0 ? 'No check ran on this screen. No findings here does not mean it was tested.' : 'Every check that applies here was excluded or is not applicable.');
     if (!visited) reasons.push('No browser has shown this screen yet.');
-  } else if (counts.passed > 0 && gaps === 0 && (visited || staticOnly)) {
+  } else if (counts.passed > 0 && gaps === 0 && unexercisedInteractions.length === 0 && (visited || staticOnly)) {
     status = 'passed_automated';
     reasons.push(staticOnly ? 'The selected static checks passed. Functional behavior was not tested.' : `${counts.passed} applicable automated check${counts.passed === 1 ? '' : 's'} passed on a screen the browser visited.`);
   } else {
     status = 'needs_manual_review';
+    if (unexercisedInteractions.length > 0) {
+      reasons.push(`${unexercisedInteractions.length} detected interaction${unexercisedInteractions.length === 1 ? '' : 's'} on this screen ${unexercisedInteractions.length === 1 ? 'was' : 'were'} not tested by any automated check.`);
+    }
     if (counts.manual) reasons.push(`${counts.manual} check${counts.manual === 1 ? ' needs' : 's need'} a person (no automation for it, or the expected result is unknown).`);
     if (counts.blocked) reasons.push(`${counts.blocked} check${counts.blocked === 1 ? ' was' : 's were'} blocked.`);
     if (counts.error) reasons.push(`${counts.error} check${counts.error === 1 ? '' : 's'} hit a runner error (not a confirmed course defect).`);
@@ -242,6 +258,10 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
       : `${terminal} of ${mapped.length} mapped automated checks executed (${counts.passed} passed, ${counts.failed} failed); ${counts.blocked + counts.error + counts.skipped + counts.pending + counts.running} blocked, errored, skipped or not run.`,
   );
   if (unitsNotReached.length) parts.push(`${unitsNotReached.length} ${unitsNotReached.length === 1 ? noun.singular : noun.plural} not reached.`);
+  if (interactionRatio.available && interactionRatio.numerator < interactionRatio.denominator) {
+    const unexercised = interactionRatio.denominator - interactionRatio.numerator;
+    parts.push(`${interactionRatio.numerator} of ${interactionRatio.denominator} detected interactions exercised (${unexercised} untested).`);
+  }
   parts.push(manualOutstanding > 0 ? `${manualOutstanding} manual check${manualOutstanding === 1 ? ' remains' : 's remain'}.` : 'No manual checks are outstanding.');
   parts.push(completeness === 'complete' ? 'Inventory discovery: complete as far as the course package shows.' : completeness === 'partial' ? 'Inventory discovery: partial.' : 'Inventory discovery: unknown.');
 
@@ -264,6 +284,7 @@ export function finalStage(args: { runStatus: 'completed' | 'partial' | 'failed'
   if (args.runStatus === 'failed') return 'failed';
   if (args.runStatus === 'cancelled') return 'cancelled';
   const c = args.coverage;
-  const gaps = c.gaps.blocked + c.gaps.errored + c.gaps.skipped + c.gaps.pending + c.gaps.unitsNotVisited + c.manual.outstanding;
+  const unexercisedInteractions = c.interactions.exercised.available ? c.interactions.exercised.denominator - c.interactions.exercised.numerator : 0;
+  const gaps = c.gaps.blocked + c.gaps.errored + c.gaps.skipped + c.gaps.pending + c.gaps.unitsNotVisited + c.manual.outstanding + unexercisedInteractions;
   return args.runStatus === 'partial' || gaps > 0 || c.discovery.completeness !== 'complete' ? 'completed_with_gaps' : 'completed';
 }

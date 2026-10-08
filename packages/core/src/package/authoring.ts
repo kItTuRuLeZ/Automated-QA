@@ -83,9 +83,9 @@ function rise(root: string, has: (rel: string) => boolean): AuthoringToolInfo | 
     vendorHosts: ['articulate.com', 'articulateusercontent.com', 'riseusercontent.com', 'rise.com', 'articulate-us.s3.amazonaws.com'],
     contentPage: 'scormcontent/index.html',
     facts: [],
-    scenarios: ['Start the course from the cover page (inside the course frame)', 'Leave part-way and reopen: checks the bookmark is read back'],
+    scenarios: ['Smoke test: Start the course from the cover page (inside the course frame)', 'Smoke test: Leave part-way and reopen (checks bookmark is read back)'],
     defaultJourney: {
-      name: 'Rise: start the course and leave',
+      name: 'Smoke test: Rise start course and leave',
       steps: [
         { action: 'click', target: 'iframe[name="scormdriver_content"] >> internal:control=enter-frame >> a.overview__button-enrolled' },
         { action: 'wait', ms: 2500 },
@@ -201,9 +201,9 @@ function storyline(root: string, has: (rel: string) => boolean): AuthoringToolIn
     runtimePaths: ['html5/lib/', 'lms/', 'analytics-frame.html', 'index_lms.html', 'story.html'],
     vendorHosts: ['articulate.com', 'articulateusercontent.com'],
     facts: [],
-    scenarios: ['Go forward with the player Next button (three slides)', 'Leave part-way and reopen: checks the bookmark is read back'],
+    scenarios: ['Smoke test: Go forward with the player Next button (three slides)', 'Smoke test: Leave part-way and reopen (checks bookmark is read back)'],
     defaultJourney: {
-      name: 'Storyline: move forward three slides and leave',
+      name: 'Smoke test: Storyline move forward three slides and leave',
       steps: [
         { action: 'click', target: '#next' },
         { action: 'wait', ms: 1500 },
