@@ -66,7 +66,7 @@ const PackageScanInput = z.object({
   qaProfile: z.enum(['quick', 'functional', 'full', 'custom']).optional(),
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
-  maxDepth: z.number().int().min(0).max(10).optional(),
+  maxDepth: z.number().int().min(0).max(20).optional(),
 });
 
 export interface PackageRouteDeps {
@@ -295,6 +295,8 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         maxDepth: input.maxDepth ?? recommendedMaxDepth,
       });
       config.target = { kind: 'package', url, packageId: pkg.id, launchEntry: c.key, packageName: pkg.name };
+      // A course that lists many screens needs more than the default five minutes to open and test them. The limit grows with the list (about 45 s a screen, at most 45 minutes) so it is a safety net, not a cut-off.
+      if (primaryUnitsCount > 0) config.budgets.maxRuntimeMs = Math.min(45 * 60_000, Math.max(DEFAULT_BUDGETS.maxRuntimeMs, 5 * 60_000 + primaryUnitsCount * 45_000));
       if (scormVersion) {
         config.engines.scorm = scormVersion;
         config.scorm = {

@@ -15,6 +15,7 @@ import type {
   SurfaceInfo,
   TraversalAction,
 } from '@cqa/shared';
+import { contentRoot } from '../adapters/content-root.js';
 import { TRAVERSAL_RULES, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-html.js';
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
@@ -110,6 +111,11 @@ export class Traversal {
     const page = ctx.page as Page;
     const { budgets, redaction } = ctx.config;
     const viewportName = ctx.viewport.name;
+    // The page itself, or the frame that holds the lesson when the page is only a wrapper (see content-root.ts).
+    let cur: Page = page;
+    const refresh = async () => {
+      cur = (await contentRoot(page)) as unknown as Page;
+    };
     const san = (u: string) => sanitizeUrl(u, redaction);
 
     const checks: NewCheck[] = [];
@@ -145,7 +151,8 @@ export class Traversal {
       let last = '';
       let stableSince = Date.now();
       while (Date.now() < stableUntil) {
-        const s = await page.evaluate(snapshotState).catch(() => undefined);
+        await refresh();
+        const s = await cur.evaluate(snapshotState).catch(() => undefined);
         const key = s ? strictKey(s) : '';
         if (key !== last) {
           last = key;
@@ -154,12 +161,12 @@ export class Traversal {
         await page.waitForTimeout(150);
       }
     };
-    const snap = () => page.evaluate(snapshotState);
+    const snap = () => cur.evaluate(snapshotState);
     const timeLeft = () => this.deps.deadline - Date.now() > 0;
 
     const execute = async (a: Candidate) => {
       if (a.kind === 'navigate') await page.goto(a.rawHref ?? a.href!, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
-      else await page.locator(a.locator!).first().click({ timeout: budgets.actionTimeoutMs });
+      else await cur.locator(a.locator!).first().click({ timeout: budgets.actionTimeoutMs });
       await settle();
     };
 
@@ -232,7 +239,7 @@ export class Traversal {
       }
 
       // ---- surfaces: frames and canvas ----
-      const surfaces = await this.inspectSurfaces(page, ctx);
+      const surfaces = await this.inspectSurfaces(page, ctx, cur);
       node.state.surfaces = [{ kind: 'document' }, ...surfaces.frames, ...surfaces.canvases.map(() => ({ kind: 'canvas' as const, reason: 'unsupported_surface' as const }))];
       onState(node.state);
       const uninspected = surfaces.frames.filter((f) => f.reason);
@@ -266,14 +273,14 @@ export class Traversal {
       }
 
       // ---- discover actions ----
-      let candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
+      let candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
       // Single-page apps can still be drawing when the content looks stable. If nothing was found, look again a couple of
       // times before concluding there are no controls (bounded per run so static pages are not slowed down much).
       for (let attempt = 0; candidates.length === 0 && attempt < 3 && emptyRetries < 12 && timeLeft(); attempt++) {
         emptyRetries++;
         await page.waitForTimeout(2_000);
         await settle();
-        candidates = (await this.adapter.discoverActions({ ...ctx, state: node.state })) as Candidate[];
+        candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
       }
       this.deps.onActions?.(node.state, candidates);
       const skipped = candidates.filter((c) => c.reason);
@@ -347,7 +354,7 @@ export class Traversal {
           continue;
         }
         let after = await snap();
-        let postOk = await this.verify(page, cand.postconditions ?? [], before, after);
+        let postOk = await this.verify(cur, cand.postconditions ?? [], before, after);
         let retried = false;
         // A defect must reproduce: before reporting a recognized control as broken, restore the state and try once more.
         collecting = false; // reloading for the retry must not attribute page-load problems to this action
@@ -357,7 +364,7 @@ export class Traversal {
           try {
             await execute(cand);
             after = await snap();
-            postOk = await this.verify(page, cand.postconditions ?? [], before, after);
+            postOk = await this.verify(cur, cand.postconditions ?? [], before, after);
           } catch {
             postOk = false;
           }
@@ -493,7 +500,7 @@ export class Traversal {
               candidates: worked,
               restore: () => restore(node),
               snap,
-              verify: (post, b, a) => this.verify(page, post, b, a),
+              verify: (post, b, a) => this.verify(cur, post, b, a),
             });
             checks.push(...kb.checks);
             findings.push(...kb.findings);
@@ -619,7 +626,7 @@ export class Traversal {
     }
   }
 
-  private async inspectSurfaces(page: Page, ctx: ProviderContext): Promise<{ frames: SurfaceInfo[]; canvases: Array<{ locator: string; width: number; height: number }> }> {
+  private async inspectSurfaces(page: Page, ctx: ProviderContext, cur: Page): Promise<{ frames: SurfaceInfo[]; canvases: Array<{ locator: string; width: number; height: number }> }> {
     const frames: SurfaceInfo[] = [];
     for (const f of page.frames()) {
       if (f === page.mainFrame()) continue;
@@ -649,7 +656,7 @@ export class Traversal {
       // In-scope, scriptable frames are reachable, but the generic adapter does not yet explore controls inside frames.
       frames.push(ok ? { kind: 'frame_same_origin', frameUrl, reason: 'not_implemented' } : { kind: 'frame_inaccessible', frameUrl, reason: 'inaccessible_frame' });
     }
-    const { canvases } = await page.evaluate(surfaceScan).catch(() => ({ canvases: [] }));
+    const { canvases } = await cur.evaluate(surfaceScan).catch(() => ({ canvases: [] }));
     return { frames, canvases };
   }
 }

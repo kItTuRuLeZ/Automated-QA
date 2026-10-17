@@ -166,7 +166,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     }
 
     mkdirSync(tmpDir, { recursive: true });
-    proxy = new EgressProxy({ policy: deps.policy, scope: run.config.scope, maxTotalBytes: run.config.budgets.maxTotalBytes, onBlocked: (b) => blocked.push(b) });
+    proxy = new EgressProxy({ policy: deps.policy, scope: run.config.scope, maxTotalBytes: run.config.budgets.maxTotalBytes, uncounted: run.config.target.kind === 'package' ? packageOrigins(run.config.scope.allowedOrigins) : undefined, onBlocked: (b) => blocked.push(b) });
     const proxyPort = await proxy.start();
 
     const viewport = run.config.viewports[0]!;
@@ -554,4 +554,18 @@ function applyLinkPolicy(links: LinkAppearance[], policy: { checkExternalLinks: 
     return true;
   });
   return { kept, skipped: links.length - kept.length };
+}
+
+/** The loopback origins of an uploaded package: the only traffic that comes from this computer's disk, not the internet. */
+function packageOrigins(origins: readonly string[]): Array<{ host: string; port: number }> {
+  const out: Array<{ host: string; port: number }> = [];
+  for (const o of origins) {
+    try {
+      const u = new URL(o);
+      if (u.hostname === '127.0.0.1' && u.port) out.push({ host: u.hostname, port: Number(u.port) });
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
 }

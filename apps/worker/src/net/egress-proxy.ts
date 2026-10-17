@@ -16,6 +16,12 @@ export interface EgressProxyOptions {
   policy: NetworkPolicy;
   scope: ScanScope;
   maxTotalBytes: number;
+  /**
+   * Exact host:port pairs whose traffic is not counted against maxTotalBytes: the scanner's own package server, which
+   * reads files from this computer's disk. The budget limits what is downloaded from the internet, not local file reads
+   * (re-opening a large course many times would otherwise end every scan early).
+   */
+  uncounted?: ReadonlyArray<{ host: string; port: number }>;
   onBlocked: (b: BlockedConnection) => void;
 }
 
@@ -71,7 +77,12 @@ export class EgressProxy {
     s.on('error', () => s.destroy());
   }
 
-  private count(n: number): void {
+  private isUncounted(host: string, port: number): boolean {
+    return (this.opts.uncounted ?? []).some((u) => u.host === host && u.port === port);
+  }
+
+  private count(n: number, host: string, port: number): void {
+    if (this.isUncounted(host, port)) return;
     this.totalBytes += n;
     if (!this.budgetExceeded && this.totalBytes > this.opts.maxTotalBytes) {
       this.budgetExceeded = true;
@@ -131,14 +142,14 @@ export class EgressProxy {
     const upstream = http.request({ host: decision.ip, port, method: req.method, path: target.pathname + target.search, headers, setHost: false });
     upstream.on('response', (up) => {
       res.writeHead(up.statusCode ?? 502, up.headers);
-      up.on('data', (chunk: Buffer) => this.count(chunk.length));
+      up.on('data', (chunk: Buffer) => this.count(chunk.length, target.hostname, port));
       up.pipe(res);
     });
     upstream.on('error', () => {
       if (!res.headersSent) res.writeHead(502).end();
       else res.destroy();
     });
-    req.on('data', (chunk: Buffer) => this.count(chunk.length));
+    req.on('data', (chunk: Buffer) => this.count(chunk.length, target.hostname, port));
     req.pipe(upstream);
   }
 
@@ -164,8 +175,8 @@ export class EgressProxy {
     upstream.on('connect', () => {
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       if (head.length) upstream.write(head);
-      upstream.on('data', (c: Buffer) => this.count(c.length));
-      client.on('data', (c: Buffer) => this.count(c.length));
+      upstream.on('data', (c: Buffer) => this.count(c.length, hostPart, port));
+      client.on('data', (c: Buffer) => this.count(c.length, hostPart, port));
       upstream.pipe(client);
       client.pipe(upstream);
     });

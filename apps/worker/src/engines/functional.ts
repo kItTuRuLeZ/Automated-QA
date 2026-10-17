@@ -1,3 +1,4 @@
+import { contentRoot, waitForContentRoot } from '../adapters/content-root.js';
 import type { Browser, BrowserContext, Locator, Page } from 'playwright';
 import type { BehaviorRule, ContentUnit, CourseState, EvidenceId, EvidenceSink, ExecutionTraceStep, InteractionInstance, RuleEvent, RuleItem, ScanRun, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 import { type QaStore, effectiveAutomation, isPrimaryUnit, nowIso } from '@cqa/core';
@@ -264,7 +265,9 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
     if (!reached.ok) {
       outcome = { status: 'blocked', reason: `The screen could not be reached again to run this check: ${reached.why}`, actual: 'No result.' };
     } else {
-      outcome = await dispatch(page, p, input, navTimeout, tracer);
+      // Courses that show the lesson in a frame (Rise) are tested in that frame. Behavior rules keep the page: the SCORM test harness lives there.
+      const root = (await contentRoot(page)) as unknown as Page;
+      outcome = await dispatch(p.def.body.requiredCapability?.startsWith('rule_') ? page : root, p, input, navTimeout, tracer);
     }
     if (outcome.status === 'failed' || outcome.status === 'manual_review_required' || outcome.status === 'passed') {
       shot = await screenshot(page, input, state, `${p.def.id}: ${p.def.title}`);
@@ -320,10 +323,11 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
   try {
     await page.goto(targetUrl, { waitUntil: 'load', timeout: navTimeout });
     await settle(page, navTimeout);
+    await waitForContentRoot(page);
     tracer.add('entered_unit', `Opened ${targetUrl}`);
     for (const step of path.steps) {
       if (step.kind === 'navigate' && step.rawHref) await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
-      else if (step.locator) await page.locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS });
+      else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS });
       else return { ok: false, why: `No way to repeat "${step.description}".` };
       await settle(page, navTimeout);
       tracer.add('action', `Activate ${step.description}.`, { replay: true });
@@ -409,7 +413,9 @@ async function testAccordion(page: Page, i: InteractionInstance, t: Tracer, navT
       const text = (region as HTMLElement | null)?.innerText?.replace((details?.querySelector('summary') as HTMLElement | null)?.innerText ?? '\u0000', '').trim() ?? '';
       const visible = region ? ((region as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? (region as HTMLElement).offsetParent !== null) : false;
       const expanded = details ? details.open : el.getAttribute('aria-expanded') === 'true';
-      return { expanded, visible, readable: text.length > 0, hasRegion: Boolean(region) };
+      // A panel made of pictures, icons or controls (a resources menu, an image gallery) has content without text.
+      const hasParts = Boolean(region?.querySelector('img,svg,video,audio,canvas,a[href],button,input,select,textarea,[aria-label]'));
+      return { expanded, visible, readable: text.length > 0 || hasParts, hasRegion: Boolean(region) };
     });
   const before = await read();
   t.add('observed', 'State before', before);
@@ -418,7 +424,12 @@ async function testAccordion(page: Page, i: InteractionInstance, t: Tracer, navT
     t.add('action', `Open ${i.label}.`);
     await quick();
   } else t.add('note', 'The item was already open, so it was not clicked.');
-  const after = await read();
+  // Panels often animate open; give a slow one up to 2 seconds to show before judging it.
+  let after = await read();
+  for (let n = 0; n < 8 && after.expanded && after.hasRegion && !(after.visible && after.readable); n++) {
+    await sleep(250);
+    after = await read();
+  }
   t.add('observed', 'State after', after);
   t.add('asserted', `Expanded: ${after.expanded}. Content visible: ${after.visible}. Content has text: ${after.readable}.`);
   if (!after.expanded) return { status: 'failed', reason: 'The item did not open.', actual: `After activating "${i.label}", it was not expanded.` };
@@ -503,8 +514,13 @@ async function testNextPrevious(page: Page, next: InteractionInstance, t: Tracer
   const loc = page.locator(next.locator ?? '').first();
   if (!next.locator || (await loc.count()) === 0) return { status: 'blocked', reason: 'The Next control could not be found again on the screen.' };
   const snap = () => page.evaluate(() => ({ key: `${location.pathname}${location.hash}`, text: (document.body.innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 4000), title: document.title }));
+  if (await isDisabled(loc)) return { status: 'manual_review_required', reason: 'Next is disabled on this screen, so it could not be tested. Courses often unlock Next after the learner finishes something; add a behavior rule for this screen to test that.', actual: 'Next was present but disabled.' };
   const before = await snap();
-  await loc.click({ timeout: STEP_TIMEOUT_MS });
+  try {
+    await loc.click({ timeout: STEP_TIMEOUT_MS });
+  } catch {
+    return { status: 'blocked', reason: 'Next could not be clicked: it stayed covered or not ready for about 4 seconds (for example while the slide was still animating).', actual: 'No click happened.' };
+  }
   t.add('action', `Activate ${next.label}.`);
   await quick();
   const forward = await snap();
@@ -513,7 +529,11 @@ async function testNextPrevious(page: Page, next: InteractionInstance, t: Tracer
   if (!changed) return { status: 'failed', reason: 'Next did not change the content.', actual: 'After Next the address and the visible text were unchanged.' };
   const prev = page.getByRole('button', { name: /^(previous|back)\b/i }).or(page.getByRole('link', { name: /^(previous|back)\b/i }));
   if ((await prev.count()) === 0) return { status: 'manual_review_required', reason: 'Next worked, but no Previous or Back control was found on the next screen, so the way back could not be tested.', actual: 'Next changed the content.' };
-  await prev.first().click({ timeout: STEP_TIMEOUT_MS });
+  try {
+    await prev.first().click({ timeout: STEP_TIMEOUT_MS });
+  } catch {
+    return { status: 'blocked', reason: 'Next worked, but Previous could not be clicked: it stayed covered or not ready for about 4 seconds, so the way back could not be tested.', actual: 'Next changed the content.' };
+  }
   t.add('action', 'Activate Previous.');
   await quick();
   const back = await snap();
