@@ -98,6 +98,12 @@ export class RunRecorder {
     }
   }
 
+  /** The last primary screen a browser showed, in course order. */
+  lastVisitedTitle(): string | undefined {
+    const all = this.qa.listUnits(this.runId);
+    return all.filter((u) => u.visitedAt && isPrimaryUnit(u, all)).sort((x, y) => y.order - x.order)[0]?.title;
+  }
+
   /** Unreached units get a reason where one is known. */
   explainUnreached(reason: (unitTitle: string) => string): void {
     const all = this.qa.listUnits(this.runId);

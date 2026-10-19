@@ -154,6 +154,9 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
     planned.push({ executionId: e.id, def, unit, stateId, ...extra });
   };
 
+  // A control the player draws on every screen (a Resources tab, a menu) is the same control each time. It is tested once, on the
+  // first screen that shows it, and the other screens say so instead of repeating the test (and, when it is broken, the finding).
+  const sharedControls = new Map<string, string>();
   for (const unit of units) {
     const stateId = baseStateOf(unit);
     if (!stateId || !replayByState.has(stateId)) continue;
@@ -186,6 +189,35 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
           finishedAt: nowIso(),
         });
         return;
+      }
+      if (i && i.type !== 'next' && i.locator) {
+        const key = `${id}|${i.type}|${i.label}|${i.locator}`;
+        const first = sharedControls.get(key);
+        if (first && first !== unit.title) {
+          qa.insertExecution({
+            runId: run.id,
+            definitionId: def.id,
+            definitionVersion: def.version,
+            externalId: def.externalId,
+            unitId: unit.id,
+            instanceId: i.id,
+            statePath: stateId,
+            status: 'not_applicable',
+            reason: `Not repeated: "${i.label}" is the same control on every screen and was already tested on "${first}". That result applies wherever the control appears.`,
+            expected: def.body.expectedResult,
+            expectedSource: def.body.expectationSource,
+            trace: [],
+            evidenceIds: [],
+            scope: 'functional',
+            engineVersion: ENGINE_VERSION,
+            contentHash: input.contentHash,
+            configHash: input.configHash,
+            startedAt: nowIso(),
+            finishedAt: nowIso(),
+          });
+          return;
+        }
+        sharedControls.set(key, unit.title);
       }
       addPlan(def, unit, stateId, { instance: i });
       count++;
@@ -329,7 +361,9 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
       if (step.kind === 'navigate' && step.rawHref) await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
       else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS });
       else return { ok: false, why: `No way to repeat "${step.description}".` };
-      await settle(page, navTimeout);
+      // Repeating an in-page click (a Next button) needs a short pause, not a full page-load wait: this is what keeps deep slides affordable.
+      if (step.kind === 'navigate') await settle(page, navTimeout);
+      else await sleep(400);
       tracer.add('action', `Activate ${step.description}.`, { replay: true });
     }
     return { ok: true };

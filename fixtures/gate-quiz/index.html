@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Gated quiz course</title>
+<style>button{font:inherit;padding:.4rem .8rem;margin:.2rem}[hidden]{display:none!important}</style>
+</head>
+<body>
+  <main>
+    <h1 id="lesson-title">Lesson 1: Welcome</h1>
+    <section id="quiz" hidden>
+      <p>Which answer is correct?</p>
+      <button type="button" id="opt-a">Option A</button>
+      <button type="button" id="opt-b">Option B</button>
+      <button type="button" id="opt-c">Option C</button>
+      <button type="button" id="submit">Submit answer</button>
+      <p id="feedback" role="status"></p>
+    </section>
+    <nav aria-label="Lesson navigation">
+      <button type="button" id="next">Next</button>
+    </nav>
+  </main>
+  <script>
+    // Lesson 2 is a quiz: Next stays disabled until "Option B" is chosen and "Submit answer" is pressed.
+    var titles = ['Lesson 1: Welcome', 'Lesson 2: Quiz question', 'Lesson 3: After the quiz'];
+    var chosen = '', passed = false;
+    function current() { var m = location.hash.match(/^#\/lessons\/(\d+)/); return m ? Math.min(Math.max(Number(m[1]), 1), 3) : 1; }
+    function render() {
+      var n = current();
+      document.getElementById('lesson-title').textContent = titles[n - 1];
+      document.title = titles[n - 1];
+      document.getElementById('quiz').hidden = n !== 2;
+      document.getElementById('next').disabled = n === 3 || (n === 2 && !passed);
+    }
+    ['a', 'b', 'c'].forEach(function (k) { document.getElementById('opt-' + k).addEventListener('click', function () { chosen = k; }); });
+    document.getElementById('submit').addEventListener('click', function () {
+      passed = chosen === 'b';
+      document.getElementById('feedback').textContent = passed ? 'Correct.' : 'Try again.';
+      render();
+    });
+    document.getElementById('next').addEventListener('click', function () { location.hash = '#/lessons/' + (current() + 1); });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>

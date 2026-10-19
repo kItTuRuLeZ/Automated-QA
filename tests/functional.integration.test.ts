@@ -206,3 +206,20 @@ describe('progress, inventory and screen status come from stored records', () =>
     expect(events.filter((e) => e.type === 'test_started').length).toBe(events.filter((e) => e.type === 'test_finished').length);
   });
 });
+
+describe('answer and continue (a rule that also gets the scan past a gated screen)', () => {
+  const quizRule = { title: 'Quiz: Next unlocks after answer B and Submit', unitMatch: 'Quiz question', requiredItems: [{ label: 'Option B' }, { label: 'Submit answer' }], orderPolicy: 'sequence' as const, continueAfter: true };
+
+  it('without the rule the walk stops at the quiz and says why later screens were not reached', async () => {
+    const { run } = await scan('gate-quiz', { explore: true });
+    const units = qa.listUnits(run.id);
+    expect(units.some((u) => u.title.includes('After the quiz') && u.visitedAt)).toBe(false);
+  });
+
+  it('with the rule the walk answers the question, carries on, and the later screen is visited', async () => {
+    const { run } = await scan('gate-quiz', { explore: true, rules: [quizRule] });
+    const units = qa.listUnits(run.id);
+    expect(units.some((u) => u.title.includes('After the quiz') && u.visitedAt)).toBe(true);
+  });
+});
+

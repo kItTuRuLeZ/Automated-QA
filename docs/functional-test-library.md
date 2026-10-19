@@ -68,6 +68,10 @@ For items A, B, C, D and “Next becomes enabled”, a scan tests:
 
 A click is never treated as proof. “Fires” is asserted from observable state; “does not fire” is asserted over a window. If the starting state already shows the event, the case is blocked (cannot be tested from a clean state) or, for the premature case, failed. If an item cannot be found or is ambiguous, the case is blocked, not failed.
 
+### Getting past a gated screen (answer and continue)
+
+Some screens keep Next disabled until the learner does something, such as answering a quiz question. The scanner cannot answer on its own, so it stops there and lists the later screens as not reached. Tick **Also use these steps to get past this screen when scanning the course** on a rule. When the walk reaches the rule's screen, it performs the required items in order (for example *Option B*, then *Submit answer*) and carries on. Those clicks become part of the path used to reopen the screen for the tests, so later screens are tested exactly as a learner would reach them. If an item cannot be found, or matches several controls, the scan does not guess: it records why and stops at that screen. The scan does not know whether the answer is right; the rule's author does.
+
 Without a rule, the expected behavior is unknown, so LOG-01 to LOG-05 go to the manual review queue with that reason. Cases LOG-06 to LOG-10 (persistence, frequency, reset, combined conditions, variables) have no automation and are manual.
 
 ## Importing your team’s cases

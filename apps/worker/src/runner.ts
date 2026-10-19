@@ -79,7 +79,7 @@ export async function runScan(deps: WorkerDeps, run: ScanRun): Promise<RunStatus
   }
   try {
     const finished = deps.store.getRun(run.id);
-    const reason = status === 'cancelled' ? 'The scan was cancelled before reaching this.' : (finished?.coverage?.budgetsReached.length ?? 0) > 0 ? 'The scan stopped at one of its limits before reaching this.' : 'No control the scanner could operate led here from the start, so a browser never showed it.';
+    const reason = status === 'cancelled' ? 'The scan was cancelled before reaching this.' : (finished?.coverage?.budgetsReached.length ?? 0) > 0 ? 'The scan stopped at one of its limits before reaching this.' : `No control the scanner could operate led here, so a browser never showed it.${rec.lastVisitedTitle() ? ` The furthest screen it reached was "${rec.lastVisitedTitle()}". A Next button that stays disabled until the learner answers a question or finishes an activity stops the scanner there; add a behavior rule for that screen, or review the later screens by hand.` : ''}`;
     rec.explainUnreached(() => reason);
     rec.finalize(status === 'completed' || status === 'partial' || status === 'failed' || status === 'cancelled' ? status : 'failed', finished?.statusDetail);
   } catch (err) {
@@ -299,6 +299,8 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
             blocked: () => blocked,
             excludeResourceTypes,
             onStateReady,
+            gates: new QaStore(store.db).listRules(run.projectId).filter((r) => r.continueAfter && r.reviewState !== 'retired').map((r) => ({ title: r.title, unitMatch: r.unitMatch, items: r.requiredItems, ordered: r.orderPolicy === 'sequence' })),
+            navigationOnly: Boolean(run.config.engines.functional) && out.platform === 'storyline',
             onActions: (state, candidates) => rec.actionsDiscovered(state, candidates),
             keyboardPass: run.config.engines.keyboard ? (input) => keyboardEngine.activate(input) : undefined,
           });

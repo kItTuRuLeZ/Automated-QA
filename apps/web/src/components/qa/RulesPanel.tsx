@@ -83,6 +83,7 @@ function RuleForm({ projectId, rule, onDone }: { projectId: string; rule?: Behav
   const [repeat, setRepeat] = useState<BehaviorRule['repeatPolicy']>(rule?.repeatPolicy ?? 'once');
   const [reset, setReset] = useState<BehaviorRule['resetPolicy']>(rule?.resetPolicy ?? 'fresh_context');
   const [destination, setDestination] = useState(rule?.destination ?? '');
+  const [continueAfter, setContinueAfter] = useState(rule?.continueAfter ?? false);
   const [source, setSource] = useState<BehaviorRule['expectationSource']>(rule?.expectationSource ?? 'approved_case');
   const [review, setReview] = useState<BehaviorRule['reviewState']>(rule?.reviewState ?? 'draft');
   const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
@@ -97,7 +98,7 @@ function RuleForm({ projectId, rule, onDone }: { projectId: string; rule?: Behav
     try {
       await qaApi.saveRule(
         projectId,
-        { title, unitMatch, requiredItems: fromLines(required), optionalItems: fromLines(optional), prerequisites: rule?.prerequisites ?? [], expectedEvent: event, eventTarget: target, timingWindowMs: Math.round(Number(windowSec) * 1000), orderPolicy: order, repeatPolicy: repeat, resetPolicy: reset, destination: destination || undefined, expectationSource: source, reviewState: review },
+        { title, unitMatch, requiredItems: fromLines(required), optionalItems: fromLines(optional), prerequisites: rule?.prerequisites ?? [], expectedEvent: event, eventTarget: target, timingWindowMs: Math.round(Number(windowSec) * 1000), orderPolicy: order, repeatPolicy: repeat, resetPolicy: reset, destination: destination || undefined, continueAfter, expectationSource: source, reviewState: review },
         rule?.id,
       );
       onDone();
@@ -201,6 +202,12 @@ function RuleForm({ projectId, rule, onDone }: { projectId: string; rule?: Behav
           <label htmlFor="r-dest">Where it should lead (optional)</label>
           <input id="r-dest" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="Text on the next screen" />
         </div>
+      </div>
+      <div className="field">
+        <label>
+          <input type="checkbox" checked={continueAfter} onChange={(e) => setContinueAfter(e.target.checked)} /> Also use these steps to get past this screen when scanning the course
+        </label>
+        <p className="help">For a quiz question or any screen that keeps Next disabled until something is done. The scan performs the required items in order, then carries on to the next screen. Leave it off if the rule should only be tested.</p>
       </div>
       <div className="form-grid">
         <div className="field">

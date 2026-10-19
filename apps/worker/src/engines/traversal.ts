@@ -97,6 +97,14 @@ export class Traversal {
       deadline: number;
       blocked: () => readonly BlockedConnection[];
       excludeResourceTypes?: readonly string[];
+      /**
+       * Slide-player courses (Storyline): move from slide to slide with Next only and leave in-slide controls to the
+       * functional tests. Every control is still inventoried. Without this, layers and tabs of one slide use up the state
+       * budget and every extra click needs the whole path replayed.
+       */
+      navigationOnly?: boolean;
+      /** Rules that say how to get past a screen (answer a question, then continue). Performed in order when the walk reaches the screen. */
+      gates?: ReadonlyArray<{ title: string; unitMatch: string; items: ReadonlyArray<{ label: string; locator?: string }>; ordered: boolean }>;
       /** Called once per reached state while the page shows it (per-state content checks). */
       onStateReady?: (state: CourseState, reproductionSteps: string[], pathKey: string) => Promise<void>;
       /** Called with every control found on a state (including the ones that will not be clicked), so interactions can be inventoried. */
@@ -232,7 +240,10 @@ export class Traversal {
         coverage.push({ reason: 'budget_depth', detail: `State at depth ${node.state.depth} was not explored further (max depth ${budgets.maxDepth}).`, stateId: node.state.id });
         continue;
       }
-      if (!(await restore(node))) {
+      // Already showing this state (it was just reached by the click that created it)? Then no replay is needed.
+      const here = await snap().catch(() => undefined);
+      const alreadyHere = Boolean(here) && node.path.length > 0 && (strictKey(here!) === strictKey(node.snap) || structuralKey(here!) === structuralKey(node.snap));
+      if (!alreadyHere && !(await restore(node))) {
         failedTransitions++;
         coverage.push({ reason: 'state_unreachable', detail: `Could not restore state "${node.state.title ?? node.state.url}" by replaying its action path.`, stateId: node.state.id });
         continue;
@@ -272,6 +283,9 @@ export class Traversal {
         }, { selector: c.locator });
       }
 
+      // ---- get past a gated screen (a quiz question) using the reviewer's rule ----
+      await this.passGate(node, cur, settle, snap, execute, coverage, describePath);
+
       // ---- discover actions ----
       let candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
       // Single-page apps can still be drawing when the content looks stable. If nothing was found, look again a couple of
@@ -285,7 +299,7 @@ export class Traversal {
       this.deps.onActions?.(node.state, candidates);
       const skipped = candidates.filter((c) => c.reason);
       // In-page interactions first; links last, so site navigation does not consume the state budget before the content is explored.
-      const runnable = candidates.filter((c) => !c.reason).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);
+      const runnable = candidates.filter((c) => !c.reason && (!this.deps.navigationOnly || c.kind === 'next')).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);
       for (const s of skipped) actions.push(toAction(ctx.runId, s, 'skipped'));
       const unsafe = skipped.filter((s) => s.reason === 'unsafe_action');
       const ambiguous = skipped.filter((s) => s.reason === 'ambiguous_action');
@@ -420,7 +434,9 @@ export class Traversal {
           void shot;
           onState(target.state);
           await this.deps.onStateReady?.(target.state, describePath(target.path), pathKeyOf(target.path));
-          queue.push(target);
+          // A slide reached with Next is explored at once, while the browser is still on it; everything else waits its turn.
+          if (this.deps.navigationOnly && cand.kind === 'next') queue.unshift(target);
+          else queue.push(target);
         }
 
         const stateForResult = target ?? node;
@@ -626,6 +642,45 @@ export class Traversal {
     }
   }
 
+  /** Performs a matching rule's items in order. The clicks become part of the node's path, so replays repeat them. */
+  private async passGate(
+    node: Node,
+    cur: Page,
+    settle: () => Promise<void>,
+    snap: () => Promise<StateSnapshot>,
+    _execute: (a: Candidate) => Promise<void>,
+    coverage: EngineResult['coverage'],
+    _describe: (p: Candidate[]) => string[],
+  ): Promise<void> {
+    const gate = (this.deps.gates ?? []).find((g) => {
+      const needle = g.unitMatch.trim().toLowerCase();
+      if (!needle) return node.path.length === 0;
+      const hay = [node.state.lessonTitle, node.state.title, node.state.lessonId].filter(Boolean).join(' | ').toLowerCase();
+      return hay.includes(needle);
+    });
+    if (!gate || node.path.some((p) => p.adapter === 'gate-rule' && p.targetDescription.startsWith(`${gate.title}:`))) return;
+    const steps: Candidate[] = [];
+    for (const item of gate.items) {
+      const selector = await resolveItem(cur, item);
+      if (!selector) {
+        coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gate.title}" could not find or tell apart "${item.label}" on "${node.state.title ?? node.state.url}", so the scan could not get past this screen with it.`, stateId: node.state.id });
+        return;
+      }
+      try {
+        await cur.locator(selector).first().click({ timeout: 4_000 });
+      } catch {
+        coverage.push({ reason: 'engine_error', detail: `The rule "${gate.title}" could not click "${item.label}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
+        return;
+      }
+      await settle();
+      steps.push({ fromStateId: node.state.id, kind: 'click', locator: selector, adapter: 'gate-rule', targetDescription: `${gate.title}: ${item.label}` });
+    }
+    if (steps.length) {
+      node.path = [...node.path, ...steps];
+      node.snap = await snap();
+    }
+  }
+
   private async inspectSurfaces(page: Page, ctx: ProviderContext, cur: Page): Promise<{ frames: SurfaceInfo[]; canvases: Array<{ locator: string; width: number; height: number }> }> {
     const frames: SurfaceInfo[] = [];
     for (const f of page.frames()) {
@@ -659,6 +714,20 @@ export class Traversal {
     const { canvases } = await cur.evaluate(surfaceScan).catch(() => ({ canvases: [] }));
     return { frames, canvases };
   }
+}
+
+/**
+ * Finds the one visible control a rule item names, and returns a selector that finds it again in a later replay. A
+ * locator written by the reviewer is used as given. Names are matched as exact accessible names first, then as text.
+ */
+async function resolveItem(root: Page, item: { label: string; locator?: string }): Promise<string | undefined> {
+  const one = async (sel: string) => (await root.locator(sel).filter({ visible: true }).count().catch(() => 0)) === 1;
+  if (item.locator) return (await one(item.locator)) ? item.locator : undefined;
+  const q = item.label.replace(/"/g, '\\"');
+  for (const sel of [`role=button[name="${q}"i]`, `role=radio[name="${q}"i]`, `role=checkbox[name="${q}"i]`, `role=link[name="${q}"i]`, `role=tab[name="${q}"i]`, `text="${q}"`]) {
+    if (await one(sel)) return sel;
+  }
+  return undefined;
 }
 
 function signatureOf(s: StateSnapshot): string {

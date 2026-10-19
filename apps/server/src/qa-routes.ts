@@ -60,6 +60,7 @@ const RuleInput = z.object({
   repeatPolicy: z.enum(['once', 'repeatable']).default('once'),
   resetPolicy: z.enum(['fresh_context', 'reload', 'none']).default('fresh_context'),
   destination: z.string().trim().max(300).optional(),
+  continueAfter: z.boolean().optional(),
   expectationSource: z.enum(EXPECTATION_SOURCES).default('approved_case'),
   reviewState: z.enum(REVIEW_STATES).default('draft'),
 });

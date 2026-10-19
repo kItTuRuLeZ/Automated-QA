@@ -66,7 +66,7 @@ const PackageScanInput = z.object({
   qaProfile: z.enum(['quick', 'functional', 'full', 'custom']).optional(),
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
-  maxDepth: z.number().int().min(0).max(20).optional(),
+  maxDepth: z.number().int().min(0).max(60).optional(),
 });
 
 export interface PackageRouteDeps {
@@ -278,7 +278,7 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
       const outline = pkg.inspection.authoringTool?.outline ?? [];
       const primaryUnitsCount = outline.filter((e) => e.kind === 'slide' || e.kind === 'lesson').length;
       const recommendedMaxStates = primaryUnitsCount > 0 ? Math.max(DEFAULT_BUDGETS.maxStates, Math.min(200, primaryUnitsCount * 2 + 10)) : DEFAULT_BUDGETS.maxStates;
-      const recommendedMaxDepth = primaryUnitsCount > 0 ? Math.max(DEFAULT_BUDGETS.maxDepth, Math.min(20, Math.ceil(primaryUnitsCount / 2) + 4)) : DEFAULT_BUDGETS.maxDepth;
+      const recommendedMaxDepth = primaryUnitsCount > 0 ? Math.max(DEFAULT_BUDGETS.maxDepth, Math.min(60, primaryUnitsCount + 3)) : DEFAULT_BUDGETS.maxDepth;
 
       const config = buildScanConfig({
         projectId: pkg.projectId as ProjectId,

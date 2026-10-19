@@ -306,6 +306,11 @@ export interface BehaviorRule {
   resetPolicy: 'fresh_context' | 'reload' | 'none';
   /** The expected destination after the event, when the rule has one. */
   destination?: string;
+  /**
+   * Also use the required items, in order, to get past this screen when the scan walks the course (for example a quiz
+   * question that keeps Next disabled until it is answered). The rule is still tested as written.
+   */
+  continueAfter?: boolean;
   expectationSource: ExpectationSource;
   reviewState: ReviewState;
   createdAt: string;
