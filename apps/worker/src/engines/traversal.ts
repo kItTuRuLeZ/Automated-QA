@@ -16,6 +16,7 @@ import type {
   TraversalAction,
 } from '@cqa/shared';
 import { contentRoot } from '../adapters/content-root.js';
+import { parseDragItem, performDrag, resolveDragEnd } from '../adapters/drag.js';
 import { TRAVERSAL_RULES, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-html.js';
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
@@ -35,7 +36,7 @@ interface Node {
 /** How to reach a screen again, for re-checking it at another viewport. */
 export interface ReplayPath {
   stateId: StateId;
-  steps: Array<{ kind: TraversalAction['kind']; locator?: string; rawHref?: string; description: string; /** Rule steps click what the learner sees even when a transparent layer sits on top (Storyline answer text). */ force?: boolean }>;
+  steps: Array<{ kind: TraversalAction['kind']; locator?: string; rawHref?: string; description: string; /** Where to drop it, when the step is a drag. */ dragTo?: string; /** Rule steps click what the learner sees even when a transparent layer sits on top (Storyline answer text). */ force?: boolean }>;
 }
 
 export interface TraversalOutput extends EngineResult {
@@ -175,6 +176,7 @@ export class Traversal {
 
     const execute = async (a: Candidate) => {
       if (a.kind === 'navigate') await page.goto(a.rawHref ?? a.href!, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
+      else if ((a as Candidate & { dragTo?: string }).dragTo) await performDrag(page, cur, a.locator!, (a as Candidate & { dragTo?: string }).dragTo!);
       else {
         const loc = cur.locator(a.locator!).first();
         // Storyline's transparent assistive buttons sit under a graphic layer that takes the pointer; they are still the control the learner uses.
@@ -291,7 +293,7 @@ export class Traversal {
       }
 
       // ---- get past a gated screen (a quiz question) using the reviewer's rule ----
-      await this.passGate(node, cur, settle, snap, execute, coverage, describePath);
+      await this.passGate(node, page, cur, settle, snap, execute, coverage, describePath);
 
       // ---- discover actions ----
       let candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
@@ -604,7 +606,7 @@ export class Traversal {
       states,
       replay: states.map((st) => {
         const n = [...nodes.values()].find((x) => x.state.id === st.id);
-        return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription, force: c.adapter === 'gate-rule' || (c as Candidate & { force?: boolean }).force || undefined })) };
+        return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription, dragTo: (c as Candidate & { dragTo?: string }).dragTo, force: c.adapter === 'gate-rule' || (c as Candidate & { force?: boolean }).force || undefined })) };
       }),
       actions: actions.map(stripInternal),
       failedTransitions,
@@ -652,6 +654,7 @@ export class Traversal {
   /** Performs a matching rule's items in order. The clicks become part of the node's path, so replays repeat them. */
   private async passGate(
     node: Node,
+    page: Page,
     cur: Page,
     settle: () => Promise<void>,
     snap: () => Promise<StateSnapshot>,
@@ -670,6 +673,24 @@ export class Traversal {
     this.gated.add(node);
     const steps: Candidate[] = [];
     for (const item of gate.items) {
+      const drag = parseDragItem(item.label);
+      if (drag) {
+        const from = await resolveDragEnd(cur, drag.from);
+        const to = await resolveDragEnd(cur, drag.to);
+        if (!from || !to) {
+          coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gate.title}" could not find, or tell apart, ${!from ? `"${drag.from}"` : `"${drag.to}"`} on "${node.state.title ?? node.state.url}", so it could not drag "${drag.from}" to "${drag.to}".`, stateId: node.state.id });
+          return;
+        }
+        try {
+          await performDrag(page, cur, from, to);
+        } catch {
+          coverage.push({ reason: 'engine_error', detail: `The rule "${gate.title}" could not drag "${drag.from}" to "${drag.to}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
+          return;
+        }
+        await settle();
+        steps.push({ fromStateId: node.state.id, kind: 'click', locator: from, adapter: 'gate-rule', targetDescription: `${gate.title}: drag "${drag.from}" to "${drag.to}"`, dragTo: to } as Candidate);
+        continue;
+      }
       const selector = await resolveItem(cur, item);
       if (!selector) {
         coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gate.title}" could not find or tell apart "${item.label}" on "${node.state.title ?? node.state.url}", so the scan could not get past this screen with it.`, stateId: node.state.id });

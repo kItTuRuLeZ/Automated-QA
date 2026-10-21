@@ -223,3 +223,17 @@ describe('answer and continue (a rule that also gets the scan past a gated scree
   });
 });
 
+describe('answer and continue with drag and drop', () => {
+  const dragRule = { title: 'Drag the chips', unitMatch: 'Drag the chips', requiredItems: [{ label: 'drag: Chip One -> Zone A' }, { label: 'drag: Chip Two -> Zone B' }], orderPolicy: 'sequence' as const, continueAfter: true };
+
+  it('without the rule the walk stops at the drag screen', async () => {
+    const { run } = await scan('gate-drag', { explore: true, maxDepth: 3 });
+    expect(qa.listUnits(run.id).some((u) => u.title.includes('After the drag') && u.visitedAt)).toBe(false);
+  });
+
+  it('with the rule the walk performs the drags with the mouse and reaches the next screen', async () => {
+    const { run } = await scan('gate-drag', { explore: true, rules: [dragRule], maxDepth: 3 });
+    expect(qa.listUnits(run.id).some((u) => u.title.includes('After the drag') && u.visitedAt)).toBe(true);
+  });
+});
+

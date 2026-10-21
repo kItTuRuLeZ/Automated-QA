@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Drag gate course</title>
+<style>
+  .chip,.zone{display:inline-block;margin:1rem;padding:1rem;border:2px solid #333;min-width:6rem;text-align:center;user-select:none}
+  .chip{background:#fd8;cursor:grab}.zone{background:#eef;min-height:3rem}
+  [hidden]{display:none!important}button{font:inherit;padding:.4rem .8rem}
+</style>
+</head>
+<body>
+  <main>
+    <h1 id="lesson-title">Lesson 1: Drag the chips</h1>
+    <section id="drag">
+      <div><span class="chip" id="chip-1">Chip One</span><span class="chip" id="chip-2">Chip Two</span></div>
+      <div><span class="zone" id="zone-a">Zone A</span><span class="zone" id="zone-b">Zone B</span></div>
+    </section>
+    <nav aria-label="Lesson navigation"><button type="button" id="next">Next</button></nav>
+  </main>
+  <script>
+    // Lesson 1: Next stays disabled until Chip One is dropped on Zone A and Chip Two on Zone B (mouse press, move, release).
+    var titles = ['Lesson 1: Drag the chips', 'Lesson 2: After the drag'];
+    var placed = {};
+    function current() { var m = location.hash.match(/^#\/lessons\/(\d+)/); return m ? Math.min(Math.max(Number(m[1]), 1), 2) : 1; }
+    function render() {
+      var n = current();
+      document.getElementById('lesson-title').textContent = titles[n - 1];
+      document.title = titles[n - 1];
+      document.getElementById('drag').hidden = n !== 1;
+      document.getElementById('next').disabled = n === 2 || (n === 1 && !(placed['chip-1'] === 'zone-a' && placed['chip-2'] === 'zone-b'));
+    }
+    var dragging = null;
+    document.querySelectorAll('.chip').forEach(function (c) { c.addEventListener('mousedown', function () { dragging = c; }); });
+    document.addEventListener('mouseup', function (e) {
+      if (!dragging) return;
+      var over = document.elementFromPoint(e.clientX, e.clientY);
+      var zone = over && over.closest ? over.closest('.zone') : null;
+      if (zone) { placed[dragging.id] = zone.id; zone.textContent = zone.textContent.split(' <')[0] + ' <' + dragging.textContent + '>'; }
+      dragging = null;
+      render();
+    });
+    document.getElementById('next').addEventListener('click', function () { location.hash = '#/lessons/' + (current() + 1); });
+    window.addEventListener('hashchange', render);
+    render();
+  </script>
+</body>
+</html>

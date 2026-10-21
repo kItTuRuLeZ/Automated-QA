@@ -1,4 +1,5 @@
 import { contentRoot, waitForContentRoot } from '../adapters/content-root.js';
+import { parseDragItem, performDrag } from '../adapters/drag.js';
 import type { Browser, BrowserContext, Locator, Page } from 'playwright';
 import type { BehaviorRule, ContentUnit, CourseState, EvidenceId, EvidenceSink, ExecutionTraceStep, InteractionInstance, RuleEvent, RuleItem, ScanRun, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 import { type QaStore, effectiveAutomation, isPrimaryUnit, nowIso } from '@cqa/core';
@@ -69,6 +70,7 @@ const looksLikeSelector = (s: string) => /^[#.[]|>>|^css=|^xpath=|^\/\/|^[a-z][a
 async function locate(page: Page, spec: string): Promise<{ ok: true; loc: Locator } | { ok: false; why: string }> {
   const s = spec.trim();
   if (!s) return { ok: false, why: 'No item was named.' };
+  if (parseDragItem(s)) return { ok: false, why: 'This rule item is a drag. Drags are used to get past a screen during the scan; the click-order tests cannot repeat them, so this rule is not tested here.' };
   if (looksLikeSelector(s)) {
     const loc = page.locator(s);
     const n = await loc.count().catch(() => 0);
@@ -359,6 +361,7 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
     tracer.add('entered_unit', `Opened ${targetUrl}`);
     for (const step of path.steps) {
       if (step.kind === 'navigate' && step.rawHref) await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
+      else if (step.locator && step.dragTo) await performDrag(page, (await contentRoot(page)) as unknown as Page, step.locator, step.dragTo);
       else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS, force: step.force });
       else return { ok: false, why: `No way to repeat "${step.description}".` };
       // Repeating an in-page click (a Next button) needs a short pause, not a full page-load wait: this is what keeps deep slides affordable.
