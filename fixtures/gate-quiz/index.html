@@ -19,25 +19,25 @@
     </nav>
   </main>
   <script>
-    // Lesson 2 is a quiz: Next stays disabled until "Option B" is chosen and "Submit answer" is pressed.
-    var titles = ['Lesson 1: Welcome', 'Lesson 2: Quiz question', 'Lesson 3: After the quiz'];
-    var chosen = '', passed = false;
-    function current() { var m = location.hash.match(/^#\/lessons\/(\d+)/); return m ? Math.min(Math.max(Number(m[1]), 1), 3) : 1; }
+    // Lessons 2 and 3 are quiz questions: Next stays disabled until "Option B" is chosen and "Submit answer" is pressed.
+    var titles = ['Lesson 1: Welcome', 'Lesson 2: Quiz question', 'Lesson 3: Quiz question', 'Lesson 4: After the quiz'];
+    var chosen = '', passedBy = {};
+    function current() { var m = location.hash.match(/^#\/lessons\/(\d+)/); return m ? Math.min(Math.max(Number(m[1]), 1), 4) : 1; }
     function render() {
       var n = current();
       document.getElementById('lesson-title').textContent = titles[n - 1];
       document.title = titles[n - 1];
-      document.getElementById('quiz').hidden = n !== 2;
-      document.getElementById('next').disabled = n === 3 || (n === 2 && !passed);
+      document.getElementById('quiz').hidden = n !== 2 && n !== 3;
+      document.getElementById('next').disabled = n === 4 || ((n === 2 || n === 3) && !passedBy[n]);
     }
     ['a', 'b', 'c'].forEach(function (k) { document.getElementById('opt-' + k).addEventListener('click', function () { chosen = k; }); });
     document.getElementById('submit').addEventListener('click', function () {
-      passed = chosen === 'b';
-      document.getElementById('feedback').textContent = passed ? 'Correct.' : 'Try again.';
+      passedBy[current()] = chosen === 'b';
+      document.getElementById('feedback').textContent = passedBy[current()] ? 'Correct.' : 'Try again.';
       render();
     });
     document.getElementById('next').addEventListener('click', function () { location.hash = '#/lessons/' + (current() + 1); });
-    window.addEventListener('hashchange', render);
+    window.addEventListener('hashchange', function () { chosen = ''; document.getElementById('feedback').textContent = ''; render(); });
     render();
   </script>
 </body>

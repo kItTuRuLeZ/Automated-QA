@@ -359,7 +359,7 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
     tracer.add('entered_unit', `Opened ${targetUrl}`);
     for (const step of path.steps) {
       if (step.kind === 'navigate' && step.rawHref) await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
-      else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS });
+      else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS, force: step.force });
       else return { ok: false, why: `No way to repeat "${step.description}".` };
       // Repeating an in-page click (a Next button) needs a short pause, not a full page-load wait: this is what keeps deep slides affordable.
       if (step.kind === 'navigate') await settle(page, navTimeout);

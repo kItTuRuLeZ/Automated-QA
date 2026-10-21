@@ -207,7 +207,7 @@ function RuleForm({ projectId, rule, onDone }: { projectId: string; rule?: Behav
         <label>
           <input type="checkbox" checked={continueAfter} onChange={(e) => setContinueAfter(e.target.checked)} /> Also use these steps to get past this screen when scanning the course
         </label>
-        <p className="help">For a quiz question or any screen that keeps Next disabled until something is done. The scan performs the required items in order, then carries on to the next screen. Leave it off if the rule should only be tested.</p>
+        <p className="help">For a quiz question or any screen that keeps Next disabled until something is done. The scan performs the required items in order, then carries on to the next screen. To answer any question without naming the answer, write [first option] as an item. Leave it off if the rule should only be tested.</p>
       </div>
       <div className="form-grid">
         <div className="field">

@@ -49,11 +49,11 @@ function rule(projectId: string, over: Partial<BehaviorRule> = {}): BehaviorRule
 }
 
 /** Runs a functional scan of one fixture, with the given behavior rules, and returns the finished run. */
-async function scan(path: string, opts: { rules?: Array<Partial<BehaviorRule>>; explore?: boolean } = {}) {
+async function scan(path: string, opts: { rules?: Array<Partial<BehaviorRule>>; explore?: boolean; maxDepth?: number } = {}) {
   const project = h.store.createProject({ name: `Functional ${path}` });
   for (const r of opts.rules ?? []) qa.saveRule(rule(project.id, r));
   const url = `${fx.origin}/${path}/`;
-  const config = buildScanConfig({ projectId: project.id as ProjectId, url: new URL(url), explore: opts.explore ?? false, accessibility: false, layout: false, functional: true, qaProfile: 'functional', maxStates: 6, maxDepth: 2 });
+  const config = buildScanConfig({ projectId: project.id as ProjectId, url: new URL(url), explore: opts.explore ?? false, accessibility: false, layout: false, functional: true, qaProfile: 'functional', maxStates: 6, maxDepth: opts.maxDepth ?? 2 });
   const queued = h.store.createRun(config, url);
   const run = await h.waitForTerminal(queued.id, 230_000);
   await h.worker!.idle(); // the run record is finalized just after the run status turns terminal
@@ -216,8 +216,8 @@ describe('answer and continue (a rule that also gets the scan past a gated scree
     expect(units.some((u) => u.title.includes('After the quiz') && u.visitedAt)).toBe(false);
   });
 
-  it('with the rule the walk answers the question, carries on, and the later screen is visited', async () => {
-    const { run } = await scan('gate-quiz', { explore: true, rules: [quizRule] });
+  it('with the rule the walk answers each quiz question, carries on, and the later screen is visited', async () => {
+    const { run } = await scan('gate-quiz', { explore: true, rules: [quizRule], maxDepth: 5 });
     const units = qa.listUnits(run.id);
     expect(units.some((u) => u.title.includes('After the quiz') && u.visitedAt)).toBe(true);
   });

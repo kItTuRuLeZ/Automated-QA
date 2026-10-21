@@ -35,7 +35,7 @@ interface Node {
 /** How to reach a screen again, for re-checking it at another viewport. */
 export interface ReplayPath {
   stateId: StateId;
-  steps: Array<{ kind: TraversalAction['kind']; locator?: string; rawHref?: string; description: string }>;
+  steps: Array<{ kind: TraversalAction['kind']; locator?: string; rawHref?: string; description: string; /** Rule steps click what the learner sees even when a transparent layer sits on top (Storyline answer text). */ force?: boolean }>;
 }
 
 export interface TraversalOutput extends EngineResult {
@@ -89,6 +89,7 @@ export class Traversal {
   readonly version = '1.0.0';
   readonly rules = TRAVERSAL_RULES;
   private readonly adapter = new GenericHtmlAdapter();
+  private readonly gated = new WeakSet<object>();
 
   constructor(
     private readonly deps: {
@@ -174,7 +175,13 @@ export class Traversal {
 
     const execute = async (a: Candidate) => {
       if (a.kind === 'navigate') await page.goto(a.rawHref ?? a.href!, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
-      else await cur.locator(a.locator!).first().click({ timeout: budgets.actionTimeoutMs });
+      else {
+        const loc = cur.locator(a.locator!).first();
+        // Storyline's transparent assistive buttons sit under a graphic layer that takes the pointer; they are still the control the learner uses.
+        const shadow = a.adapter === 'gate-rule' || (await loc.evaluate((el) => el.classList.contains('acc-shadow-el')).catch(() => false));
+        if (shadow) (a as Candidate & { force?: boolean }).force = true;
+        await loc.click({ timeout: budgets.actionTimeoutMs, force: shadow });
+      }
       await settle();
     };
 
@@ -597,7 +604,7 @@ export class Traversal {
       states,
       replay: states.map((st) => {
         const n = [...nodes.values()].find((x) => x.state.id === st.id);
-        return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription })) };
+        return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription, force: c.adapter === 'gate-rule' || (c as Candidate & { force?: boolean }).force || undefined })) };
       }),
       actions: actions.map(stripInternal),
       failedTransitions,
@@ -658,7 +665,9 @@ export class Traversal {
       const hay = [node.state.lessonTitle, node.state.title, node.state.lessonId].filter(Boolean).join(' | ').toLowerCase();
       return hay.includes(needle);
     });
-    if (!gate || node.path.some((p) => p.adapter === 'gate-rule' && p.targetDescription.startsWith(`${gate.title}:`))) return;
+    // Once per screen. (A rule that matches several screens, such as every quiz question, must run again on each.)
+    if (!gate || this.gated.has(node)) return;
+    this.gated.add(node);
     const steps: Candidate[] = [];
     for (const item of gate.items) {
       const selector = await resolveItem(cur, item);
@@ -667,7 +676,7 @@ export class Traversal {
         return;
       }
       try {
-        await cur.locator(selector).first().click({ timeout: 4_000 });
+        await cur.locator(selector).first().click({ timeout: 4_000, force: true });
       } catch {
         coverage.push({ reason: 'engine_error', detail: `The rule "${gate.title}" could not click "${item.label}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
         return;
@@ -721,11 +730,36 @@ export class Traversal {
  * locator written by the reviewer is used as given. Names are matched as exact accessible names first, then as text.
  */
 async function resolveItem(root: Page, item: { label: string; locator?: string }): Promise<string | undefined> {
-  const one = async (sel: string) => (await root.locator(sel).filter({ visible: true }).count().catch(() => 0)) === 1;
-  if (item.locator) return (await one(item.locator)) ? item.locator : undefined;
+  const visibleOnly = (sel: string) => `${sel} >> visible=true`;
+  const one = async (sel: string) => (await root.locator(sel).count().catch(() => 0)) === 1;
+  if (item.locator) return (await one(visibleOnly(item.locator))) ? visibleOnly(item.locator) : undefined;
   const q = item.label.replace(/"/g, '\\"');
-  for (const sel of [`role=button[name="${q}"i]`, `role=radio[name="${q}"i]`, `role=checkbox[name="${q}"i]`, `role=link[name="${q}"i]`, `role=tab[name="${q}"i]`, `text="${q}"`]) {
-    if (await one(sel)) return sel;
+  for (const sel of [`role=button[name="${q}"i]`, `role=radio[name="${q}"i]`, `role=checkbox[name="${q}"i]`, `role=link[name="${q}"i]`, `role=tab[name="${q}"i]`]) {
+    if (await one(visibleOnly(sel))) return visibleOnly(sel);
+  }
+  // "[first option]" means the first answer choice on the screen, for rules that only need some answer given (any quiz question).
+  if (/^\[first (option|answer)\]$/i.test(item.label.trim())) {
+    const id = await root.evaluate(() => {
+      const v = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+      const first = [...document.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]')].find(v);
+      return first?.id || null;
+    }).catch(() => null);
+    return id && (await one(visibleOnly(`[id="${id}"]`))) ? visibleOnly(`[id="${id}"]`) : undefined;
+  }
+  // Players that draw an answer as graphics (Storyline) keep the real radio button or checkbox beside it, named by that text.
+  const inputId = await root
+    .evaluate((label) => {
+      const want = label.toLowerCase();
+      const hits = [...document.querySelectorAll('input[type="radio"],input[type="checkbox"]')].filter((i) => {
+        const named = (i.getAttribute('aria-labelledby') ?? '').split(/\s+/).filter(Boolean).map((id) => document.getElementById(id)?.textContent ?? '').join(' ');
+        return `${named} ${i.getAttribute('aria-label') ?? ''}`.toLowerCase().includes(want);
+      });
+      return hits.length === 1 && hits[0]!.id ? hits[0]!.id : null;
+    }, item.label)
+    .catch(() => null);
+  if (inputId && (await one(visibleOnly(`[id="${inputId}"]`)))) return visibleOnly(`[id="${inputId}"]`);
+  for (const sel of [`text="${q}"`, `text=${item.label}`]) {
+    if (await one(visibleOnly(sel))) return visibleOnly(sel);
   }
   return undefined;
 }

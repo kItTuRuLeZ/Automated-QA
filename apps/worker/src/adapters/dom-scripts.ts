@@ -79,7 +79,16 @@ export function snapshotState(): StateSnapshot {
 
 /** Finds candidate controls in the current state and classifies them. Nothing is clicked here. */
 export function discoverControls(args: { allowedOrigins: string[]; allowedPathPrefixes: string[]; deniedPatterns: string[]; maxAmbiguous: number }): RawControl[] {
-  const visible = (el: Element) => (el as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? (el as HTMLElement).offsetParent !== null;
+  const visible = (el: Element) => {
+    if ((el as HTMLElement).checkVisibility?.({ checkOpacity: true, checkVisibilityCSS: true }) ?? (el as HTMLElement).offsetParent !== null) return true;
+    // Storyline draws answers and buttons as graphics and lays real, fully transparent buttons over them for assistive
+    // technology. Those are what a learner's click and a screen reader reach, so a transparent one that has a size counts.
+    if (el.classList?.contains('acc-shadow-el')) {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && ((el as HTMLElement).checkVisibility?.({ checkVisibilityCSS: true }) ?? true);
+    }
+    return false;
+  };
   const disabled = (el: Element) => (el as HTMLButtonElement).disabled === true || el.getAttribute('aria-disabled') === 'true';
   const nameOf = (el: Element): string => {
     const label = el.getAttribute('aria-label');
