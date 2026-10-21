@@ -194,6 +194,8 @@ export interface ScormSettings {
 export interface ScanConfig {
   /** The preset chosen when the scan was set up. Absent in older scans. */
   qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
+  /** When a screen asks a question and blocks progress, answer it (first choice, then Submit) so the walk can continue. */
+  autoAnswer?: boolean;
   projectId: ProjectId;
   target: ScanTarget;
   scope: ScanScope;

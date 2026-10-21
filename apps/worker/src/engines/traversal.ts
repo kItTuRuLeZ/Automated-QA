@@ -106,6 +106,8 @@ export class Traversal {
        */
       navigationOnly?: boolean;
       /** Rules that say how to get past a screen (answer a question, then continue). Performed in order when the walk reaches the screen. */
+      /** Answer a question that blocks progress when no rule covers the screen. */
+      autoAnswer?: boolean;
       gates?: ReadonlyArray<{ title: string; unitMatch: string; items: ReadonlyArray<{ label: string; locator?: string }>; ordered: boolean }>;
       /** Called once per reached state while the page shows it (per-state content checks). */
       onStateReady?: (state: CourseState, reproductionSteps: string[], pathKey: string) => Promise<void>;
@@ -669,41 +671,52 @@ export class Traversal {
       return hay.includes(needle);
     });
     // Once per screen. (A rule that matches several screens, such as every quiz question, must run again on each.)
-    if (!gate || this.gated.has(node)) return;
+    if (this.gated.has(node)) return;
+    let use = gate;
+    if (!use && this.deps.autoAnswer) {
+      // No rule for this screen: if it asks a question (answer choices and a Submit button), answer it so the walk can go on.
+      const asks = await cur.evaluate(() => {
+        const v = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+        return [...document.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]')].some(v);
+      }).catch(() => false);
+      if (asks && (await resolveItem(cur, { label: 'Submit' }))) use = { title: 'Automatic answer', unitMatch: '', items: [{ label: '[first option]' }, { label: 'Submit' }], ordered: true };
+    }
+    if (!use) return;
     this.gated.add(node);
+    const gateRule = use;
     const steps: Candidate[] = [];
-    for (const item of gate.items) {
+    for (const item of gateRule.items) {
       const drag = parseDragItem(item.label);
       if (drag) {
         const from = await resolveDragEnd(cur, drag.from);
         const to = await resolveDragEnd(cur, drag.to);
         if (!from || !to) {
-          coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gate.title}" could not find, or tell apart, ${!from ? `"${drag.from}"` : `"${drag.to}"`} on "${node.state.title ?? node.state.url}", so it could not drag "${drag.from}" to "${drag.to}".`, stateId: node.state.id });
+          coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gateRule.title}" could not find, or tell apart, ${!from ? `"${drag.from}"` : `"${drag.to}"`} on "${node.state.title ?? node.state.url}", so it could not drag "${drag.from}" to "${drag.to}".`, stateId: node.state.id });
           return;
         }
         try {
           await performDrag(page, cur, from, to);
         } catch {
-          coverage.push({ reason: 'engine_error', detail: `The rule "${gate.title}" could not drag "${drag.from}" to "${drag.to}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
+          coverage.push({ reason: 'engine_error', detail: `The rule "${gateRule.title}" could not drag "${drag.from}" to "${drag.to}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
           return;
         }
         await settle();
-        steps.push({ fromStateId: node.state.id, kind: 'click', locator: from, adapter: 'gate-rule', targetDescription: `${gate.title}: drag "${drag.from}" to "${drag.to}"`, dragTo: to } as Candidate);
+        steps.push({ fromStateId: node.state.id, kind: 'click', locator: from, adapter: 'gate-rule', targetDescription: `${gateRule.title}: drag "${drag.from}" to "${drag.to}"`, dragTo: to } as Candidate);
         continue;
       }
       const selector = await resolveItem(cur, item);
       if (!selector) {
-        coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gate.title}" could not find or tell apart "${item.label}" on "${node.state.title ?? node.state.url}", so the scan could not get past this screen with it.`, stateId: node.state.id });
+        coverage.push({ reason: 'ambiguous_action', detail: `The rule "${gateRule.title}" could not find or tell apart "${item.label}" on "${node.state.title ?? node.state.url}", so the scan could not get past this screen with it.`, stateId: node.state.id });
         return;
       }
       try {
         await cur.locator(selector).first().click({ timeout: 4_000, force: true });
       } catch {
-        coverage.push({ reason: 'engine_error', detail: `The rule "${gate.title}" could not click "${item.label}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
+        coverage.push({ reason: 'engine_error', detail: `The rule "${gateRule.title}" could not click "${item.label}" on "${node.state.title ?? node.state.url}".`, stateId: node.state.id });
         return;
       }
       await settle();
-      steps.push({ fromStateId: node.state.id, kind: 'click', locator: selector, adapter: 'gate-rule', targetDescription: `${gate.title}: ${item.label}` });
+      steps.push({ fromStateId: node.state.id, kind: 'click', locator: selector, adapter: 'gate-rule', targetDescription: `${gateRule.title}: ${item.label}` });
     }
     if (steps.length) {
       node.path = [...node.path, ...steps];
@@ -760,12 +773,8 @@ async function resolveItem(root: Page, item: { label: string; locator?: string }
   }
   // "[first option]" means the first answer choice on the screen, for rules that only need some answer given (any quiz question).
   if (/^\[first (option|answer)\]$/i.test(item.label.trim())) {
-    const id = await root.evaluate(() => {
-      const v = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-      const first = [...document.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]')].find(v);
-      return first?.id || null;
-    }).catch(() => null);
-    return id && (await one(visibleOnly(`[id="${id}"]`))) ? visibleOnly(`[id="${id}"]`) : undefined;
+    const sel = visibleOnly('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]');
+    return (await root.locator(sel).count().catch(() => 0)) > 0 ? `${sel} >> nth=0` : undefined;
   }
   // Players that draw an answer as graphics (Storyline) keep the real radio button or checkbox beside it, named by that text.
   const inputId = await root

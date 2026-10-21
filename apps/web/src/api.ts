@@ -147,6 +147,7 @@ export const api = {
       compareBaseline?: boolean;
       functional?: boolean;
       qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
+      autoAnswer?: boolean;
       testNonResponsive?: boolean;
       viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>;
       maxStates?: number;

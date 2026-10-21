@@ -31,9 +31,16 @@ const fromLines = (s: string): RuleItem[] =>
     });
 
 /** Behavior rules in plain fields: "After every required item has been visited, enable Next." No selectors or code are needed. */
+const TEMPLATES: Array<{ id: string; label: string; draft: Partial<BehaviorRule> }> = [
+  { id: 'quiz', label: 'Quiz question: answer and continue', draft: { title: 'Quiz question: answer and continue', unitMatch: 'QUESTION', requiredItems: [{ label: '[first option]' }, { label: 'Submit' }], expectedEvent: 'next_enabled', eventTarget: 'Next', orderPolicy: 'sequence', continueAfter: true } },
+  { id: 'drag', label: 'Drag items onto targets', draft: { title: 'Drag and drop: place the items and continue', unitMatch: 'DRAG', requiredItems: [{ label: 'drag: Item 1 -> Target 1' }, { label: 'drag: Item 2 -> Target 2' }, { label: 'Submit' }], expectedEvent: 'next_enabled', eventTarget: 'Next', orderPolicy: 'sequence', continueAfter: true } },
+  { id: 'unlock', label: 'Open every item before Next unlocks', draft: { title: 'Next unlocks after every item is opened', unitMatch: '', requiredItems: [{ label: 'Item 1' }, { label: 'Item 2' }, { label: 'Item 3' }], expectedEvent: 'next_enabled', eventTarget: 'Next', orderPolicy: 'any_order', continueAfter: false } },
+];
+
 export function RulesPanel({ projectId }: { projectId: string }) {
   const rules = useLoader(() => qaApi.rules(projectId), [projectId]);
   const [editing, setEditing] = useState<BehaviorRule | 'new'>();
+  const [template, setTemplate] = useState<Partial<BehaviorRule>>();
 
   return (
     <section className="card" aria-labelledby="rules-h">
@@ -42,9 +49,16 @@ export function RulesPanel({ projectId }: { projectId: string }) {
           <h2 id="rules-h">Behavior rules</h2>
           <p className="muted">Say what should happen on a screen, in plain fields. A scan then tests it: the event must not appear early, must appear after the last required item, and must not be fooled by repeated clicks or optional items. Without a rule, the scanner cannot know what should happen, so those cases go to manual review instead of passing.</p>
         </div>
-        <button type="button" className="btn btn-primary" onClick={() => setEditing('new')}>
-          New rule
-        </button>
+        <div>
+          <label htmlFor="rule-template" className="sr-only">Start from a template</label>
+          <select id="rule-template" value="" onChange={(e) => { const t = TEMPLATES.find((x) => x.id === e.target.value); if (t) { setTemplate(t.draft); setEditing('new'); } }}>
+            <option value="">Start from a template…</option>
+            {TEMPLATES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>{' '}
+          <button type="button" className="btn btn-primary" onClick={() => { setTemplate(undefined); setEditing('new'); }}>
+            New rule
+          </button>
+        </div>
       </div>
       {rules.error ? (
         <ErrorBox error={rules.error} onRetry={rules.reload} />
@@ -66,26 +80,27 @@ export function RulesPanel({ projectId }: { projectId: string }) {
           ))}
         </ul>
       )}
-      {editing && <RuleForm key={editing === 'new' ? 'new' : editing.id} projectId={projectId} rule={editing === 'new' ? undefined : editing} onDone={() => (setEditing(undefined), rules.reload())} />}
+      {editing && <RuleForm key={editing === 'new' ? `new-${template?.title ?? ''}` : editing.id} projectId={projectId} rule={editing === 'new' ? undefined : editing} initial={editing === 'new' ? template : undefined} onDone={() => (setEditing(undefined), setTemplate(undefined), rules.reload())} />}
     </section>
   );
 }
 
-function RuleForm({ projectId, rule, onDone }: { projectId: string; rule?: BehaviorRule; onDone: () => void }) {
-  const [title, setTitle] = useState(rule?.title ?? '');
-  const [unitMatch, setUnitMatch] = useState(rule?.unitMatch ?? '');
-  const [required, setRequired] = useState(toLines(rule?.requiredItems ?? []));
-  const [optional, setOptional] = useState(toLines(rule?.optionalItems ?? []));
-  const [event, setEvent] = useState<BehaviorRule['expectedEvent']>(rule?.expectedEvent ?? 'next_enabled');
-  const [target, setTarget] = useState(rule?.eventTarget ?? 'Next');
-  const [windowSec, setWindowSec] = useState(String((rule?.timingWindowMs ?? 2000) / 1000));
-  const [order, setOrder] = useState<BehaviorRule['orderPolicy']>(rule?.orderPolicy ?? 'any_order');
-  const [repeat, setRepeat] = useState<BehaviorRule['repeatPolicy']>(rule?.repeatPolicy ?? 'once');
-  const [reset, setReset] = useState<BehaviorRule['resetPolicy']>(rule?.resetPolicy ?? 'fresh_context');
-  const [destination, setDestination] = useState(rule?.destination ?? '');
-  const [continueAfter, setContinueAfter] = useState(rule?.continueAfter ?? false);
-  const [source, setSource] = useState<BehaviorRule['expectationSource']>(rule?.expectationSource ?? 'approved_case');
-  const [review, setReview] = useState<BehaviorRule['reviewState']>(rule?.reviewState ?? 'draft');
+function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rule?: BehaviorRule; initial?: Partial<BehaviorRule>; onDone: () => void }) {
+  const base: Partial<BehaviorRule> | undefined = rule ?? initial;
+  const [title, setTitle] = useState(base?.title ?? '');
+  const [unitMatch, setUnitMatch] = useState(base?.unitMatch ?? '');
+  const [required, setRequired] = useState(toLines(base?.requiredItems ?? []));
+  const [optional, setOptional] = useState(toLines(base?.optionalItems ?? []));
+  const [event, setEvent] = useState<BehaviorRule['expectedEvent']>(base?.expectedEvent ?? 'next_enabled');
+  const [target, setTarget] = useState(base?.eventTarget ?? 'Next');
+  const [windowSec, setWindowSec] = useState(String((base?.timingWindowMs ?? 2000) / 1000));
+  const [order, setOrder] = useState<BehaviorRule['orderPolicy']>(base?.orderPolicy ?? 'any_order');
+  const [repeat, setRepeat] = useState<BehaviorRule['repeatPolicy']>(base?.repeatPolicy ?? 'once');
+  const [reset, setReset] = useState<BehaviorRule['resetPolicy']>(base?.resetPolicy ?? 'fresh_context');
+  const [destination, setDestination] = useState(base?.destination ?? '');
+  const [continueAfter, setContinueAfter] = useState(base?.continueAfter ?? false);
+  const [source, setSource] = useState<BehaviorRule['expectationSource']>(base?.expectationSource ?? 'approved_case');
+  const [review, setReview] = useState<BehaviorRule['reviewState']>(base?.reviewState ?? 'draft');
   const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
   const [error, setError] = useState<string>();
   const [pick, setPick] = useState(false);

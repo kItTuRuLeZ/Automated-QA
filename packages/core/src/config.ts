@@ -178,6 +178,7 @@ export function buildScanConfig(input: {
   /** Functional behavior tests (interaction cases and behavior rules). */
   functional?: boolean;
   qaProfile?: ScanConfig['qaProfile'];
+  autoAnswer?: boolean;
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -220,6 +221,7 @@ export function buildScanConfig(input: {
     layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf }, testNonResponsive: input.testNonResponsive ?? false },
     configVersion: 1,
     ...(input.qaProfile ? { qaProfile: input.qaProfile } : {}),
+    ...(input.autoAnswer ? { autoAnswer: true } : {}),
     ...(input.profile ? { profileId: input.profile.id, profile: input.profile } : {}),
   };
 }

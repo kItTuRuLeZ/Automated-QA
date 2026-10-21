@@ -300,6 +300,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
             excludeResourceTypes,
             onStateReady,
             gates: new QaStore(store.db).listRules(run.projectId).filter((r) => r.continueAfter && r.reviewState !== 'retired').map((r) => ({ title: r.title, unitMatch: r.unitMatch, items: r.requiredItems, ordered: r.orderPolicy === 'sequence' })),
+            autoAnswer: Boolean(run.config.autoAnswer),
             navigationOnly: Boolean(run.config.engines.functional) && out.platform === 'storyline',
             onActions: (state, candidates) => rec.actionsDiscovered(state, candidates),
             keyboardPass: run.config.engines.keyboard ? (input) => keyboardEngine.activate(input) : undefined,

@@ -52,6 +52,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
 
   const [qaProfile, setQaProfile] = useState<'quick' | 'functional' | 'full' | 'custom'>('full');
   const [functional, setFunctional] = useState(true);
+  const [autoAnswer, setAutoAnswer] = useState(true);
   const library = useLoader(() => qaApi.library(), []);
   const [explore, setExplore] = useState(true);
   const [accessibility, setAccessibility] = useState(true);
@@ -148,6 +149,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
         explore,
         accessibility,
         functional,
+        autoAnswer: functional && autoAnswer,
         qaProfile,
         maxStates,
         maxDepth,
@@ -300,6 +302,9 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
               </label>
               <label className="checkbox">
                 <input type="checkbox" checked={functional} disabled={!explore && qaProfile !== 'custom'} onChange={(e) => custom(setFunctional)(e.target.checked)} /> <span>Interaction cases and behavior rules<span className="help">Runs the test library’s cases on tabs, accordions, dialogs and Next/Previous, and the behavior rules you set up for this project. Each runs on a fresh copy of the screen.</span></span>
+              </label>
+              <label className="checkbox">
+                <input type="checkbox" checked={autoAnswer} disabled={!functional} onChange={(e) => setAutoAnswer(e.target.checked)} /> <span>Answer quiz questions automatically<span className="help">When a screen asks a question and will not go on until it is answered, the scan picks the first answer and presses Submit so it can carry on to the later screens. The answer is not judged. Turn off if you want the scan to stop at questions.</span></span>
               </label>
             </fieldset>
             <fieldset className="fieldset">

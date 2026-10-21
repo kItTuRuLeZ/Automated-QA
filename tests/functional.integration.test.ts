@@ -49,11 +49,11 @@ function rule(projectId: string, over: Partial<BehaviorRule> = {}): BehaviorRule
 }
 
 /** Runs a functional scan of one fixture, with the given behavior rules, and returns the finished run. */
-async function scan(path: string, opts: { rules?: Array<Partial<BehaviorRule>>; explore?: boolean; maxDepth?: number } = {}) {
+async function scan(path: string, opts: { rules?: Array<Partial<BehaviorRule>>; explore?: boolean; maxDepth?: number; autoAnswer?: boolean } = {}) {
   const project = h.store.createProject({ name: `Functional ${path}` });
   for (const r of opts.rules ?? []) qa.saveRule(rule(project.id, r));
   const url = `${fx.origin}/${path}/`;
-  const config = buildScanConfig({ projectId: project.id as ProjectId, url: new URL(url), explore: opts.explore ?? false, accessibility: false, layout: false, functional: true, qaProfile: 'functional', maxStates: 6, maxDepth: opts.maxDepth ?? 2 });
+  const config = buildScanConfig({ projectId: project.id as ProjectId, url: new URL(url), explore: opts.explore ?? false, accessibility: false, layout: false, functional: true, autoAnswer: opts.autoAnswer, qaProfile: 'functional', maxStates: 6, maxDepth: opts.maxDepth ?? 2 });
   const queued = h.store.createRun(config, url);
   const run = await h.waitForTerminal(queued.id, 230_000);
   await h.worker!.idle(); // the run record is finalized just after the run status turns terminal
@@ -234,6 +234,18 @@ describe('answer and continue with drag and drop', () => {
   it('with the rule the walk performs the drags with the mouse and reaches the next screen', async () => {
     const { run } = await scan('gate-drag', { explore: true, rules: [dragRule], maxDepth: 3 });
     expect(qa.listUnits(run.id).some((u) => u.title.includes('After the drag') && u.visitedAt)).toBe(true);
+  });
+});
+
+describe('answer quiz questions automatically', () => {
+  it('off: the walk stops at the question and does not answer it', async () => {
+    const { run } = await scan('auto-quiz', { explore: true, maxDepth: 4, autoAnswer: false });
+    expect(qa.listUnits(run.id).some((u) => u.title.includes('After the question') && u.visitedAt)).toBe(false);
+  });
+
+  it('on, with no rule: the walk gives the first answer, presses Submit, and reaches the later screen', async () => {
+    const { run } = await scan('auto-quiz', { explore: true, maxDepth: 4, autoAnswer: true });
+    expect(qa.listUnits(run.id).some((u) => u.title.includes('After the question') && u.visitedAt)).toBe(true);
   });
 });
 
