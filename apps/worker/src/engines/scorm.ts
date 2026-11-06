@@ -1,7 +1,7 @@
 import type { Browser, BrowserContext, Page } from 'playwright';
 import type { EvidenceId, FindingLocation, ProviderContext, ScanRun, ScormJourney, ScormSettings } from '@cqa/shared';
 import { nowIso } from '@cqa/core';
-import { type HarnessCall, type HarnessConfig, type HarnessSnapshot, type ScormVersion, READBACK_PATH, harnessInitScript, readSpill } from '../adapters/scorm-harness.js';
+import { type HarnessCall, type HarnessConfig, type HarnessSnapshot, type ScormVersion, READBACK_PATH, harnessInitScript, readSpill, riseLmsBypassScript } from '../adapters/scorm-harness.js';
 import { type NewCheck, type NewFinding, check, finding, truncate } from './helpers.js';
 import { type RuleResult, type SessionResult, analyzeExpectation, analyzeResume, analyzeSession, toChecks } from './scorm-analysis.js';
 
@@ -91,6 +91,7 @@ async function runSession(input: ScormRunInput, opts: { name: string; kind: 'jou
       else if (e.kind === 'persist' && e.committed && e.cmi) lastPersist = { committed: e.committed, cmi: e.cmi };
     });
     await context.addInitScript({ content: harnessInitScript(cfg) });
+    await context.addInitScript({ content: riseLmsBypassScript() });
     const page = await context.newPage();
     await page.goto(input.targetUrl, { waitUntil: 'load', timeout: navTimeout }).catch(() => undefined);
     // Give the course a moment to find the API and initialize.

@@ -159,7 +159,7 @@ describe('disclosure', () => {
   it('canvas content stays disclosed as uninspected even when accessibility checks run', async () => {
     const { findings, checks } = await scan('canvas/');
     expect(of(findings, 'COV-003')).toHaveLength(1);
-    expect(outcomes(checks, 'COV-003')).toEqual(['needs_review']);
+    expect(outcomes(checks, 'COV-003')).toEqual(['unsupported']);
     expect(outcomes(checks, 'A11Y-ENG')).toEqual(['passed']);
   });
 });

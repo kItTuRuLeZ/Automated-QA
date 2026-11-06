@@ -190,8 +190,11 @@ export function measureLayout(): LayoutMeasure {
  * Recognizes Storyline output, which is a fixed-size stage that scales rather than reflows.
  * Markers: Storyline's loader and player globals, its story_content folder, and its bootstrapper script.
  */
-export function detectPlatform(): 'storyline' | 'unknown' {
+export function detectPlatform(): 'storyline' | 'rise' | 'unknown' {
   const w = window as unknown as Record<string, unknown>;
+  // Rise 360 marks every block with data-block-id and loads its player from lib/rise.
+  const rise = Boolean(document.querySelector('[data-block-id], script[src*="lib/rise/"]'));
+  if (rise) return 'rise';
   const hasGlobals = typeof w['globalProvideData'] === 'function' || (typeof w['DS'] === 'object' && w['DS'] !== null) || typeof w['g_slideData'] !== 'undefined';
   const hasAssets = Boolean(document.querySelector('script[src*="story_content"], script[src*="bootstrapper.min.js"], script[src*="slides.min.js"], link[href*="story_content"], link[href*="output.min.css"]'));
   return hasGlobals || hasAssets ? 'storyline' : 'unknown';

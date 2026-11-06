@@ -1,42 +1,69 @@
 import type { Frame, Page } from 'playwright';
 
+/** Checks whether a frame is an allowed content frame for the host page. Supports same-origin, Articulate Review 360 embeds, and organizational CDNs. */
+export function isAllowedContentFrameOrigin(frameUrl: string, mainUrl: string): boolean {
+  try {
+    const fUrl = new URL(frameUrl);
+    const mUrl = new URL(mainUrl);
+    // 1. Same origin is always allowed
+    if (fUrl.origin === mUrl.origin) return true;
+
+    // 2. Articulate Review 360 and Rise ecosystem: 360.articulate.com embedding articulateusercontent.com, articulate.com, or cloudfront.net
+    const isArticulateHost = mUrl.hostname.endsWith('articulate.com') || mUrl.hostname === '360.articulate.com';
+    const isArticulateContent =
+      fUrl.hostname.endsWith('articulate.com') ||
+      fUrl.hostname.endsWith('articulateusercontent.com') ||
+      fUrl.hostname.endsWith('cloudfront.net');
+    if (isArticulateHost && isArticulateContent) return true;
+
+    // 3. Same organizational second-level domain (e.g. content.company.com inside lms.company.com)
+    const mParts = mUrl.hostname.split('.');
+    const fParts = fUrl.hostname.split('.');
+    if (mParts.length >= 2 && fParts.length >= 2) {
+      const mDomain = mParts.slice(-2).join('.');
+      const fDomain = fParts.slice(-2).join('.');
+      if (mDomain && fDomain && mDomain === fDomain) return true;
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 /** How much a document offers a learner: visible text plus controls. */
 async function richness(f: Frame): Promise<number> {
   return f
     .evaluate(() => {
       const b = document.body;
       if (!b) return 0;
-      const controls = document.querySelectorAll('button,a[href],[role="button"],[role="tab"],details,[aria-expanded]').length;
-      return (b.innerText || '').trim().length + controls * 20;
+      const isReviewIframe =
+        window.location.href.includes('articulateusercontent') ||
+        window.location.href.includes('/content/') ||
+        window.location.href.includes('/review/');
+      const controls = document.querySelectorAll(
+        'button,a[href],[role="button"],[role="tab"],details,[aria-expanded],input,select',
+      ).length;
+      return (b.innerText || '').trim().length + controls * 20 + (isReviewIframe ? 1000 : 0);
     })
     .catch(() => 0);
 }
 
 /**
- * Many published courses (Rise and other SCORM wrappers) show the lesson in an iframe inside a nearly empty wrapper page.
+ * Many published courses (Rise, Review 360, and other SCORM wrappers) show the lesson in an iframe inside a wrapper page.
  * Controls, text and URL hashes then live in the frame. This returns the frame that holds the content, or the page itself
- * when the page already holds it. A frame is chosen only when it is same-origin with the page and clearly richer than the
- * page, so a small embed inside a real page never takes over.
+ * when the page already holds it.
  */
 export async function contentRoot(page: Page): Promise<Page | Frame> {
   const main = page.mainFrame();
   const frames = page.frames().filter((f) => f !== main && f.url().startsWith('http') && !/\/(blank|AICCComm)\.html?(\?|$)/i.test(f.url()));
   if (frames.length === 0) return page;
-  let origin = '';
-  try {
-    origin = new URL(main.url()).origin;
-  } catch {
-    return page;
-  }
+  const mainUrl = main.url();
   const mainScore = await richness(main);
   let best: Frame | undefined;
-  let bestScore = mainScore * 2 + 40;
+  let bestScore = Math.max(mainScore * 1.5 + 40, 50);
   for (const f of frames) {
-    try {
-      if (new URL(f.url()).origin !== origin) continue;
-    } catch {
-      continue;
-    }
+    if (!isAllowedContentFrameOrigin(f.url(), mainUrl)) continue;
     const s = await richness(f);
     if (s > bestScore) {
       best = f;

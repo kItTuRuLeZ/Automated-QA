@@ -21,13 +21,91 @@ import { type PerfSample, collectPerf, detectPlatform } from '../adapters/layout
 
 export interface CaptureOutput extends EngineResult {
   state?: CourseState;
-  /** True when the initial navigation produced no usable page (timeout, network error, blocked). */
+  /** True when the initial navigation produced no usable page (timeout, network error, blocked, or soft 404/auth wall). */
   navigationFailed: boolean;
   navigationReason?: ReasonCode;
+  navigationReasonDetail?: string;
   /** Page-load sample from the first (cold-cache) navigation, for PERF-001. */
   perf?: PerfSample;
-  platform?: 'storyline' | 'unknown';
+  platform?: 'storyline' | 'rise' | 'unknown';
   outOfScope: boolean;
+}
+
+export function isTelemetryOrTracker(url: string): boolean {
+  return (
+    /bat\.bing\.com|google-analytics\.com|googletagmanager\.com|stats\.g\.doubleclick\.net|connect\.facebook\.net|clarity\.ms|hotjar\.com|px\.ads\.linkedin\.com|analytics\.twitter\.com/i.test(
+      url,
+    ) || /\/(sessions\/me|api\/v1\/sessions)\b/i.test(url)
+  );
+}
+
+export interface SoftError {
+  isError: boolean;
+  type: 'not_found' | 'auth_required' | 'access_denied' | 'blank';
+  title: string;
+  message: string;
+}
+
+export function detectSoftError(title: string | undefined, url: string, bodyH1: string, bodyText: string): SoftError | null {
+  const t = (title ?? '').trim();
+  const lowerTitle = t.toLowerCase();
+  const lowerH1 = (bodyH1 ?? '').trim().toLowerCase();
+  const lowerUrl = url.toLowerCase();
+  const lowerText = (bodyText ?? '').toLowerCase();
+
+  // 1. Not Found / Deleted Review (e.g. Articulate Review 360, Rise, standard 404 SPAs)
+  if (
+    /^(item not found|page not found|404\b|not found\b|course not found|content not found)/i.test(lowerTitle) ||
+    /\|\s*(404|not found|item not found)\b/i.test(lowerTitle) ||
+    /item not found\s*\|\s*review\s*360/i.test(lowerTitle) ||
+    lowerH1 === 'item not found' ||
+    lowerH1 === 'page not found' ||
+    lowerH1 === '404' ||
+    lowerH1.includes('review has been deleted') ||
+    lowerText.includes('the item you requested was not found') ||
+    lowerText.includes('this review has been deleted')
+  ) {
+    return {
+      isError: true,
+      type: 'not_found',
+      title: 'Course link reached an error page (Item not found)',
+      message: `The target URL loaded an error page ("${t || bodyH1 || 'Item not found'}") instead of course content. Confirm the course link is active, public, and not deleted or expired.`,
+    };
+  }
+
+  // 2. Auth wall / Sign-in required
+  if (
+    /^(sign in|log in|login|authenticate)\b/i.test(lowerTitle) ||
+    /id\.articulate\.com|accounts\.google\.com|login\.microsoftonline\.com|okta\.com/i.test(lowerUrl) ||
+    lowerH1 === 'sign in' ||
+    lowerH1 === 'log in' ||
+    (lowerText.includes('sign in to your account') && !lowerText.includes('lesson') && !lowerText.includes('course')) ||
+    (lowerText.includes('sign in to continue') && !lowerText.includes('lesson'))
+  ) {
+    return {
+      isError: true,
+      type: 'auth_required',
+      title: 'Course link requires sign-in (Login wall)',
+      message: `The target URL redirected to a sign-in or identity provider page ("${t || 'Sign in'}"). A public link or an uploaded course package is required for scanning.`,
+    };
+  }
+
+  // 3. Access Denied / 403 Forbidden
+  if (
+    /^(access denied|forbidden|403\b|unauthorized)/i.test(lowerTitle) ||
+    lowerH1 === 'access denied' ||
+    lowerH1 === 'forbidden' ||
+    lowerText.includes('you do not have permission to view this')
+  ) {
+    return {
+      isError: true,
+      type: 'access_denied',
+      title: 'Course link access denied',
+      message: `The target URL returned an access denied page ("${t || 'Access denied'}").`,
+    };
+  }
+
+  return null;
 }
 
 const SETTLE_MS = 2_000;
@@ -51,7 +129,7 @@ export class InitialCapture implements CaptureProvider {
       /** Resource types reported by a more specific engine (images and media go to MED-001/002). */
       excludeResourceTypes?: readonly string[];
     },
-  ) {}
+  ) { }
 
   async capture(ctx: ProviderContext): Promise<CaptureOutput> {
     const started = Date.now();
@@ -81,6 +159,7 @@ export class InitialCapture implements CaptureProvider {
       const req = res.request();
       if (isMain(req)) return;
       if (this.deps.excludeResourceTypes?.includes(req.resourceType())) return;
+      if (isTelemetryOrTracker(req.url())) return;
       if (res.status() >= 400 && res.headers()['x-cqa-blocked'] !== '1') {
         failedRequests.push({ url: san(req.url()), resourceType: req.resourceType(), status: res.status() });
       }
@@ -91,6 +170,7 @@ export class InitialCapture implements CaptureProvider {
       // Requests cancelled by the page itself (AbortController, route change) are not failures.
       if (isAbort(req.failure()?.errorText)) return;
       if (this.deps.excludeResourceTypes?.includes(req.resourceType())) return;
+      if (isTelemetryOrTracker(req.url())) return;
       failedRequests.push({ url: san(req.url()), resourceType: req.resourceType(), error: req.failure()?.errorText ?? 'failed' });
     });
     page.on('request', (req) => {
@@ -145,32 +225,78 @@ export class InitialCapture implements CaptureProvider {
       }
     });
 
-    // ---- RUN-001 ----
+    // ---- RUN-001 & Soft-Error / Auth-Wall detection ----
+    let title: string | undefined;
+    let softError: SoftError | null = null;
+    // A real HTTP error is reported as that status further down; these checks are for pages that answer 200 but are not the course.
+    const answeredOk = status === undefined || status < 400;
+    if (!navError && !outOfScopeHop) {
+      title = await settledTitle(page);
+      const excerpt = await page
+        .evaluate(() => {
+          const h1 = (document.querySelector('h1')?.innerText || '').trim();
+          const text = (document.body?.innerText || '').slice(0, 1000).trim();
+          return { h1, text };
+        })
+        .catch(() => ({ h1: '', text: '' }));
+      softError = answeredOk ? detectSoftError(title, page.url(), excerpt.h1, excerpt.text) : null;
+      // A page that loads but never shows anything (a player that failed to start) is not a working launch.
+      if (answeredOk && !softError) {
+        const shown = await page.waitForFunction(hasVisibleContent, undefined, { timeout: Math.min(BLANK_WAIT_MS, ctx.budgets.navigationTimeoutMs) }).then(() => true, () => false);
+        if (!shown && !page.isClosed()) softError = { isError: true, type: 'blank', title: 'The launch page stayed blank', message: `The page loaded but stayed blank: no text, images, media, canvas or frames appeared within ${Math.round(Math.min(BLANK_WAIT_MS, ctx.budgets.navigationTimeoutMs) / 1000)} s.` };
+      }
+    }
+
     const blockedTarget = this.deps.blocked().some((b) => b.host && hostOf(this.deps.targetUrl) === b.host);
     let navigationReason: ReasonCode | undefined;
-    if (navError) navigationReason = blockedTarget ? 'blocked_by_policy' : /timeout/i.test(navError.message) ? 'timeout' : 'navigation_failed';
-    const navigationFailed = navError !== undefined;
+    let navigationReasonDetail: string | undefined;
+    if (navError) {
+      navigationReason = blockedTarget ? 'blocked_by_policy' : /timeout/i.test(navError.message) ? 'timeout' : 'navigation_failed';
+      navigationReasonDetail = sanitizeText(navError.message.split('\n')[0] ?? '', redaction);
+    } else if (softError) {
+      navigationReason = 'navigation_failed';
+      navigationReasonDetail = softError.message;
+    }
+    const navigationFailed = navError !== undefined || softError !== null;
     const navEvidence = await ctx.evidence.addEvidence({
       kind: 'network_entry',
       caption: 'Initial navigation',
-      data: { requestedUrl: san(this.deps.targetUrl), finalUrl, status: status ?? null, redirectChain: chain.map(san), durationMs: navMs, error: navError ? sanitizeText(navError.message.split('\n')[0] ?? '', redaction) : null },
+      data: { requestedUrl: san(this.deps.targetUrl), finalUrl, status: status ?? null, redirectChain: chain.map(san), durationMs: navMs, error: navError ? sanitizeText(navError.message.split('\n')[0] ?? '', redaction) : softError ? softError.message : null },
       stateId,
       viewportName,
       capturedAt: nowIso(),
       redacted: true,
     });
 
-    if (navigationFailed) {
-      checks.push(check('RUN-001', 'failed', navMs, [navEvidence.id, ...screenshotIds], { stateId, viewportName, reason: navigationReason, reasonDetail: sanitizeText(navError!.message.split('\n')[0] ?? '', redaction) }));
+    if (navError) {
+      checks.push(check('RUN-001', 'failed', navMs, [navEvidence.id, ...screenshotIds], { stateId, viewportName, reason: navigationReason, reasonDetail: navigationReasonDetail }));
       findings.push(
         finding('RUN-001', location, {
           title: navigationReason === 'timeout' ? 'Initial page did not finish loading within the timeout' : 'Initial page could not be loaded',
-          observed: navigationReason === 'timeout' ? `Navigation did not reach the load event within ${ctx.budgets.navigationTimeoutMs} ms.` : `Navigation failed: ${sanitizeText(navError!.message.split('\n')[0] ?? '', redaction)}`,
+          observed: navigationReason === 'timeout' ? `Navigation did not reach the load event within ${ctx.budgets.navigationTimeoutMs} ms.` : `Navigation failed: ${navigationReasonDetail}`,
           expected: 'The course URL loads and reaches the load event.',
           evidenceIds: [navEvidence.id, ...screenshotIds],
           reproductionSteps: reproBase,
           remediation: 'Confirm the URL is published and reachable, and that the server responds within the configured timeout.',
           targetKey: 'navigation',
+        }),
+      );
+    } else if (softError) {
+      checks.push(check('RUN-001', 'failed', navMs, [navEvidence.id, ...screenshotIds], { stateId, viewportName, reason: 'navigation_failed', reasonDetail: softError.message }));
+      findings.push(
+        finding('RUN-001', location, {
+          title: softError.title,
+          observed: softError.message,
+          expected: 'The course URL loads valid course content.',
+          evidenceIds: [navEvidence.id, ...screenshotIds],
+          reproductionSteps: [...reproBase, `Observe that the page displays: "${truncate(title || 'Error', 100)}"`],
+          remediation: softError.type === 'blank'
+            ? 'Open the course in a browser and look for script or loading errors. A player that fails to start usually leaves an empty page.'
+            : softError.type === 'auth_required'
+            ? 'The course requires login credentials. Provide a public review link, an unauthenticated direct link, or upload the course ZIP.'
+            : 'The course or review item was not found. Confirm the link is active and has not been deleted or expired.',
+          targetKey: 'soft-error',
+          severity: 'critical',
         }),
       );
     } else if (status !== undefined && status >= 400) {
@@ -212,14 +338,12 @@ export class InitialCapture implements CaptureProvider {
     }
 
     let perf: PerfSample | undefined;
-    let platform: 'storyline' | 'unknown' | undefined;
+    let platform: 'storyline' | 'rise' | 'unknown' | undefined;
     const pageUsable = !navigationFailed && !outOfScopeHop;
     const skipReason: ReasonCode = outOfScopeHop ? 'out_of_scope' : (navigationReason ?? 'state_unreachable');
 
     // ---- RUN-005 title, RUN-006 timing ----
-    let title: string | undefined;
     if (pageUsable) {
-      title = await settledTitle(page);
       const titleEv = await ctx.evidence.addEvidence({ kind: 'text_excerpt', caption: 'Document title', data: { title }, stateId, viewportName, capturedAt: nowIso(), redacted: false });
       if (title) {
         checks.push(check('RUN-005', 'passed', 0, [titleEv.id], { stateId, viewportName }));
@@ -252,7 +376,15 @@ export class InitialCapture implements CaptureProvider {
         })
         .catch(() => null);
       perf = await page.evaluate(collectPerf).catch(() => undefined);
-      platform = await page.evaluate(detectPlatform).catch(() => 'unknown' as const);
+      // LMS exports wrap the course in a frame, so ask every frame (main document first) and keep the first answer that is not 'unknown'.
+      platform = 'unknown';
+      for (const f of [page.mainFrame(), ...page.frames().filter((x) => x !== page.mainFrame())]) {
+        const p = await f.evaluate(detectPlatform).catch(() => 'unknown' as const);
+        if (p !== 'unknown') {
+          platform = p;
+          break;
+        }
+      }
       if (timing) {
         const ev = await ctx.evidence.addEvidence({
           kind: 'timing',
@@ -389,6 +521,7 @@ export class InitialCapture implements CaptureProvider {
       state,
       navigationFailed,
       navigationReason,
+      navigationReasonDetail,
       perf,
       platform,
       outOfScope: outOfScopeHop !== undefined,
@@ -411,9 +544,25 @@ function safe<T>(fn: () => T): T | undefined {
 
 
 /** Single-page apps often set the title after load; wait briefly before judging it missing. */
+/** How long a loaded page may take to show its first content before it counts as blank. */
+const BLANK_WAIT_MS = 8_000;
+
+/** Runs in the page: true once anything a learner could see is on screen. */
+export function hasVisibleContent(): boolean {
+  const body = document.body;
+  if (!body) return false;
+  if ((body.innerText || '').trim().length > 0) return true;
+  for (const el of document.querySelectorAll('img, svg, canvas, video, object, embed, iframe, frame, input, button, select, textarea, [role="img"]')) {
+    const r = el.getBoundingClientRect();
+    const st = getComputedStyle(el);
+    if (r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none') return true;
+  }
+  return false;
+}
+
 async function settledTitle(page: Page, timeoutMs = 5_000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
-  for (;;) {
+  for (; ;) {
     const t = (await page.title().catch(() => '')).trim();
     if (t || Date.now() > deadline) return t;
     await page.waitForTimeout(250);

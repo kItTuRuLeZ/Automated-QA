@@ -505,6 +505,55 @@ export function harnessInitScript(cfg: HarnessConfig): string {
   return `globalThis.__name ??= (fn) => fn;\n(function(){ if (window !== window.top) return; if (location.pathname.endsWith(${JSON.stringify(READBACK_PATH)})) return; try { localStorage.removeItem('__cqaScormSpill'); } catch {} (${scormHarness.toString()})(${JSON.stringify(cfg)}, window); })();`;
 }
 
+/**
+ * Neutralizes Articulate Rise's "loadOnlyInLms: true" barrier that throws
+ * "Content launched outside of a supported LMS environment" when lessons or subframes
+ * are navigated or replayed during scanning.
+ */
+export function riseLmsBypassScript(): string {
+  return `(function() {
+    try {
+      const origGetById = Document.prototype.getElementById;
+      Document.prototype.getElementById = function(id) {
+        const el = origGetById.call(this, id);
+        if (id === '__CONFIG__' && el && el.textContent && el.textContent.includes('loadOnlyInLms')) {
+          try {
+            el.textContent = el.textContent.replace(/"loadOnlyInLms"\\s*:\\s*true/g, '"loadOnlyInLms":false');
+          } catch {}
+        }
+        return el;
+      };
+    } catch {}
+
+    try {
+      if (!window.RiseLMSInterface) {
+        const stub = {
+          getMasteryScore: () => 100,
+          bookmark: () => {},
+          setBookmark: () => {},
+          getProgress: () => ({ percentComplete: 0, lessons: {} }),
+          setLessonProgress: () => {},
+          setCourseProgress: () => {},
+          finish: () => {},
+          finishQuiz: () => {},
+          finishStoryline: () => {},
+          reportAnswer: () => {},
+          reportUngradedAnswers: () => {},
+          setLocale: () => {},
+          getLocale: () => 'en',
+          exit: () => {},
+          getStudentId: () => 'cqa-test-learner',
+          getStudentName: () => 'Test Learner',
+          isLmsPresent: () => true,
+        };
+        try {
+          Object.defineProperty(window, 'RiseLMSInterface', { value: stub, writable: true, configurable: true });
+        } catch {}
+      }
+    } catch {}
+  })();`;
+}
+
 /** Path on the package origin the scan opens after leaving, to collect calls made while the course page closed. */
 export const READBACK_PATH = '/__cqa_scorm_readback';
 

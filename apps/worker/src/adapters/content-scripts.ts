@@ -141,10 +141,31 @@ export async function collectPageContent(args: { placeholderPatterns: string[]; 
   }
 
   // ---- images ----
+  const isTrackerBeacon = (img: HTMLImageElement, src: string): boolean => {
+    // 0x0 or 1x1 invisible tracking pixels
+    const w = img.width;
+    const h = img.height;
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if ((w <= 1 && h <= 1 && w >= 0) || (nw <= 1 && nh <= 1 && img.complete && nw > 0)) {
+      return true;
+    }
+    // Known third-party ad, analytics, and telemetry beacon endpoints
+    if (
+      /bat\.bing\.com|google-analytics\.com|googletagmanager\.com|stats\.g\.doubleclick\.net|connect\.facebook\.net|clarity\.ms|hotjar\.com|px\.ads\.linkedin\.com|analytics\.twitter\.com|t\.co\/i\/adsct/i.test(
+        src,
+      )
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   const images: ImageInfo[] = [];
   for (const img of document.querySelectorAll('img')) {
     const src = img.currentSrc || img.getAttribute('src') || '';
     if (!src || src.startsWith('data:')) continue;
+    if (isTrackerBeacon(img, src)) continue;
     let decodeFailed = false;
     if (img.complete && img.naturalWidth === 0) {
       decodeFailed = await img.decode().then(

@@ -9,7 +9,7 @@ import { ENGINE_VERSION, recordRunLevelCases, runFunctionalTests } from './engin
 import { RunRecorder } from './recorder.js';
 import { Traversal, type TraversalOutput } from './engines/traversal.js';
 import { ContentChecks, type LinkAppearance } from './engines/content.js';
-import { harnessInitScript } from './adapters/scorm-harness.js';
+import { harnessInitScript, riseLmsBypassScript } from './adapters/scorm-harness.js';
 import { BrandChecks } from './engines/brand.js';
 import { runScormScenarios } from './engines/scorm.js';
 import { LinkChecker } from './engines/links.js';
@@ -20,6 +20,9 @@ import { LayoutChecks } from './engines/layout.js';
 import { runViewportPasses } from './engines/viewport-pass.js';
 import { InitialCapture } from './engines/capture.js';
 import { type BlockedConnection, EgressProxy } from './net/egress-proxy.js';
+import { classifyBrowserError } from './browser-errors.js';
+import { blocksScrolledIntoView } from './adapters/rise.js';
+import { contentRoot } from './adapters/content-root.js';
 
 const require = createRequire(import.meta.url);
 let axeCache: string | undefined;
@@ -38,6 +41,8 @@ export interface WorkerDeps {
   tmpRoot: string;
   log: Logger;
   workerId: string;
+  /** Starts the scan browser. Tests replace it to simulate a missing or crashing browser. */
+  launchBrowser?: (options: LaunchOptions) => Promise<Browser>;
   leaseMs?: number;
   heartbeatMs?: number;
 }
@@ -60,7 +65,7 @@ export function chromiumLaunchOptions(proxy: { port: number; username: string; p
   };
 }
 
-type AbortReason = 'cancelled' | 'budget_runtime' | 'worker_lost';
+type AbortReason = 'cancelled' | 'budget_runtime' | 'worker_lost' | 'browser_crashed';
 
 /**
  * Executes one claimed run end to end. Always finishes the run with a terminal
@@ -106,10 +111,12 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
   };
   let browser: Browser | undefined;
   let proxy: EgressProxy | undefined;
+  let closing = false;
   const tmpDir = path.join(deps.tmpRoot, run.id);
   const blocked: BlockedConnection[] = [];
 
   controller.signal.addEventListener('abort', () => {
+    closing = true;
     // Closing the browser interrupts any in-flight navigation immediately.
     void browser?.close().catch(() => undefined);
     void proxy?.stop();
@@ -136,6 +143,12 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     const why = excludedRules.get(rule.id);
     if (why) store.insertCheckResult({ id: newId<CheckResultId>(), runId: run.id, ruleId: rule.id, outcome: 'not_applicable', reason: 'excluded_by_profile', reasonDetail: `Switched off by client profile "${profile?.name}": ${why}`, durationMs: 0, evidenceIds: [], executedAt: nowIso() });
   }
+
+  // The 'disconnected' event can arrive after the failed navigation it caused, so also ask the browser directly.
+  const stopIfAborted = () => {
+    if (!closing && browser && !browser.isConnected()) abort('browser_crashed');
+    if (controller.signal.aborted) throw new Error('aborted');
+  };
 
   const persistCheckNotTested = (reason: ReasonCode, detail?: string) => {
     for (const rule of ownedRules) {
@@ -170,7 +183,21 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     const proxyPort = await proxy.start();
 
     const viewport = run.config.viewports[0]!;
-    browser = await chromium.launch(chromiumLaunchOptions({ port: proxyPort, username: proxy.username, password: proxy.password }, tmpDir));
+    const launch = deps.launchBrowser ?? ((o: LaunchOptions) => chromium.launch(o));
+    try {
+      browser = await launch(chromiumLaunchOptions({ port: proxyPort, username: proxy.username, password: proxy.password }, tmpDir));
+    } catch (err) {
+      // Nothing was checked: say why, in words the person can act on, instead of a raw Playwright stack.
+      const why = classifyBrowserError(err);
+      log.error({ err, runId: run.id }, 'scan browser could not be launched');
+      persistCheckNotTested(why.reason, why.detail);
+      store.finishRun(run.id, { status: 'failed', reason: why.reason, detail: why.detail });
+      return 'failed';
+    }
+    // A browser that goes away on its own (crash, killed process) ends the run instead of leaving it waiting on dead pages.
+    browser.on('disconnected', () => {
+      if (!closing) abort('browser_crashed');
+    });
     if (controller.signal.aborted) throw new Error('aborted');
     const context = await browser.newContext({
       viewport: { width: viewport.width, height: viewport.height },
@@ -182,6 +209,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     });
     // tsx/esbuild may wrap serialized functions with a `__name` helper; define a no-op so page.evaluate works.
     await context.addInitScript({ content: 'globalThis.__name ??= (fn) => fn;' });
+    await context.addInitScript({ content: riseLmsBypassScript() });
     // axe-core is injected into every frame before page scripts run (also works under a restrictive CSP).
     if (run.config.engines.accessibility) await context.addInitScript({ content: axeSource() });
     // SCORM packages get a test API in the exploring browser too, so the course behaves as it would in an LMS while it is clicked through.
@@ -210,6 +238,10 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     const ctx: ProviderContext = { runId: run.id, config: run.config, budgets: run.config.budgets, viewport, signal: controller.signal, evidence: sink, page };
     const capture = new InitialCapture({ policy: deps.policy, targetUrl, blocked: () => blocked, excludeResourceTypes });
     const out = await capture.capture(ctx);
+    // A navigation that failed because the browser itself went away is a browser failure, not a course that would not load.
+    // Chromium reports such a navigation as "net::ERR_ABORTED" or "Target … closed", so look at the page and the browser, not only the message.
+    if (!closing && out.navigationFailed && (page.isClosed() || !browser.isConnected() || classifyBrowserError(out.navigationReasonDetail ?? '').reason === 'browser_crashed')) abort('browser_crashed');
+    stopIfAborted();
 
     if (out.state) store.insertState(out.state);
     for (const c of out.checkResults) store.insertCheckResult({ ...c, id: newId<CheckResultId>(), runId: run.id });
@@ -232,21 +264,21 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     const layoutEngine =
       run.config.engines.layout || run.config.engines.performance
         ? new LayoutChecks({
-            courseUrl: targetUrl,
-            browser: () => browserInfo,
-            settings: run.config.layout ?? DEFAULT_LAYOUT_SETTINGS,
-            baselines: {
-              lookup: (key) => store.getBaseline(run.projectId, targetUrl, key)?.artifactId,
-              read: (id) => {
-                const rec = store.getArtifact(id);
-                try {
-                  return rec ? readFileSync(deps.artifacts.absolutePath(rec)) : undefined;
-                } catch {
-                  return undefined;
-                }
-              },
+          courseUrl: targetUrl,
+          browser: () => browserInfo,
+          settings: run.config.layout ?? DEFAULT_LAYOUT_SETTINGS,
+          baselines: {
+            lookup: (key) => store.getBaseline(run.projectId, targetUrl, key)?.artifactId,
+            read: (id) => {
+              const rec = store.getArtifact(id);
+              try {
+                return rec ? readFileSync(deps.artifacts.absolutePath(rec)) : undefined;
+              } catch {
+                return undefined;
+              }
             },
-          })
+          },
+        })
         : undefined;
     // Storyline is a fixed-size stage that scales instead of reflowing: other screen sizes and the 320 px reflow check do not apply.
     const nonResponsive = out.platform === 'storyline' && !run.config.layout?.testNonResponsive;
@@ -265,6 +297,8 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
           contentErrors.push(truncateLine((err as Error).message));
         }
       };
+      // Rise lessons scroll: record which listed blocks a learner would actually see, not only that the lesson opened.
+      if (out.platform === 'rise') await guarded(async () => rec.blocksSeen(await blocksScrolledIntoView(await contentRoot(page)), state.id));
       // Run every engine first, then outline the affected elements while the page still shows this state, then save.
       const batches: Array<Parameters<typeof persistResults>[0]> = [];
       if (contentOn) {
@@ -389,6 +423,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
           newContext: async () => {
             const c = await browser!.newContext({ viewport: { width: viewport.width, height: viewport.height }, deviceScaleFactor: viewport.deviceScaleFactor, isMobile: viewport.isMobile, hasTouch: viewport.hasTouch, serviceWorkers: 'block', acceptDownloads: false });
             await c.addInitScript({ content: 'globalThis.__name ??= (fn) => fn;' });
+            await c.addInitScript({ content: riseLmsBypassScript() });
             if (run.config.engines.scorm && run.config.scorm) await c.addInitScript({ content: harnessInitScript({ version: run.config.scorm.version, learner: { id: 'cqa-test-learner', name: 'Test Learner' }, restore: {}, entry: 'ab-initio', launchData: run.config.scorm.launchData, masteryScore: run.config.scorm.masteryScore, priorTotalSeconds: 0 }) });
             return c;
           },
@@ -460,7 +495,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     if (out.navigationFailed) {
       status = 'failed';
       reason = out.navigationReason;
-      detail = 'The initial page could not be loaded, so page checks were not run.';
+      detail = out.navigationReasonDetail || 'The initial page could not be loaded, so page checks were not run.';
     } else if (out.outOfScope || budgetsReached.length || out.errors.length || traversalError || coverage.failedTransitions || contentErrors.length || viewportGaps) {
       status = 'partial';
       reason = out.outOfScope ? 'out_of_scope' : budgetsReached[0] ?? (coverage.failedTransitions || viewportGaps ? 'state_unreachable' : 'engine_error');
@@ -475,6 +510,8 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       ].filter(Boolean);
       detail = parts.join(' ') || 'Some content could not be checked.';
     }
+    // Engines that catch their own errors can reach here after the browser died or the scan was cancelled; the abort reason decides the ending.
+    stopIfAborted();
     rec.stage('finalizing', 'Saving results');
     store.finishRun(run.id, { status, reason, detail, coverage });
     return status;
@@ -491,15 +528,23 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       store.finishRun(run.id, { status: partial ? 'partial' : 'failed', reason: 'budget_runtime', detail: `Stopped at the ${run.config.budgets.maxRuntimeMs} ms runtime budget.` });
       return partial ? 'partial' : 'failed';
     }
+    if (why === 'browser_crashed') {
+      const detail = 'The scan browser closed or crashed during the scan. Results up to that point are kept; checks not yet run are marked not tested.';
+      recordUnfinished(store, run.id, 'browser_crashed', detail);
+      store.finishRun(run.id, { status: 'failed', reason: 'browser_crashed', detail });
+      return 'failed';
+    }
     if (why === 'worker_lost') {
       log.error({ runId: run.id }, 'lease lost; abandoning run');
       return 'failed';
     }
     log.error({ err, runId: run.id }, 'scan failed');
-    recordUnfinished(store, run.id, 'engine_error', (err as Error).message.split('\n')[0]);
-    store.finishRun(run.id, { status: 'failed', reason: 'engine_error', detail: (err as Error).message.split('\n')[0] });
+    const failure = classifyBrowserError(err);
+    recordUnfinished(store, run.id, failure.reason, failure.detail);
+    store.finishRun(run.id, { status: 'failed', reason: failure.reason, detail: failure.detail });
     return 'failed';
   } finally {
+    closing = true;
     clearInterval(heartbeat);
     clearTimeout(runtimeTimer);
     await browser?.close().catch(() => undefined);

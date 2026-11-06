@@ -9,51 +9,71 @@ export interface WorkerLoop {
   idle(): Promise<void>;
 }
 
+/** Upper bound for parallel scans: each one is a full Chromium plus an egress proxy. */
+export const MAX_CONCURRENCY = 4;
+
+/** Reads CQA_WORKER_CONCURRENCY: a whole number from 1 to MAX_CONCURRENCY. Anything else falls back to 1. */
+export function concurrencyFromEnv(value: string | undefined): number {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 1 ? Math.min(n, MAX_CONCURRENCY) : 1;
+}
+
 /**
- * Single-concurrency job loop. On start it marks runs left `running` by a
- * previous worker process as `partial`/`failed` (`worker_lost`) and removes
- * orphaned temp directories; it does not re-run them.
+ * Job loop that runs up to `concurrency` scans at once (default 1), each in its
+ * own browser. On start it marks runs left `running` by a previous worker
+ * process as `partial`/`failed` (`worker_lost`) and removes orphaned temp
+ * directories; it does not re-run them.
  */
-export function startWorker(deps: Omit<WorkerDeps, 'workerId'> & { pollMs?: number; recoverAllOnStart?: boolean }): WorkerLoop {
+export function startWorker(deps: Omit<WorkerDeps, 'workerId'> & { pollMs?: number; recoverAllOnStart?: boolean; concurrency?: number }): WorkerLoop {
   const workerId = randomUUID();
   const full: WorkerDeps = { ...deps, workerId };
+  const limit = Math.min(Math.max(1, Math.floor(deps.concurrency ?? 1)), MAX_CONCURRENCY);
   const recovered = deps.store.recoverOrphanedRuns({ all: deps.recoverAllOnStart ?? true });
   if (recovered.length) deps.log.warn({ runs: recovered }, 'marked orphaned runs after restart');
   for (const entry of safeReaddir(deps.tmpRoot)) rmSync(path.join(deps.tmpRoot, entry), { recursive: true, force: true });
 
   let stopped = false;
-  let active: Promise<unknown> | undefined;
+  const active = new Set<Promise<unknown>>();
   let timer: NodeJS.Timeout | undefined;
 
-  const tick = async () => {
+  const schedule = (ms: number) => {
+    if (stopped) return;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(tick, ms);
+  };
+
+  const tick = () => {
+    timer = undefined;
     if (stopped) return;
     try {
-      const run = deps.store.claimNextJob(workerId, deps.leaseMs ?? 30_000);
-      if (run) {
+      while (active.size < limit) {
+        const run = deps.store.claimNextJob(workerId, deps.leaseMs ?? 30_000);
+        if (!run) break;
         deps.log.info({ runId: run.id }, 'scan started');
-        active = runScan(full, run);
-        const status = await active;
-        deps.log.info({ runId: run.id, status }, 'scan finished');
-        active = undefined;
-        setImmediate(tick);
-        return;
+        const p: Promise<unknown> = runScan(full, run)
+          .then((status) => deps.log.info({ runId: run.id, status }, 'scan finished'))
+          .catch((err) => deps.log.error({ err, runId: run.id }, 'scan crashed the worker loop'))
+          .finally(() => {
+            active.delete(p);
+            schedule(0);
+          });
+        active.add(p);
       }
     } catch (err) {
       deps.log.error({ err }, 'worker tick failed');
-      active = undefined;
     }
-    if (!stopped) timer = setTimeout(tick, deps.pollMs ?? 1_000);
+    schedule(deps.pollMs ?? 1_000);
   };
-  timer = setTimeout(tick, 0);
+  schedule(0);
 
   return {
     async stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
-      await active;
+      await Promise.all([...active]);
     },
     async idle() {
-      while (active) await active;
+      while (active.size) await Promise.all([...active]);
     },
   };
 }

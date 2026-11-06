@@ -91,7 +91,7 @@ describe('bounded traversal against fixtures', () => {
 
   it('frames: out-of-scope, blocked, and not-yet-explored frames are disclosed, never counted as passed', async () => {
     const { checks, findings, states } = await scan('iframe/');
-    expect(outcomes(checks, 'COV-002')).toEqual(['needs_review']);
+    expect(outcomes(checks, 'COV-002')).toEqual(['unsupported']);
     const titles = ruleFindings(findings, 'COV-002').map((f) => f.observed);
     expect(titles.some((t) => t.includes(fx.otherOrigin) && t.includes('out_of_scope'))).toBe(true);
     expect(titles.some((t) => t.includes('169.254.169.254'))).toBe(true);
@@ -154,6 +154,8 @@ describe('defects must reproduce', () => {
     expect(ruleFindings(findings, 'NAV-001')).toEqual([]);
     expect(actionsFor(actions, 'Two')[0]?.outcome).toBe('succeeded');
     expect(checks.find((c) => c.ruleId === 'NAV-001')?.reasonDetail).toContain('second attempt');
+    // The retried pass keeps its history instead of looking like a first-time pass.
+    expect(checks.find((c) => c.ruleId === 'NAV-001')).toMatchObject({ outcome: 'passed', attempt: 2, firstAttemptOutcome: 'failed' });
   });
 });
 

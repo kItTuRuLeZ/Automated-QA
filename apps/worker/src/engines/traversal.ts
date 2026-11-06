@@ -68,6 +68,16 @@ const KIND_PRIORITY: Record<TraversalAction['kind'], number> = {
 const SETTLE_IDLE_MS = 1_500;
 const STABLE_QUIET_MS = 600;
 const STABLE_MAX_MS = 8_000;
+/** How long a slide may keep its Next hidden or disabled (narration, entrance animations) before the walk gives up on it. */
+const NEXT_WAIT_MS = 150_000;
+/** How long Next may stay locked before automatic answers try the slide's own controls (hotspots, reveal buttons). */
+const REVEAL_AFTER_MS = 12_000;
+/** How many other answer choices automatic answers try when the first one does not unlock Next. */
+const MAX_ANSWER_TRIES = 5;
+/** How long one slide's hotspots may take to open one after another. */
+const REVEAL_MAX_MS = 240_000;
+/** Player and course-frame controls that never unlock a slide: they are not clicked when revealing. */
+const PLAYER_CHROME = /^(play|pause|replay|help|glossary|resources?|resorces|menu|transcript|sidebar|skip|back|previous|prev|close|exit|submit|volume|captions|settings)/i;
 
 /** Which rule judges an action of this kind. */
 function ruleForKind(kind: TraversalAction['kind']): RuleId {
@@ -91,6 +101,10 @@ export class Traversal {
   readonly rules = TRAVERSAL_RULES;
   private readonly adapter = new GenericHtmlAdapter();
   private readonly gated = new WeakSet<object>();
+  private readonly unanswered = new WeakSet<object>();
+  private readonly revealedAfterNext = new WeakSet<object>();
+  /** How many slides each unrecognized control was found on. */
+  private readonly frameControls = new Map<string, number>();
 
   constructor(
     private readonly deps: {
@@ -177,7 +191,18 @@ export class Traversal {
     const timeLeft = () => this.deps.deadline - Date.now() > 0;
 
     const execute = async (a: Candidate) => {
-      if (a.kind === 'navigate') await page.goto(a.rawHref ?? a.href!, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
+      if (a.kind === 'navigate') {
+        const dest = a.rawHref ?? a.href!;
+        if ((cur as unknown) !== page && typeof (cur as any).goto === 'function') {
+          try {
+            await (cur as any).goto(dest, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
+          } catch {
+            await page.goto(dest, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
+          }
+        } else {
+          await page.goto(dest, { waitUntil: 'load', timeout: budgets.navigationTimeoutMs });
+        }
+      }
       else if ((a as Candidate & { dragTo?: string }).dragTo) await performDrag(page, cur, a.locator!, (a as Candidate & { dragTo?: string }).dragTo!);
       else {
         const loc = cur.locator(a.locator!).first();
@@ -253,7 +278,8 @@ export class Traversal {
       }
       // Already showing this state (it was just reached by the click that created it)? Then no replay is needed.
       const here = await snap().catch(() => undefined);
-      const alreadyHere = Boolean(here) && node.path.length > 0 && (strictKey(here!) === strictKey(node.snap) || structuralKey(here!) === structuralKey(node.snap));
+      const sameSlide = Boolean(this.deps.navigationOnly && here?.lessonId && here.lessonId === node.snap.lessonId);
+      const alreadyHere = Boolean(here) && node.path.length > 0 && (sameSlide || strictKey(here!) === strictKey(node.snap) || structuralKey(here!) === structuralKey(node.snap));
       if (!alreadyHere && !(await restore(node))) {
         failedTransitions++;
         coverage.push({ reason: 'state_unreachable', detail: `Could not restore state "${node.state.title ?? node.state.url}" by replaying its action path.`, stateId: node.state.id });
@@ -266,7 +292,8 @@ export class Traversal {
       onState(node.state);
       const uninspected = surfaces.frames.filter((f) => f.reason);
       inaccessibleFrames += uninspected.length;
-      checks.push(check('COV-002', uninspected.length ? 'needs_review' : surfaces.frames.length ? 'passed' : 'not_applicable', 0, [], { stateId: node.state.id, viewportName, itemsEvaluated: surfaces.frames.length }));
+      // A frame the scanner cannot open is a limit of the scanner, not something a person decided: 'unsupported', never a pass.
+      checks.push(check('COV-002', uninspected.length ? 'unsupported' : surfaces.frames.length ? 'passed' : 'not_applicable', 0, [], { stateId: node.state.id, viewportName, itemsEvaluated: surfaces.frames.length, ...(uninspected.length ? { reason: uninspected[0]!.reason, reasonDetail: `${uninspected.length} frame(s) not inspected.` } : {}) }));
       for (const f of uninspected) {
         addFinding('COV-002', node, {
           title: `Frame not inspected: ${f.frameUrl || '(no URL)'}`,
@@ -280,7 +307,7 @@ export class Traversal {
         }, { frameUrl: f.frameUrl });
       }
       unsupportedSurfaces += surfaces.canvases.length;
-      checks.push(check('COV-003', surfaces.canvases.length ? 'needs_review' : 'passed', 0, [], { stateId: node.state.id, viewportName, itemsEvaluated: surfaces.canvases.length }));
+      checks.push(check('COV-003', surfaces.canvases.length ? 'unsupported' : 'passed', 0, [], { stateId: node.state.id, viewportName, itemsEvaluated: surfaces.canvases.length, ...(surfaces.canvases.length ? { reason: 'unsupported_surface' as const, reasonDetail: `${surfaces.canvases.length} canvas surface(s) drawn as pixels.` } : {}) }));
       for (const c of surfaces.canvases) {
         addFinding('COV-003', node, {
           title: `Canvas content not inspectable (${c.width}×${c.height})`,
@@ -306,6 +333,46 @@ export class Traversal {
         await page.waitForTimeout(2_000);
         await settle();
         candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
+      }
+      // Controls found on several slides belong to the course frame (its own Back button, Help), not to one slide's activity.
+      if (this.deps.navigationOnly) for (const l of new Set(candidates.filter((c) => c.reason === 'ambiguous_action' && c.locator).map((c) => c.locator!))) this.frameControls.set(l, (this.frameControls.get(l) ?? 0) + 1);
+      // Slide players often show or enable Next only after the slide's narration or animation; wait for it instead of ending the walk.
+      if (this.deps.navigationOnly && node.path.length > 0) {
+        const waitUntil = Math.min(this.deps.deadline, Date.now() + NEXT_WAIT_MS);
+        const revealAt = Date.now() + REVEAL_AFTER_MS;
+        let waited = false;
+        let revealed = false;
+        let answerTries = 0;
+        let lastAnswer = Date.now();
+        while (!candidates.some((c) => !c.reason && c.kind === 'next') && Date.now() < waitUntil) {
+          waited = true;
+          // A question can appear only once the slide's narration reaches it; look for one again (runs once per screen).
+          if (!this.gated.has(node)) await this.passGate(node, page, cur, settle, snap, execute, coverage, describePath);
+          // Answered but Next is still locked: the course may want the right answer. Try the other choices in turn.
+          else if (this.deps.autoAnswer && answerTries < MAX_ANSWER_TRIES && Date.now() - lastAnswer >= 6_000 && !(await mediaPlaying(cur))) {
+            answerTries++;
+            lastAnswer = Date.now();
+            if (!(await this.answerAgain(node, page, cur, answerTries, settle))) answerTries = MAX_ANSWER_TRIES;
+          }
+          // "Click each hotspot to continue": with automatic answers on, open every in-slide control once so Next unlocks.
+          // Not while the slide's own narration plays: its controls usually appear, or start responding, only after it.
+          if (this.deps.autoAnswer && !revealed && Date.now() >= revealAt && !(await mediaPlaying(cur))) {
+            revealed = true;
+            await this.revealAll(node, page, cur, candidates, coverage, snap, async () =>
+              ((await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[]).some((c) => !c.reason && c.kind === 'next'),
+            );
+          } else await page.waitForTimeout(2_000);
+          await refresh();
+          candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
+        }
+        // The slide now looks different (Next appeared); compare later clicks against what it shows now, so no replay is needed.
+        if (waited) {
+          const now = await snap().catch(() => undefined);
+          if (now) {
+            node.snap = now;
+            if (!nodes.has(strictKey(now))) nodes.set(strictKey(now), node);
+          }
+        }
       }
       this.deps.onActions?.(node.state, candidates);
       const skipped = candidates.filter((c) => c.reason);
@@ -354,6 +421,11 @@ export class Traversal {
           continue;
         }
         const current = await snap().catch(() => undefined);
+        // A slide keeps animating after it was captured; still on the same slide means no replay is needed.
+        if (current && this.deps.navigationOnly && current.lessonId && current.lessonId === node.snap.lessonId && strictKey(current) !== strictKey(node.snap)) {
+          node.snap = current;
+          if (!nodes.has(strictKey(current))) nodes.set(strictKey(current), node);
+        }
         if (!current || strictKey(current) !== strictKey(node.snap)) {
           if (!(await restore(node))) {
             failedTransitions++;
@@ -379,6 +451,33 @@ export class Traversal {
           continue;
         }
         let after = await snap();
+        // A slide's own Next can ignore clicks while its entrance animation plays; still on the same slide means try again shortly.
+        for (let again = 0; this.deps.navigationOnly && cand.kind === 'next' && before.lessonId && after.lessonId === before.lessonId && again < 3 && timeLeft(); again++) {
+          await page.waitForTimeout(2_000);
+          try {
+            await execute(cand);
+          } catch {
+            break;
+          }
+          after = await snap();
+        }
+        // Next is shown but does nothing until the slide's activity is done (a trigger condition): do the activity, then try again.
+        if (this.deps.navigationOnly && this.deps.autoAnswer && cand.kind === 'next' && before.lessonId && after.lessonId === before.lessonId && !this.revealedAfterNext.has(node) && timeLeft()) {
+          this.revealedAfterNext.add(node);
+          await this.passGate(node, page, cur, settle, snap, execute, coverage, describePath);
+          for (const stopAt = Date.now() + 120_000; Date.now() < stopAt && (await mediaPlaying(cur)); ) await page.waitForTimeout(1_000);
+          const fresh = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
+          const moved = async () => {
+            await execute(cand).catch(() => undefined);
+            const s = await snap();
+            return s.lessonId !== before.lessonId ? s : undefined;
+          };
+          await this.revealAll(node, page, cur, fresh, coverage, snap, async () => Boolean(await moved().then((s) => s && (after = s))));
+          if (after.lessonId === before.lessonId) {
+            await execute(cand).catch(() => undefined);
+            after = await snap();
+          }
+        }
         let postOk = await this.verify(cur, cand.postconditions ?? [], before, after);
         let retried = false;
         // A defect must reproduce: before reporting a recognized control as broken, restore the state and try once more.
@@ -452,7 +551,7 @@ export class Traversal {
 
         const stateForResult = target ?? node;
         if (postOk) {
-          checks.push(check(ruleId, 'passed', duration, [], { stateId: node.state.id, viewportName, reasonDetail: retried ? 'Passed on the second attempt; the first attempt did not show the expected result in time.' : undefined }));
+          checks.push(check(ruleId, 'passed', duration, [], { stateId: node.state.id, viewportName, reasonDetail: retried ? 'Passed on the second attempt; the first attempt did not show the expected result in time.' : undefined, ...(retried ? { attempt: 2, firstAttemptOutcome: 'failed' as const } : {}) }));
         } else {
           const shot = await screenshot(`After ${stepText(cand)}`, stateForResult.state.id);
           const ev = shot ? [shot] : [];
@@ -512,6 +611,8 @@ export class Traversal {
             });
           }
         }
+        // Storyline stacks several copies of a Next image (one per button state); once one moved on, the rest lead to the same slide.
+        if (this.deps.navigationOnly && cand.kind === 'next' && postOk && changed && after.lessonId !== before.lessonId) break;
       }
 
       // ---- keyboard activation of controls whose mouse action worked ----
@@ -653,6 +754,98 @@ export class Traversal {
     }
   }
 
+  /**
+   * Clicks each in-slide control the walk does not recognize, once, the way a learner opens every hotspot before Next
+   * unlocks. Player buttons are left alone. The clicks become part of the node's path, so replays repeat them.
+   */
+  private async revealAll(
+    node: Node,
+    page: Page,
+    cur: Page,
+    candidates: readonly Candidate[],
+    coverage: EngineResult['coverage'],
+    snap: () => Promise<StateSnapshot>,
+    nextShown: () => Promise<boolean>,
+  ): Promise<void> {
+    const steps: Candidate[] = [];
+    const pending = dedupe(
+      candidates.filter((c) => {
+        const name = /"(.*)"/.exec(c.targetDescription)?.[1]?.trim() ?? '';
+        return c.reason === 'ambiguous_action' && c.locator && name && (this.frameControls.get(c.locator) ?? 0) < 2 && !PLAYER_CHROME.test(name.replace(/\.(png|jpe?g|gif|svg|webp)$/i, ''));
+      }),
+      (c) => c.locator!,
+    );
+    // Hotspots often unlock one at a time, after the previous one's narration. A click that changes nothing is tried
+    // again later; one that opens content is kept and not repeated (repeating would restart its narration).
+    const until = Math.min(this.deps.deadline, Date.now() + REVEAL_MAX_MS);
+    const playing = () => mediaPlaying(cur);
+    while (pending.length && Date.now() < until) {
+      let opened = false;
+      let left = false;
+      for (const c of [...pending]) {
+        if (Date.now() >= until) break;
+        const before = strictKey(await snap());
+        const loc = cur.locator(c.locator!).first();
+        // Shadow buttons can sit outside the viewport; a DOM click still reaches the slide's trigger.
+        const clicked = await loc.click({ timeout: 2_000, force: true }).then(() => true, () => loc.evaluate((el) => (el as HTMLElement).click()).then(() => true, () => false));
+        if (!clicked) continue;
+        await page.waitForTimeout(1_500);
+        // It left the slide (a course-frame Back or menu button): stop; the walk restores the slide from its path.
+        const now = await snap().catch(() => undefined);
+        if (now?.lessonId && node.snap.lessonId && now.lessonId !== node.snap.lessonId) {
+          left = true;
+          break;
+        }
+        // A hotspot that opens starts its narration (or at least changes the slide); a locked one does neither.
+        const narrating = await playing();
+        if (!narrating && strictKey(await snap()) === before) continue;
+        // The next hotspot usually unlocks when this one's narration ends.
+        for (const stopAt = Math.min(until, Date.now() + 90_000); narrating && Date.now() < stopAt && (await playing()); ) await page.waitForTimeout(1_000);
+        await page.waitForTimeout(1_000);
+        pending.splice(pending.indexOf(c), 1);
+        steps.push({ ...c, kind: 'click', adapter: 'gate-rule', force: true, targetDescription: `Automatic reveal: ${c.targetDescription}`, reason: undefined, reasonDetail: undefined } as Candidate);
+        opened = true;
+        break;
+      }
+      if (left || (await nextShown())) break;
+      if (!opened) await page.waitForTimeout(3_000);
+    }
+    if (steps.length) {
+      node.path = [...node.path, ...steps];
+      coverage.push({ reason: 'ambiguous_action', detail: `Next stayed locked on "${node.state.lessonTitle ?? node.state.title ?? node.state.url}", so the scan clicked ${steps.length} of its controls once each to unlock it. Their content was not checked.`, stateId: node.state.id });
+    }
+  }
+
+  /**
+   * Answers the question again with choice number `choice` (0 is the first): dismisses the feedback ("Try again",
+   * "Close"), picks that choice and presses Submit. Returns false when there is no such choice or no Submit.
+   */
+  private async answerAgain(node: Node, page: Page, cur: Page, choice: number, settle: () => Promise<void>): Promise<boolean> {
+    const dismiss = cur.locator('role=button[name=/^(try again|retry|ok|okay|close|continue|got it)\\b/i] >> visible=true').first();
+    if (await dismiss.count().catch(() => 0)) {
+      await dismiss.click({ timeout: 2_000, force: true }).catch(() => undefined);
+      await page.waitForTimeout(1_000);
+    }
+    const options = 'input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"] >> visible=true';
+    if ((await cur.locator(options).count().catch(() => 0)) <= choice) return false;
+    const submit = await resolveItem(cur, { label: 'Submit' });
+    if (!submit) return false;
+    try {
+      await cur.locator(options).nth(choice).click({ timeout: 3_000, force: true });
+      await page.waitForTimeout(500);
+      await cur.locator(submit).first().click({ timeout: 3_000, force: true });
+    } catch {
+      return false;
+    }
+    await settle();
+    node.path = [
+      ...node.path,
+      { fromStateId: node.state.id, kind: 'click', locator: `${options} >> nth=${choice}`, adapter: 'gate-rule', force: true, targetDescription: `Automatic answer: choice ${choice + 1}` } as Candidate,
+      { fromStateId: node.state.id, kind: 'click', locator: submit, adapter: 'gate-rule', force: true, targetDescription: 'Automatic answer: Submit' } as Candidate,
+    ];
+    return true;
+  }
+
   /** Performs a matching rule's items in order. The clicks become part of the node's path, so replays repeat them. */
   private async passGate(
     node: Node,
@@ -675,11 +868,18 @@ export class Traversal {
     let use = gate;
     if (!use && this.deps.autoAnswer) {
       // No rule for this screen: if it asks a question (answer choices and a Submit button), answer it so the walk can go on.
-      const asks = await cur.evaluate(() => {
+      const found = await cur.evaluate(() => {
         const v = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
-        return [...document.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]')].some(v);
-      }).catch(() => false);
-      if (asks && (await resolveItem(cur, { label: 'Submit' }))) use = { title: 'Automatic answer', unitMatch: '', items: [{ label: '[first option]' }, { label: 'Submit' }], ordered: true };
+        const all = [...document.querySelectorAll('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"]')];
+        return { all: all.length, shown: all.filter(v).length };
+      }).catch(() => ({ all: 0, shown: 0 }));
+      const submit = found.all ? await resolveItem(cur, { label: 'Submit' }) : undefined;
+      if (found.shown && submit) use = { title: 'Automatic answer', unitMatch: '', items: [{ label: '[first option]' }, { label: 'Submit' }], ordered: true };
+      // Only once the choices are on screen: earlier they may simply not have appeared yet.
+      else if (found.shown && !this.unanswered.has(node)) {
+        this.unanswered.add(node);
+        coverage.push({ reason: 'ambiguous_action', detail: `"${node.state.lessonTitle ?? node.state.title ?? node.state.url}" has ${found.shown} answer choice(s) on screen but no single Submit button was found, so it was not answered automatically.`, stateId: node.state.id });
+      }
     }
     if (!use) return;
     this.gated.add(node);
@@ -792,6 +992,11 @@ async function resolveItem(root: Page, item: { label: string; locator?: string }
     if (await one(visibleOnly(sel))) return visibleOnly(sel);
   }
   return undefined;
+}
+
+/** Whether narration, audio or video is playing on the page (slide players unlock controls when it ends). */
+function mediaPlaying(root: Page): Promise<boolean> {
+  return root.evaluate(() => [...document.querySelectorAll('audio,video')].some((m) => !(m as HTMLMediaElement).paused && !(m as HTMLMediaElement).ended)).catch(() => false);
 }
 
 function signatureOf(s: StateSnapshot): string {

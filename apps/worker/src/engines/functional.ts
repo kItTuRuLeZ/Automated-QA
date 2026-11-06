@@ -360,7 +360,18 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
     await waitForContentRoot(page);
     tracer.add('entered_unit', `Opened ${targetUrl}`);
     for (const step of path.steps) {
-      if (step.kind === 'navigate' && step.rawHref) await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
+      if (step.kind === 'navigate' && step.rawHref) {
+        const root = await contentRoot(page);
+        if (root !== page && typeof (root as any).goto === 'function') {
+          try {
+            await (root as any).goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
+          } catch {
+            await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
+          }
+        } else {
+          await page.goto(step.rawHref, { waitUntil: 'load', timeout: navTimeout });
+        }
+      }
       else if (step.locator && step.dragTo) await performDrag(page, (await contentRoot(page)) as unknown as Page, step.locator, step.dragTo);
       else if (step.locator) await ((await contentRoot(page)) as unknown as Page).locator(step.locator).first().click({ timeout: STEP_TIMEOUT_MS, force: step.force });
       else return { ok: false, why: `No way to repeat "${step.description}".` };

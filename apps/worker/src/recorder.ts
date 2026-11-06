@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { CourseState, InteractionInstance, InteractionType, RunStage } from '@cqa/shared';
-import { type NewUnit, type QaStore, finalStage, isPrimaryUnit, summarizeCoverage, unitForState } from '@cqa/core';
+import { type NewUnit, type QaStore, finalStage, isPrimaryUnit, summarizeCoverage, unitForState, unitId } from '@cqa/core';
 import type { CandidateAction } from './adapters/generic-html.js';
 
 /**
@@ -72,6 +72,13 @@ export class RunRecorder {
     this.qa.appendEvent(this.runId, 'unit_entered', { unitId, title: unit?.title, stateId: state.id, depth: state.depth, url: state.url });
     this.qa.setActivity(this.runId, `Checking ${unit?.title ?? 'a screen'}`, { unitId });
     this.qa.recount(this.runId);
+  }
+
+  /** Rise blocks a browser scrolled into view on this state. Only blocks the course lists are recorded; seen is not tested. */
+  blocksSeen(blockIds: readonly string[], stateId: string): void {
+    let changed = false;
+    for (const id of blockIds) changed = this.qa.markVisited(this.runId, unitId('block', id), stateId) || changed;
+    if (changed) this.qa.recount(this.runId);
   }
 
   /** The unit the most recent state belongs to, so later checks can be attached to it. */

@@ -2,6 +2,7 @@ import type { Page } from 'playwright';
 import type { CourseState, EngineResult, EvidenceId, FindingLocation, ProviderContext, StateId } from '@cqa/shared';
 import { nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type LinkInfo, collectPageContent, scrollThrough } from '../adapters/content-scripts.js';
+import { contentRoot } from '../adapters/content-root.js';
 import { type NewCheck, type NewFinding, check, dedupe, finding, truncate } from './helpers.js';
 
 /** A link seen in a reached state, kept for run-level link checking. */
@@ -41,11 +42,12 @@ export class ContentChecks {
     const base = { stateId: state.id, viewportName };
     const loc = (extra: Partial<FindingLocation> = {}): FindingLocation => ({ stateId: state.id, url: state.url, lessonId: state.lessonId, viewportName, browser: 'chromium', ...extra });
 
+    const root = (await contentRoot(page)) as unknown as Page;
     if (engines.media) {
-      await page.evaluate(scrollThrough).catch(() => undefined);
+      await root.evaluate(scrollThrough).catch(() => undefined);
       await page.waitForLoadState('networkidle', { timeout: 2_000 }).catch(() => undefined);
     }
-    const content = await page.evaluate(collectPageContent, {
+    const content = await root.evaluate(collectPageContent, {
       placeholderPatterns: engines.content ? textRules.placeholderPatterns : [],
       terminology: engines.content ? textRules.terminology : [],
       exclusions: textRules.exclusions,

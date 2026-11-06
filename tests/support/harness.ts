@@ -13,7 +13,7 @@ export interface Harness {
   policy: NetworkPolicy;
   tmpRoot: string;
   worker?: WorkerLoop;
-  startWorker(): WorkerLoop;
+  startWorker(overrides?: Pick<Parameters<typeof startWorker>[0], 'launchBrowser' | 'concurrency'>): WorkerLoop;
   queueScan(url: string, opts?: { navigationTimeoutMs?: number; maxRuntimeMs?: number; explore?: boolean; accessibility?: boolean; layout?: boolean; viewports?: string[]; compareBaseline?: boolean; testNonResponsive?: boolean; perf?: { loadMs?: number; totalBytes?: number; requestCount?: number }; maxStates?: number; maxDepth?: number; allowedOrigins?: string[]; terminology?: Array<{ term: string; preferred?: string }>; textExclusions?: string[]; linkCheckTimeoutMs?: number; profile?: ProfileSnapshot }): ScanRun;
   waitForTerminal(runId: string, timeoutMs?: number): Promise<ScanRun>;
   close(): Promise<void>;
@@ -40,8 +40,8 @@ export function createHarness(policyOptions: PolicyOptions = {}): Harness {
     artifacts,
     policy,
     tmpRoot: paths.tmp,
-    startWorker() {
-      h.worker = startWorker({ store, artifacts, policy, tmpRoot: paths.tmp, log, pollMs: 100, heartbeatMs: 200 });
+    startWorker(overrides = {}) {
+      h.worker = startWorker({ store, artifacts, policy, tmpRoot: paths.tmp, log, pollMs: 100, heartbeatMs: 200, ...overrides });
       return h.worker;
     },
     queueScan(url, opts = {}) {

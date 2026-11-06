@@ -9,7 +9,7 @@ export function check(
   outcome: CheckOutcome,
   durationMs: number,
   evidenceIds: EvidenceId[],
-  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string },
+  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string; attempt?: number; firstAttemptOutcome?: CheckOutcome },
 ): NewCheck {
   const c: NewCheck = { ruleId, outcome, durationMs, evidenceIds, executedAt: nowIso() };
   if (extra.stateId) c.stateId = extra.stateId;
@@ -18,6 +18,10 @@ export function check(
   if (extra.reasonDetail) c.reasonDetail = extra.reasonDetail;
   if (extra.itemsEvaluated !== undefined) c.itemsEvaluated = extra.itemsEvaluated;
   if (extra.engineVersion) c.engineVersion = extra.engineVersion;
+  if (extra.attempt && extra.attempt > 1) {
+    c.attempt = extra.attempt;
+    if (extra.firstAttemptOutcome) c.firstAttemptOutcome = extra.firstAttemptOutcome;
+  }
   return c;
 }
 

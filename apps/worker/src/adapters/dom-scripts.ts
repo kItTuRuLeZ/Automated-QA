@@ -188,25 +188,49 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
       push(el, { category: 'dialog_open', name, controlsLocator: target ? cssPath(target) : undefined });
       continue;
     }
-    if (el.getAttribute('aria-expanded') === 'false' && target) {
-      push(el, { category: 'accordion', name, controlsLocator: cssPath(target) });
+    if (el.getAttribute('aria-expanded') === 'false') {
+      push(el, { category: 'accordion', name, controlsLocator: target ? cssPath(target) : undefined });
       continue;
     }
-    if (el.getAttribute('aria-expanded') === 'true' && target) {
+    if (el.getAttribute('aria-expanded') === 'true') {
       seen.add(el); // already expanded: collapsing returns to a known state
       continue;
+    }
+    // Process block / carousel steppers
+    if (el.classList.contains('process-controls__button') || /^(step|slide|carousel|card)\b/i.test(name)) {
+      if (/previous|prev|back|left|‹|←/i.test(name)) {
+        push(el, { category: 'back', name });
+      } else {
+        push(el, { category: 'next', name });
+      }
+      continue;
+    }
+    // Flashcards & click-to-flip cards
+    if (el.classList.contains('flashcard') || el.closest('.flashcard') || /flip|reveal/i.test(name)) {
+      push(el, { category: 'accordion', name: name || 'Flashcard' });
+      continue;
+    }
+    // Interactive blocks (e.g. Rise tabs, accordions, labeled graphics, hotspots, knowledge check choices)
+    const interactiveBlock = el.closest('[data-block-type], .block-interactive, .interactive-block, [class*="interactive"], .quiz-card');
+    if (interactiveBlock && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.tagName === 'LABEL')) {
+      if (!deniedBy && !seen.has(el)) {
+        push(el, { category: 'accordion', name: name || 'Interactive control' });
+        continue;
+      }
     }
     const dialog = el.closest('[role="dialog"],[role="alertdialog"],dialog');
     if (dialog && /^(close|dismiss|×|✕|x|ok|okay|done|cancel|got it)\b/i.test(name)) {
       push(el, { category: 'dialog_close', name, dialogLocator: cssPath(dialog) });
       continue;
     }
-    if (/^(next|continue|next page|start|start course|begin|get started|let's begin|›|→|»)(\s|$)/i.test(name)) {
+    // Storyline image buttons are often named after their file ("Next.png", "Next over.png").
+    const label = name.replace(/\.(png|jpe?g|gif|svg|webp)$/i, '');
+    if (/^(next|continue|next page|start|start course|launch|begin|get started|let's begin|›|→|»)(\s|$)/i.test(label)) {
       push(el, { category: 'next', name });
       continue;
     }
     // "Back to top" scrolls the page; it is not lesson navigation.
-    if (/^(back|previous|prev|‹|←|«)(\s|$)/i.test(name) && !/^back to (top|the top)\b/i.test(name)) {
+    if (/^(back|previous|prev|‹|←|«)(\s|$)/i.test(label) && !/^back to (top|the top)\b/i.test(label)) {
       push(el, { category: 'back', name });
       continue;
     }
