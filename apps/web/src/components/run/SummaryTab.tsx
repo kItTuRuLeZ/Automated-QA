@@ -20,7 +20,7 @@ const REASON_PLAIN: Record<string, string> = {
 export function SummaryTab({ runId, report: r, isRetest }: { runId: string; report: RunReport; isRetest: boolean }) {
   const open = r.issues.filter((i) => isOpenWork(i.status));
   const topFix = r.issues.filter((i) => i.action === 'fix' && isOpenWork(i.status)).slice(0, 5);
-  const didNotRun = r.checkTotals.notTested + r.checkTotals.errors;
+  const didNotRun = r.checkTotals.notTested + r.checkTotals.errors + (r.checkTotals.unsupported ?? 0) + (r.checkTotals.inconclusive ?? 0);
   const bySev = (['critical', 'high', 'medium', 'low', 'informational'] as Severity[]).filter((s) => r.counts.bySeverity[s] > 0);
 
   return (
@@ -54,7 +54,7 @@ export function SummaryTab({ runId, report: r, isRetest }: { runId: string; repo
             <strong>Findings in this scan:</strong> {r.issues.length} · <strong>Open work remaining:</strong> {open.length} (Verified, Accepted risk and False positive are finished; Marked fixed waits for a retest)
           </li>
           <li>
-            <strong>Checks that did not run:</strong> {didNotRun} of {r.checkTotals.executions} check executions.
+            <strong>Checks without a result</strong> (not run, errored, not supported or inconclusive): {didNotRun} of {r.checkTotals.executions} check executions.
             {r.untested.length > 0 && ` Reasons: ${r.untested.map((u) => `${(REASON_PLAIN[u.reason] ?? u.reason.replace(/_/g, ' ')).toLowerCase()} (${u.count})`).join('; ')}.`} These are counted separately from the coverage gaps above and are never counted as passed.
             {didNotRun > 0 && (
               <>

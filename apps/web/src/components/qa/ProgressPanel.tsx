@@ -151,7 +151,7 @@ export function ProgressPanel({ live, runStatus, queuedAt, onCancel, cancelReque
   }
   const { progress, stalled, silentSeconds } = p;
   const c = progress.counters;
-  const finished = c.testsPassed + c.testsFailed + c.testsBlocked + c.testsErrored + c.testsSkipped + c.testsManual;
+  const finished = c.testsPassed + c.testsFailed + c.testsBlocked + c.testsErrored + c.testsSkipped + c.testsManual + c.testsUnsupported + c.testsInconclusive;
   const planned = finished + c.testsPending + c.testsRunning;
   const outline = live.inventory?.units.filter((u) => u.primary) ?? [];
   const totalKnown = live.inventory?.coverage.discovery.completeness === 'complete' ? outline.length : undefined;
@@ -205,6 +205,8 @@ export function ProgressPanel({ live, runStatus, queuedAt, onCancel, cancelReque
               ['Blocked', c.testsBlocked],
               ['Runner errors', c.testsErrored],
               ['Needs manual review', c.testsManual],
+              ['Not supported', c.testsUnsupported],
+              ['Inconclusive', c.testsInconclusive],
               ['Waiting to run', c.testsPending + c.testsRunning],
             ] as const
           ).map(([label, n]) => (

@@ -25,7 +25,7 @@ export function BadgeList({ badges }: { badges: ScreenBadge[] }) {
   );
 }
 
-const TEST_ICON: Record<string, string> = { passed: '✓', failed: '✕', blocked: '⊘', error: '!', skipped: '⤼', manual_review_required: '?', not_applicable: '–', pending: '○', running: '◔' };
+const TEST_ICON: Record<string, string> = { passed: '✓', failed: '✕', blocked: '⊘', error: '!', skipped: '⤼', manual_review_required: '?', not_applicable: '–', pending: '○', running: '◔', unsupported: '⊘', inconclusive: '~' };
 
 export function TestStatusBadge({ status }: { status: string }) {
   return (

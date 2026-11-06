@@ -26,6 +26,8 @@ export const OUTCOME_LABEL: Record<CheckOutcome, string> = {
   not_applicable: 'Not applicable',
   not_tested: 'Not tested',
   error: 'Error',
+  unsupported: 'Not supported',
+  inconclusive: 'Inconclusive',
 };
 
 export const SEVERITY_LABEL: Record<Severity, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', informational: 'Info' };

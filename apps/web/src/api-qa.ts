@@ -100,7 +100,7 @@ export const SCREEN_STATUS_LABEL: Record<ScreenStatus, string> = {
   in_progress: 'In progress',
   issues_found: 'Issues found',
   needs_manual_review: 'Needs manual review',
-  passed_automated: 'Passed automated checks',
+  passed_automated: 'Passed configured checks',
 };
 
 export const BADGE_LABEL: Record<ScreenBadge, string> = {
@@ -123,4 +123,6 @@ export const TEST_STATUS_LABEL: Record<string, string> = {
   skipped: 'Skipped',
   not_applicable: 'Not applicable',
   manual_review_required: 'Needs manual review',
+  unsupported: 'Not supported',
+  inconclusive: 'Inconclusive',
 };

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ApiError, type PackageView, api } from '../api';
-import { type JourneyDraft, ScormJourneys, emptyJourney, journeysToApi, presetJourneys } from '../components/ScormJourneys';
+import { type JourneyDraft, ScormJourneys, journeysToApi, presetJourneys } from '../components/ScormJourneys';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TableScroll, useLoader } from '../components/ui';
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
@@ -50,6 +50,9 @@ export function PackagePage({ id }: { id: string }) {
   const [problem, setProblem] = useState<string>();
   const [harness, setHarness] = useState(true);
   const [journeys, setJourneys] = useState<JourneyDraft[]>(presetJourneys('2004'));
+  const [interactions, setInteractions] = useState(true);
+  const [autoAnswer, setAutoAnswer] = useState(true);
+  const [maxScreens, setMaxScreens] = useState(100);
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
   if (!data) return <Loading />;
@@ -75,6 +78,8 @@ export function PackagePage({ id }: { id: string }) {
         launch: effective.length === choices.length && choices.length > 1 ? 'all' : effective,
         acknowledgeLocalExecution: ack,
         allowedExternalOrigins: allowed.split('\n').map((x) => x.trim()).filter(Boolean),
+        ...(interactions ? { qaProfile: 'full' as const, functional: true, autoAnswer } : {}),
+        maxStates: Math.min(200, Math.max(1, Math.round(maxScreens) || 100)),
       });
       window.location.hash = `/runs/${res.runs[0]!.id}`;
     } catch (e) {
@@ -83,6 +88,8 @@ export function PackagePage({ id }: { id: string }) {
       setBusy(false);
     }
   };
+
+  const failedCount = ins.issues.filter((i) => i.outcome === 'failed').length;
 
   return (
     <section aria-labelledby="pkg-heading">
@@ -102,133 +109,217 @@ export function PackagePage({ id }: { id: string }) {
         The checks below were read from the files only. {choices.length > 1 ? 'Choose the lessons to scan, then' : 'When you are ready,'} confirm that you want the course’s own JavaScript to run in a browser on this computer. That is what “Scan this package” does.
       </Alert>
 
-      <ReadinessCard ins={ins} />
+      {/* Primary Action Card: Scan this package */}
+      <div className="card form" style={{ borderLeft: '4px solid var(--primary, #1d4ed8)', background: '#fff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <h2 style={{ margin: 0 }}>Scan this package</h2>
+          <span className="badge" style={{ fontSize: '0.85rem' }}>
+            {effective.length} lesson{effective.length === 1 ? '' : 's'} selected
+          </span>
+        </div>
 
-      <div className="card">
-        <h2>Checks on the package files</h2>
-        <p className="help">Read from the files only. No course code was run for these.</p>
-        <TableScroll label="Static package checks">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">Check</th>
-                <th scope="col">Result</th>
-                <th scope="col">Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ins.issues.map((i, n) => (
-                <tr key={n}>
-                  <th scope="row">{i.ruleId}</th>
-                  <td>
-                    <strong>{OUTCOME[i.outcome]}</strong>
-                  </td>
-                  <td>
-                    {i.title && <strong>{i.title}. </strong>}
-                    {i.detail}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
-        <ul className="help">
-          {ins.limits.map((l) => (
-            <li key={l}>{l}</li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="card">
-        <h2>Contents and outside websites</h2>
-        <TableScroll label="Package contents by file type">
-          <table className="table">
-            <thead>
-              <tr>
-                <th scope="col">File type</th>
-                <th scope="col">Files</th>
-                <th scope="col">Size</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ins.inventory.byType.slice(0, 12).map((t) => (
-                <tr key={t.type}>
-                  <th scope="row">{t.type}</th>
-                  <td>{t.files}</td>
-                  <td>{mb(t.bytes)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </TableScroll>
-        {ins.authoringTool && (
-          <div>
-            <p>
-              <strong>Made with:</strong> {ins.authoringTool.product}
-              {ins.authoringTool.version ? ` (build ${ins.authoringTool.version})` : ''}. {ins.authoringTool.facts.map((f) => `${f.label}: ${f.value}`).join(' · ')}
-            </p>
-            <p className="help">
-              Recognized by the {ins.authoringTool.tool === 'rise' ? 'Rise' : 'Storyline'} adapter (version {ins.authoringTool.adapterVersion}). With no journey written, a scan runs: {ins.authoringTool.scenarios.join('; ')}. The adapter does not reach inside canvas or script-drawn content, and the settings above are what the export file states, not what an LMS will do.
-            </p>
-          </div>
-        )}
-        <p>
-          <strong>Outside websites referenced:</strong>{' '}
-          {ins.externalDependencies.length ? ins.externalDependencies.map((d) => d.host).join(', ') : "none found in the course's own files"}
-          {ins.runtimeReferences?.length ? ` (plus ${ins.runtimeReferences.length} in ${ins.authoringTool?.product ?? 'the authoring tool'}'s own player code, listed in the inspection data)` : ''}
-        </p>
-      </div>
-
-      <div className="card form">
-        <h2>Scan this package</h2>
         {choices.length === 0 ? (
           <p>There is nothing to scan: no launch file was found. Fix the package and upload it again.</p>
         ) : (
           <>
             {choices.length > 1 && (
-              <fieldset className="fieldset">
+              <fieldset className="fieldset" style={{ marginBottom: '1rem' }}>
                 <legend>Which lessons to scan (each is scanned separately)</legend>
                 <p className="help">Lessons you do not pick are listed as not scanned in the results. Nothing is picked for you.</p>
-                {choices.map((c) => (
-                  <label key={c.key} className="checkbox">
-                    <input type="checkbox" checked={picked.includes(c.key)} onChange={(e) => setPicked((cur) => (e.target.checked ? [...cur, c.key] : cur.filter((k) => k !== c.key)))} /> {c.title} <span className="muted mono">{c.path}</span>
-                  </label>
-                ))}
-                <button type="button" className="btn btn-small" onClick={() => setPicked(choices.slice(0, 25).map((c) => c.key))}>
-                  Pick all
-                </button>
+                <div style={{ maxHeight: '200px', overflowY: 'auto', padding: '0.4rem 0' }}>
+                  {choices.map((c) => (
+                    <label key={c.key} className="checkbox" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.35rem' }}>
+                      <input type="checkbox" checked={picked.includes(c.key)} onChange={(e) => setPicked((cur) => (e.target.checked ? [...cur, c.key] : cur.filter((k) => k !== c.key)))} />
+                      <span>{c.title} <span className="muted mono" style={{ fontSize: '0.82rem' }}>({c.path})</span></span>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ marginTop: '0.4rem' }}>
+                  <button type="button" className="btn btn-small" onClick={() => setPicked(choices.slice(0, 25).map((c) => c.key))}>
+                    Pick all
+                  </button>
+                </div>
               </fieldset>
             )}
-            {(ins.kind === 'scorm12' || ins.kind === 'scorm2004') && (
-              <>
-                <label className="checkbox">
-                  <input type="checkbox" checked={harness} onChange={(e) => setHarness(e.target.checked)} /> Also run the {ins.kind === 'scorm12' ? 'SCORM 1.2' : 'SCORM 2004'} test harness
-                </label>
-                <p className="help">
-                  A built-in stand-in for the LMS side of SCORM: it checks what the course sends (start, saving, errors, status, bookmark) and records every call. It is not your LMS, does not run sequencing, and tests one lesson per scan. Nothing it shows says how your LMS will behave.
+
+            <fieldset className="fieldset" style={{ marginBottom: '1rem' }}>
+              <legend>What to check</legend>
+              <p className="help">Content, accessibility, layout and broken files are always checked.</p>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                <input type="checkbox" checked={interactions} onChange={(e) => setInteractions(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                <span>
+                  <strong>Test interactions</strong>
+                  <span className="help" style={{ display: 'block' }}>Clicks tabs, accordions, pop-ups, menus and Next/Back buttons and checks that each one works. Takes longer.</span>
+                </span>
+              </label>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem' }}>
+                <input type="checkbox" checked={interactions && autoAnswer} disabled={!interactions} onChange={(e) => setAutoAnswer(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                <span>
+                  <strong>Answer quiz questions automatically</strong>
+                  <span className="help" style={{ display: 'block' }}>
+                    When a question blocks the way forward, the scan picks an answer and presses Submit (and tries other answers if the course wants the right one), so it can reach the screens after the quiz. Answers are not marked right or wrong in the results.{!interactions && ' Turn on “Test interactions” to use this.'}
+                  </span>
+                </span>
+              </label>
+              <div className="field" style={{ marginTop: '0.75rem', maxWidth: '22rem' }}>
+                <label htmlFor="pkg-max">Most screens to visit</label>
+                <input id="pkg-max" type="number" min={1} max={200} value={maxScreens} onChange={(e) => setMaxScreens(Number(e.target.value))} aria-describedby="pkg-max-help" />
+                <p id="pkg-max-help" className="help">
+                  The scan stops after this many screens and marks the result “partial”. Each screen, and each tab or pop-up it opens, counts as one. 100 suits most courses; raise it (up to 200) if the result says the limit was reached.
                 </p>
-                {harness && <ScormJourneys version={ins.kind === 'scorm12' ? '1.2' : '2004'} value={journeys} onChange={setJourneys} />}
-              </>
+              </div>
+            </fieldset>
+
+            {(ins.kind === 'scorm12' || ins.kind === 'scorm2004') && (
+              <div style={{ marginBottom: '0.85rem' }}>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', fontWeight: 600 }}>
+                  <input type="checkbox" checked={harness} onChange={(e) => setHarness(e.target.checked)} />
+                  <span>Also run the {ins.kind === 'scorm12' ? 'SCORM 1.2' : 'SCORM 2004'} test harness</span>
+                </label>
+                <p className="help" style={{ marginLeft: '1.5rem', marginTop: '0.2rem' }}>
+                  A built-in stand-in for the LMS side of SCORM: it checks what the course sends (start, saving, errors, status, bookmark) and records every call.
+                </p>
+                {harness && (
+                  <details className="advanced" style={{ marginTop: '0.5rem', marginBottom: '0.5rem' }}>
+                    <summary>Optional: check that a path through the course ends with Passed or Failed{journeys.length ? ` (${journeys.length} added)` : ''}</summary>
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <ScormJourneys version={ins.kind === 'scorm12' ? '1.2' : '2004'} value={journeys} onChange={setJourneys} />
+                    </div>
+                  </details>
+                )}
+              </div>
             )}
-            <div className="field">
-              <label htmlFor="pkg-allowed">Outside websites the package may load from (optional, one per line)</label>
-              <textarea id="pkg-allowed" rows={2} placeholder="https://fonts.example.com" value={allowed} onChange={(e) => setAllowed(e.target.value)} />
-              <p className="help">Anything else outside the package is blocked and listed in the results.</p>
+
+            <details className="advanced" style={{ marginTop: '0.5rem', marginBottom: '1rem' }}>
+              <summary>Outside websites whitelist (optional)</summary>
+              <div className="field" style={{ marginTop: '0.5rem' }}>
+                <label htmlFor="pkg-allowed">Outside websites the package may load from (optional, one per line)</label>
+                <textarea id="pkg-allowed" rows={2} placeholder="https://fonts.example.com" value={allowed} onChange={(e) => setAllowed(e.target.value)} />
+                <p className="help">Anything else outside the package is blocked and listed in the results.</p>
+              </div>
+            </details>
+
+            <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                <span style={{ fontSize: '0.9rem', color: '#1e293b' }}>
+                  I understand a scan runs this package's own JavaScript in a browser on this computer. It is limited to the package's own address and the sites above, but it does not run in a container.
+                </span>
+              </label>
             </div>
-            <label className="checkbox">
-              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> I understand a scan runs this package's own JavaScript in a browser on this computer. It is limited to the package's own address and the sites above, but it does not run in a container.
-            </label>
+
             {problem && (
-              <p role="alert" className="error-text">
+              <p role="alert" className="error-text" style={{ marginBottom: '1rem' }}>
                 {problem}
               </p>
             )}
-            <button type="button" className="btn btn-primary" disabled={busy || !ack || effective.length === 0} onClick={start}>
-              {busy ? 'Starting…' : `Scan ${effective.length || ''} lesson${effective.length === 1 ? '' : 's'}`}
-            </button>
+
+            <div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ fontSize: '1rem', padding: '0.65rem 1.4rem' }}
+                disabled={busy || !ack || effective.length === 0}
+                onClick={start}
+              >
+                {busy ? 'Starting…' : `Scan ${effective.length || ''} lesson${effective.length === 1 ? '' : 's'}`}
+              </button>
+            </div>
           </>
         )}
       </div>
+
+      <ReadinessCard ins={ins} />
+
+      {/* Collapsible Inspection Details */}
+      <details className="card">
+        <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Checks on the package files ({ins.issues.length} checks)</span>
+          <span className={`badge ${failedCount > 0 ? 'status-failed' : 'status-completed'}`}>
+            {failedCount > 0 ? `${failedCount} problem${failedCount === 1 ? '' : 's'}` : 'All passed'}
+          </span>
+        </summary>
+        <div style={{ marginTop: '1rem' }}>
+          <p className="help">Read from the files only. No course code was run for these.</p>
+          <TableScroll label="Static package checks">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">Check</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ins.issues.map((i, n) => (
+                  <tr key={n}>
+                    <th scope="row">{i.ruleId}</th>
+                    <td>
+                      <strong>{OUTCOME[i.outcome]}</strong>
+                    </td>
+                    <td>
+                      {i.title && <strong>{i.title}. </strong>}
+                      {i.detail}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+          <ul className="help">
+            {ins.limits.map((l) => (
+              <li key={l}>{l}</li>
+            ))}
+          </ul>
+        </div>
+      </details>
+
+      <details className="card">
+        <summary style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Contents and outside websites ({ins.inventory.files} files · {mb(ins.inventory.bytes)})</span>
+          <span className="badge">
+            {ins.externalDependencies.length} external dependenc{ins.externalDependencies.length === 1 ? 'y' : 'ies'}
+          </span>
+        </summary>
+        <div style={{ marginTop: '1rem' }}>
+          <TableScroll label="Package contents by file type">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th scope="col">File type</th>
+                  <th scope="col">Files</th>
+                  <th scope="col">Size</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ins.inventory.byType.slice(0, 12).map((t) => (
+                  <tr key={t.type}>
+                    <th scope="row">{t.type}</th>
+                    <td>{t.files}</td>
+                    <td>{mb(t.bytes)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </TableScroll>
+          {ins.authoringTool && (
+            <div>
+              <p>
+                <strong>Made with:</strong> {ins.authoringTool.product}
+                {ins.authoringTool.version ? ` (build ${ins.authoringTool.version})` : ''}. {ins.authoringTool.facts.map((f) => `${f.label}: ${f.value}`).join(' · ')}
+              </p>
+              <p className="help">
+                Recognized by the {ins.authoringTool.tool === 'rise' ? 'Rise' : 'Storyline'} adapter (version {ins.authoringTool.adapterVersion}). With no journey written, a scan runs: {ins.authoringTool.scenarios.join('; ')}. The adapter does not reach inside canvas or script-drawn content, and the settings above are what the export file states, not what an LMS will do.
+              </p>
+            </div>
+          )}
+          <p>
+            <strong>Outside websites referenced:</strong>{' '}
+            {ins.externalDependencies.length ? ins.externalDependencies.map((d) => d.host).join(', ') : "none found in the course's own files"}
+            {ins.runtimeReferences?.length ? ` (plus ${ins.runtimeReferences.length} in ${ins.authoringTool?.product ?? 'the authoring tool'}'s own player code, listed in the inspection data)` : ''}
+          </p>
+        </div>
+      </details>
     </section>
   );
 }

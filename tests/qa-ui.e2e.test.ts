@@ -77,7 +77,7 @@ describe('functional QA screens', () => {
     const text = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
     expect(text).toMatch(/Issues found/);
     expect(text).toMatch(/Lesson never opened/);
-    await page.getByLabel(/Passed automated checks/).check();
+    await page.getByLabel(/Passed configured checks/).check();
     await until(async () => /Lesson that passed/.test(await page.locator('main').innerText()));
     expect(await page.locator('main').innerText()).not.toMatch(/Lesson never opened/);
     await page.close();

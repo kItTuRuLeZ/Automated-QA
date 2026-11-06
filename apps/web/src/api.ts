@@ -20,7 +20,7 @@ export interface RunReport {
   screens: Array<{ label: string; title: string; url: string; depth: number; reachedBy: string; screenshotId?: string }>;
   /** Check EXECUTIONS that did not run, by reason. A different unit from counts.notChecked. */
   untested: Array<{ reason: string; count: number }>;
-  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number };
+  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number; unsupported?: number; inconclusive?: number };
   skippedActions: Array<{ what: string; reason: string; detail?: string }>;
   errors: Array<{ rule: string; detail: string }>;
   scan: { startedAt?: string; finishedAt?: string; scope: { origins: string[]; pathPrefixes: string[] }; budgets: { maxStates: number; maxDepth: number; maxRuntimeSeconds: number }; checksEnabled: string[]; screenSizes: string[]; toolVersions: Array<{ name: string; version: string }>; platform?: string; aiUsed: false; profile?: { name: string } };
@@ -172,7 +172,7 @@ export const api = {
     if (!res.ok) throw new ApiError(data.error ?? `Upload failed (${res.status})`, res.status);
     return data as unknown as PackageView;
   },
-  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
+  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; qaProfile?: 'quick' | 'functional' | 'full' | 'custom'; functional?: boolean; autoAnswer?: boolean; maxStates?: number; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
     request<{ runs: ScanRun[]; scanned: string[]; notScanned: string[] }>('POST', `/api/packages/${encodeURIComponent(id)}/scans`, input),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),

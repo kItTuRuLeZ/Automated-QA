@@ -11,11 +11,11 @@ const FILTERS: Array<{ id: Filter; label: string; match: (s: ScreenStatus) => bo
   { id: 'attention', label: 'Needs attention', match: (s) => s !== 'passed_automated' },
   { id: 'issues', label: 'Issues found', match: (s) => s === 'issues_found' },
   { id: 'manual', label: 'Needs manual review', match: (s) => s === 'needs_manual_review' },
-  { id: 'passed', label: 'Passed automated checks', match: (s) => s === 'passed_automated' },
+  { id: 'passed', label: 'Passed configured checks', match: (s) => s === 'passed_automated' },
   { id: 'untested', label: 'Not tested', match: (s) => s === 'not_tested' },
   { id: 'all', label: 'All screens', match: () => true },
 ];
-const ORDER: Record<string, number> = { failed: 0, error: 1, blocked: 2, manual_review_required: 3, skipped: 4, pending: 5, running: 5, passed: 6, not_applicable: 7 };
+const ORDER: Record<string, number> = { failed: 0, error: 1, blocked: 2, manual_review_required: 3, inconclusive: 3, unsupported: 3, skipped: 4, pending: 5, running: 5, passed: 6, not_applicable: 7 };
 const COURSE_WIDE = '__course_wide__';
 
 /**

@@ -2,7 +2,6 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError, api } from '../api';
 import { qaApi } from '../api-qa';
 import { UploadBox } from '../components/Packages';
-import { WorkflowSteps } from '../components/qa/WorkflowSteps';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, hostPath, useLoader } from '../components/ui';
 
 const VIEWPORTS = [
@@ -157,13 +156,13 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
           terms.trim() === ''
             ? undefined
             : terms
-                .split('\n')
-                .map((l) => l.trim())
-                .filter(Boolean)
-                .map((l) => {
-                  const [term, preferred] = l.split('=>').map((x) => x.trim());
-                  return preferred ? { term: term!, preferred } : { term: term! };
-                }),
+              .split('\n')
+              .map((l) => l.trim())
+              .filter(Boolean)
+              .map((l) => {
+                const [term, preferred] = l.split('=>').map((x) => x.trim());
+                return preferred ? { term: term!, preferred } : { term: term! };
+              }),
         textExclusions: exclusions
           .split('\n')
           .map((l) => l.trim())
@@ -182,7 +181,6 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
       <Breadcrumb items={[{ label: 'Projects', to: '/' }, { label: p.name, to: `/projects/${projectId}` }, { label: 'New scan' }]} />
       <PageHeader title="Start a new scan" titleId="scan-heading" subtitle={`For ${p.name}`} />
 
-      <WorkflowSteps current={step === 0 ? 0 : step === 1 ? 1 : 2} />
       <ol className="steps-bar" aria-label="Scan setup steps">
         {STEPS.map((label, i) => (
           <li key={label} aria-current={i === step ? 'step' : undefined} className={i === step ? 'current' : i < step ? 'done' : ''}>
@@ -203,16 +201,56 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
             </h2>
             <fieldset className="fieldset">
               <legend>Where is the course?</legend>
-              <label className="choice">
-                <input type="radio" name="source" checked={source === 'link'} onChange={() => setSource('link')} /> <span><strong>Published link</strong><span className="help">A web address people can open, such as a Rise share link or a hosted Storyline course.</span></span>
-              </label>
-              <label className="choice">
-                <input type="radio" name="source" checked={source === 'zip'} onChange={() => setSource('zip')} /> <span><strong>Upload course ZIP</strong><span className="help">A SCORM or HTML5 export. It is inspected first; nothing runs until you confirm.</span></span>
-              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <label
+                  className="choice"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    padding: '0.85rem',
+                    borderRadius: '8px',
+                    border: source === 'link' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    background: source === 'link' ? '#eff6ff' : '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <input type="radio" name="source" checked={source === 'link'} onChange={() => setSource('link')} style={{ marginTop: '0.2rem' }} />
+                  <span>
+                    <strong style={{ fontSize: '0.95rem' }}>Published link</strong>
+                    <span className="help" style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#475569' }}>
+                      A web address people can open, such as a Rise share link or hosted course.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className="choice"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '0.75rem',
+                    padding: '0.85rem',
+                    borderRadius: '8px',
+                    border: source === 'zip' ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    background: source === 'zip' ? '#eff6ff' : '#ffffff',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <input type="radio" name="source" checked={source === 'zip'} onChange={() => setSource('zip')} style={{ marginTop: '0.2rem' }} />
+                  <span>
+                    <strong style={{ fontSize: '0.95rem' }}>Upload course ZIP</strong>
+                    <span className="help" style={{ margin: '0.2rem 0 0', fontSize: '0.82rem', color: '#475569' }}>
+                      SCORM or HTML5 export. Inspected first; nothing runs until confirmed.
+                    </span>
+                  </span>
+                </label>
+              </div>
             </fieldset>
             {source === 'link' ? (
-              <div className="field">
-                <label htmlFor="s-url">Course link</label>
+              <div className="field" style={{ marginTop: '1rem' }}>
+                <label htmlFor="s-url" style={{ fontSize: '0.95rem', fontWeight: 600 }}>Course link</label>
                 <input
                   id="s-url"
                   type="url"
@@ -224,9 +262,16 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                   aria-invalid={urlTouched && Boolean(urlProblem)}
                   aria-describedby={urlTouched && urlProblem ? 's-url-err' : 's-url-help'}
                   autoComplete="off"
+                  style={{
+                    width: '100%',
+                    padding: '0.65rem 0.85rem',
+                    fontSize: '1rem',
+                    borderRadius: '6px',
+                    border: urlTouched && urlProblem ? '1px solid #dc2626' : '1px solid #cbd5e1',
+                  }}
                 />
                 {urlTouched && urlProblem ? (
-                  <p id="s-url-err" className="error-text" role="alert">
+                  <p id="s-url-err" className="error-text" role="alert" style={{ marginTop: '0.35rem' }}>
                     {urlProblem}
                   </p>
                 ) : (
@@ -236,7 +281,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                 )}
               </div>
             ) : (
-              <div>
+              <div style={{ marginTop: '1rem' }}>
                 <UploadBox projectId={projectId} />
                 <p className="help">After the upload you will see what the ZIP contains, which platform made it and which lessons it has, then choose the lessons to scan.</p>
               </div>
@@ -249,87 +294,130 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
             <h2 ref={heading} tabIndex={-1}>
               2. Choose checks
             </h2>
-            <p className="muted">The recommended selection is already chosen. Change it only if you need to.</p>
-            <ul className="plain always-on">
-              <li>
-                <strong>Always checked:</strong> the opening page loads, scripts run without errors, images and media load, links work, and placeholder text (like “lorem ipsum” or “TBD”) is flagged. This is not a spelling or grammar review.
-              </li>
-            </ul>
-            <fieldset className="fieldset">
+            <p className="muted" style={{ marginBottom: '1rem' }}>The recommended selection is already chosen. Change it only if you need to.</p>
+
+            <div style={{ background: '#f8fafc', padding: '0.75rem 1rem', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1.25rem', fontSize: '0.875rem' }}>
+              <strong>Always checked:</strong> Opening page loads, scripts run without errors, images and media load, links work, and placeholder text (like “lorem ipsum” or “TBD”) is flagged.
+            </div>
+
+            <fieldset className="fieldset" style={{ marginBottom: '1.25rem' }}>
               <legend>How thorough?</legend>
-              {(
-                [
-                  ['quick', 'Quick check', 'Opens the first page and reads the files. Interaction behavior is not executed.'],
-                  ['functional', 'Functional check', 'Opens the course in a browser, clicks through it, and runs the interaction cases and your behavior rules.'],
-                  ['full', 'Full available check', 'Everything this tool can actually run, plus a queue of cases that only a person can do. It does not cover all possible course behavior.'],
-                  ['custom', 'Custom', 'You choose the checks and screen sizes below.'],
-                ] as const
-              ).map(([id, label, help]) => (
-                <label key={id} className="choice">
-                  <input type="radio" name="qa-profile" checked={qaProfile === id} onChange={() => choose(id)} />{' '}
-                  <span>
-                    <strong>{label}</strong>
-                    <span className="help">{help}</span>
-                  </span>
-                </label>
-              ))}
-              <div className="profile-lists" aria-live="polite">
-                <p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem', marginTop: '0.5rem' }}>
+                {(
+                  [
+                    ['full', 'Full available check', 'Interactive exploration, accessibility (axe-core), layout & responsiveness, and functional rules.', '🚀 Recommended'],
+                    ['functional', 'Functional check', 'Opens course in browser, clicks through it, and runs interaction cases on recognized controls.', '⚡ Standard'],
+                    ['quick', 'Quick check', 'Landing page only: checks link health, media, scripts, and placeholder text.', '⏱️ Fast'],
+                    ['custom', 'Custom', 'Select specific automated checks, budgets, and viewports by hand.', '⚙️ Manual'],
+                  ] as const
+                ).map(([id, label, help, badge]) => (
+                  <label
+                    key={id}
+                    className="choice"
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      padding: '0.85rem',
+                      borderRadius: '8px',
+                      border: qaProfile === id ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      background: qaProfile === id ? '#eff6ff' : '#ffffff',
+                      cursor: 'pointer',
+                      transition: 'border-color 0.15s ease, background-color 0.15s ease',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: '0.35rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input type="radio" name="qa-profile" checked={qaProfile === id} onChange={() => choose(id)} />
+                        <strong style={{ fontSize: '0.95rem' }}>{label}</strong>
+                      </div>
+                      <span className="badge" style={{ fontSize: '0.72rem', padding: '0.1rem 0.45rem' }}>{badge}</span>
+                    </div>
+                    <span className="help" style={{ margin: 0, fontSize: '0.82rem', color: '#475569' }}>{help}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="profile-lists" aria-live="polite" style={{ marginTop: '0.85rem', padding: '0.75rem 1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '0.85rem' }}>
+                <p style={{ margin: '0 0 0.35rem' }}>
                   <strong>Will run:</strong> opening page, scripts, images and media, links, placeholder text{explore ? ', click-through exploration' : ''}
                   {functional ? ', interaction cases (tabs, accordions, dialogs, Next/Previous) and your behavior rules' : ''}
                   {accessibility ? ', accessibility and keyboard checks' : ''}
                   {layout ? ', layout and page load' : ''}.
                 </p>
                 {functional && library.data && (
-                  <p>
-                    <strong>Manual review queue:</strong> {library.data.definitions.filter((d) => d.effectiveAutomation === 'manual' && d.reviewState !== 'retired').length} cases the tool has no automation for (quizzes, drag and drop, media playback and others) are listed for a person. They are never marked passed.
+                  <p style={{ margin: '0 0 0.35rem', color: '#475569' }}>
+                    <strong>Manual review queue:</strong> {library.data.definitions.filter((d) => d.effectiveAutomation === 'manual' && d.reviewState !== 'retired').length} non-automated cases (quizzes, drag and drop, media playback) queued for manual check.
                   </p>
                 )}
-                {!functional && <p><strong>Not run:</strong> interaction cases and behavior rules. Interaction behavior is not executed in this profile, so a clean result says nothing about it.</p>}
-                <p><strong>Not available in this tool:</strong> real-device testing, a real LMS, drag and drop, video and audio playback, quiz scoring, and exhaustive click orders.</p>
+                {!functional && <p style={{ margin: 0, color: '#475569' }}><strong>Not run:</strong> interaction cases and behavior rules. Interaction behavior is not executed in this profile, so a clean result says nothing about it.</p>}
               </div>
             </fieldset>
-            <fieldset className="fieldset">
+
+            <fieldset className="fieldset" style={{ marginBottom: '1.25rem' }}>
               <legend>Checks in detail</legend>
-              <label className="checkbox">
-                <input type="checkbox" checked={explore} onChange={(e) => custom(setExplore)(e.target.checked)} /> <span>Click through the course (read-only)<span className="help">Opens recognized tabs, accordions, pop-ups and Next/Back buttons without submitting anything. A scan with this off only checks the opening page.</span></span>
-              </label>
-              <label className="checkbox">
-                <input type="checkbox" checked={accessibility} onChange={(e) => custom(setAccessibility)(e.target.checked)} /> <span>Accessibility and keyboard checks<span className="help">Automated checks find only some problems and cannot confirm the course is accessible. Adds time per screen.</span></span>
-              </label>
-              <label className="checkbox">
-                <input type="checkbox" checked={layout} onChange={(e) => custom(setLayout)(e.target.checked)} /> <span>Layout, screen sizes and page load<span className="help">Looks for text running off screen and elements overlapping, and measures one sample of page load.</span></span>
-              </label>
-              <label className="checkbox">
-                <input type="checkbox" checked={functional} disabled={!explore && qaProfile !== 'custom'} onChange={(e) => custom(setFunctional)(e.target.checked)} /> <span>Interaction cases and behavior rules<span className="help">Runs the test library’s cases on tabs, accordions, dialogs and Next/Previous, and the behavior rules you set up for this project. Each runs on a fresh copy of the screen.</span></span>
-              </label>
-              <label className="checkbox">
-                <input type="checkbox" checked={autoAnswer} disabled={!functional} onChange={(e) => setAutoAnswer(e.target.checked)} /> <span>Answer quiz questions automatically<span className="help">When a screen asks a question and will not go on until it is answered, the scan picks the first answer and presses Submit so it can carry on to the later screens. The answer is not judged. Turn off if you want the scan to stop at questions.</span></span>
-              </label>
+              <div style={{ display: 'grid', gap: '0.5rem', marginTop: '0.35rem' }}>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={explore} onChange={(e) => custom(setExplore)(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Click through the course (read-only)</strong><span className="help">Opens recognized tabs, accordions, pop-ups and Next/Back buttons without submitting forms.</span></span>
+                </label>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={accessibility} onChange={(e) => custom(setAccessibility)(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Accessibility and keyboard checks</strong><span className="help">Automated checks with axe-core, tab focus traps, and 320px reflow.</span></span>
+                </label>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={layout} onChange={(e) => custom(setLayout)(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Layout, screen sizes and page load</strong><span className="help">Checks for text clipping, overflow, and element overlap at multiple viewports.</span></span>
+                </label>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={functional} disabled={!explore && qaProfile !== 'custom'} onChange={(e) => custom(setFunctional)(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Interaction cases and behavior rules</strong><span className="help">Runs project behavior rules and interaction checks on tabs, popups, and navigation.</span></span>
+                </label>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={autoAnswer} disabled={!functional} onChange={(e) => setAutoAnswer(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Answer quiz questions automatically</strong><span className="help">Selects answers and submits to proceed past blocking quiz gates.</span></span>
+                </label>
+              </div>
             </fieldset>
-            <fieldset className="fieldset">
+
+            <fieldset className="fieldset" style={{ marginBottom: '1.25rem' }}>
               <legend>Screen sizes</legend>
-              <p className="help">Simulated in a desktop browser, not tested on real devices. The first size is used to explore the course; the others re-check the first screens reached. Storyline courses are a fixed-size stage and are recognized automatically and tested at the first size only.</p>
-              <div className="checks-row">
+              <p className="help" style={{ marginBottom: '0.75rem' }}>Tested in simulated viewports. The primary size explores the course; other sizes verify responsive reflow.</p>
+              <div className="checks-row" style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                 {VIEWPORTS.map((v) => (
-                  <label key={v.name} className="checkbox">
+                  <label
+                    key={v.name}
+                    className="checkbox"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.5rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: sizes.includes(v.name) ? '1px solid #2563eb' : '1px solid #cbd5e1',
+                      background: sizes.includes(v.name) ? '#eff6ff' : '#ffffff',
+                      cursor: !layout ? 'not-allowed' : 'pointer',
+                      opacity: !layout ? 0.6 : 1,
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={sizes.includes(v.name)}
                       disabled={!layout || (sizes.length === 1 && sizes.includes(v.name))}
                       onChange={(e) => (setSizesTouched(true), setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name))))}
                     />{' '}
-                    <span>
-                      {v.label} <span className="muted">{v.width}×{v.height}</span>
+                    <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                      {v.label} <span className="muted" style={{ fontSize: '0.8rem' }}>({v.width}×{v.height})</span>
                     </span>
                   </label>
                 ))}
               </div>
             </fieldset>
-            <div className="field">
+
+            <div className="field" style={{ marginBottom: '1.25rem' }}>
               <label htmlFor="s-profile">Client settings (optional)</label>
               <select id="s-profile" value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-describedby="s-profile-help">
-                <option value="">None (no brand checks)</option>
+                <option value="">None (standard checks)</option>
                 {(profiles.data ?? []).map((pr) => (
                   <option key={pr.id} value={pr.id}>
                     {pr.name}
@@ -337,33 +425,33 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                 ))}
               </select>
               <p id="s-profile-help" className="help">
-                A client’s own brand fonts and colours, terms to flag, link policy and screen sizes. The scan keeps a copy, so editing them later does not change past reports. <a href="#/profiles">Manage client settings</a>
+                A client’s brand colors, forbidden words, link policy, and custom screen sizes. <a href="#/profiles">Manage client settings</a>
               </p>
             </div>
 
-            <details className="advanced">
+            <details className="advanced" style={{ marginTop: '1.25rem' }}>
               <summary>Advanced settings</summary>
-              <p className="help">Defaults suit most courses. These values are used even while this section is closed.</p>
+              <p className="help" style={{ marginBottom: '0.75rem' }}>Defaults suit most courses. These values are used even while this section is closed.</p>
               <div className="grid-2">
                 <div className="field">
                   <label htmlFor="s-origins">Other websites this course needs</label>
                   <textarea id="s-origins" rows={2} placeholder="https://cdn.example.com" value={origins} onChange={(e) => setOrigins(e.target.value)} aria-describedby="s-origins-help" />
                   <p id="s-origins-help" className="help">
-                    Exact addresses for media or course resources, one per line. The course’s own site is always allowed. This does not override the blocked-network rules.
+                    Exact addresses for media or course resources, one per line. The course’s own site is always allowed.
                   </p>
                 </div>
                 <div className="field">
                   <label htmlFor="s-prefixes">Limit scanning to these course paths</label>
                   <textarea id="s-prefixes" rows={2} placeholder="/course/" value={prefixes} onChange={(e) => setPrefixes(e.target.value)} aria-describedby="s-prefixes-help" />
                   <p id="s-prefixes-help" className="help">
-                    Leave empty to use the normal course scope (the whole site of the link).
+                    Leave empty to use normal scope (the whole course origin).
                   </p>
                 </div>
                 <div className="field">
                   <label htmlFor="s-timeout">Time allowed to open a page (seconds)</label>
                   <input id="s-timeout" type="number" min={1} max={120} required value={timeoutSec} onChange={(e) => setTimeoutSec(Number(e.target.value))} aria-describedby="s-timeout-help" />
                   <p id="s-timeout-help" className="help">
-                    1 to 120. A page that takes longer is reported as “could not verify”, not as broken.
+                    1 to 120. A page that takes longer is reported as “could not verify”.
                   </p>
                 </div>
                 <div className="field">
@@ -377,22 +465,22 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                   <label htmlFor="s-depth">Maximum steps from the start</label>
                   <input id="s-depth" type="number" min={0} max={10} required disabled={!explore} value={maxDepth} onChange={(e) => setMaxDepth(Number(e.target.value))} aria-describedby="s-depth-help" />
                   <p id="s-depth-help" className="help">
-                    0 to 10. A limit on how far exploration goes, not course completion.
+                    0 to 10. A limit on how far exploration travels from start.
                   </p>
                 </div>
               </div>
-              <label className="checkbox">
-                <input type="checkbox" checked={compareBaseline} disabled={!layout} onChange={(e) => setCompareBaseline(e.target.checked)} /> <span>Compare with an earlier scan<span className="help">Uses a saved baseline from a finished scan of the same course, screen, size, browser and settings. Use on stable pages only. Only available once a baseline has been saved.</span></span>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <input type="checkbox" checked={compareBaseline} disabled={!layout} onChange={(e) => setCompareBaseline(e.target.checked)} /> <span><strong>Compare with an earlier scan</strong><span className="help">Uses a saved baseline from an earlier finished scan of the same course.</span></span>
               </label>
-              <label className="checkbox">
-                <input type="checkbox" checked={testNonResponsive} disabled={!layout} onChange={(e) => setTestNonResponsive(e.target.checked)} /> <span>Test other screen sizes even for Storyline courses<span className="help">Not recommended: Storyline stages are fixed-size by design.</span></span>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <input type="checkbox" checked={testNonResponsive} disabled={!layout} onChange={(e) => setTestNonResponsive(e.target.checked)} /> <span><strong>Test other screen sizes even for Storyline courses</strong><span className="help">Not recommended: Storyline stages are fixed-size by design.</span></span>
               </label>
-              <div className="grid-2">
+              <div className="grid-2" style={{ marginTop: '0.75rem' }}>
                 <div className="field">
                   <label htmlFor="s-terms">Terms to flag</label>
                   <textarea id="s-terms" rows={3} placeholder={'e-learning => eLearning'} value={terms} onChange={(e) => setTerms(e.target.value)} aria-describedby="s-terms-help" />
                   <p id="s-terms-help" className="help">
-                    One per line. Use “term =&gt; preferred” to suggest a replacement.
+                    One per line. Use “term =&gt; preferred” to suggest replacement.
                   </p>
                 </div>
                 <div className="field">
@@ -412,40 +500,44 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
             <h2 ref={heading} tabIndex={-1}>
               3. Review and start
             </h2>
-            <dl className="kv review">
-              <div>
-                <dt>Course</dt>
-                <dd>
-                  <span title={url}>{hostPath(url)}</span> <span className="muted">(published link)</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Checks</dt>
-                <dd>
-                  Page, links, images and text{explore ? '; click-through' : ''}
-                  {accessibility ? '; accessibility and keyboard' : ''}
-                  {layout ? '; layout and page load' : ''}
-                  {!explore && <span className="muted"> · only the opening page will be checked</span>}
-                </dd>
-              </div>
-              <div>
-                <dt>Screen sizes</dt>
-                <dd>{layout ? sizeList.map((v) => `${v.label} ${v.width}×${v.height}`).join(', ') || 'Desktop' : 'Not checked'} <span className="muted">(simulated)</span></dd>
-              </div>
-              <div>
-                <dt>Client settings</dt>
-                <dd>{profileName ?? 'None'}</dd>
-              </div>
-              <div>
-                <dt>Limits</dt>
-                <dd>
-                  {explore ? `Up to ${maxStates} screens or views, ${maxDepth} step${maxDepth === 1 ? '' : 's'} from the start. ` : ''}Up to {timeoutSec} s to open a page.
-                  {lines(prefixes).length > 0 && ` Only these paths: ${lines(prefixes).join(', ')}.`}
-                  {lines(origins).length > 0 && ` Also allowed: ${lines(origins).join(', ')}.`}
-                </dd>
-              </div>
-            </dl>
-            <p className="help">The scan reads the course like a visitor would. It does not submit forms or click controls that look unsafe (like Submit or Delete), and it does not edit the course. A scan finishing is not a QA pass.</p>
+            <div style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', padding: '1.25rem', marginBottom: '1.25rem' }}>
+              <dl className="kv review" style={{ margin: 0 }}>
+                <div>
+                  <dt>Course</dt>
+                  <dd>
+                    <span title={url} style={{ fontWeight: 600 }}>{hostPath(url)}</span> <span className="muted">(published link)</span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>Checks</dt>
+                  <dd>
+                    Page, links, images and text{explore ? '; click-through' : ''}
+                    {accessibility ? '; accessibility and keyboard' : ''}
+                    {layout ? '; layout and page load' : ''}
+                    {!explore && <span className="muted"> · only the opening page will be checked</span>}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Screen sizes</dt>
+                  <dd>{layout ? sizeList.map((v) => `${v.label} ${v.width}×${v.height}`).join(', ') || 'Desktop' : 'Not checked'} <span className="muted">(simulated)</span></dd>
+                </div>
+                <div>
+                  <dt>Client settings</dt>
+                  <dd>{profileName ?? 'None'}</dd>
+                </div>
+                <div>
+                  <dt>Limits</dt>
+                  <dd>
+                    {explore ? `Up to ${maxStates} screens or views, ${maxDepth} step${maxDepth === 1 ? '' : 's'} from the start. ` : ''}Up to {timeoutSec} s to open a page.
+                    {lines(prefixes).length > 0 && ` Only these paths: ${lines(prefixes).join(', ')}.`}
+                    {lines(origins).length > 0 && ` Also allowed: ${lines(origins).join(', ')}.`}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            <p className="help" style={{ marginBottom: '1rem' }}>
+              The scan reads the course like a visitor would. It does not submit forms or click controls that look unsafe (like Submit or Delete), and it does not edit the course. A scan finishing is not a QA pass.
+            </p>
             {browserBlocked && (
               <Alert tone="error" title="Scanning is not available on this computer yet." live>
                 The scanning browser is not installed. See <a href="#/help">Help → System status</a> for the one-time install step.
@@ -460,7 +552,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
           </p>
         )}
 
-        <div className="actions wizard-actions">
+        <div className="actions wizard-actions" style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '1.5rem', paddingTop: '1rem', borderTop: '1px solid #e2e8f0' }}>
           {step > 0 && (
             <button type="button" className="btn" onClick={back} disabled={busy}>
               Back
@@ -472,7 +564,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
             </button>
           )}
           {step === 2 && (
-            <button type="submit" className="btn btn-primary" disabled={busy || browserBlocked}>
+            <button type="submit" className="btn btn-primary" disabled={busy || browserBlocked} style={{ padding: '0.6rem 1.4rem', fontSize: '0.95rem' }}>
               {busy ? 'Starting…' : 'Start scan'}
             </button>
           )}
