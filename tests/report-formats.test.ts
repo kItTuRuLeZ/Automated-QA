@@ -154,7 +154,7 @@ describe('report formats from one model', () => {
     expect([num('fix'), num('check'), num('not_checked')]).toEqual([rep.counts.fix, rep.counts.check, rep.counts.notChecked]);
     expect(num('rules', 'data-total')).toBe(rep.checkTotals.uniqueRules);
     expect(num('executions', 'data-total')).toBe(rep.checkTotals.executions);
-    expect(html).toContain('Not tested and errored checks are never counted as passed');
+    expect(html).toContain('Not tested, errored, not supported and inconclusive checks are never counted as passed');
     expect(html).toContain('Screen limit reached');
     expect(html).toContain('Manual review checklist');
     expect(html).toContain('AI was not used for any result in this report');

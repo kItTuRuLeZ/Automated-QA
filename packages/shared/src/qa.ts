@@ -62,6 +62,8 @@ export interface ProgressCounters {
   testsManual: number;
   testsPending: number;
   testsRunning: number;
+  testsUnsupported: number;
+  testsInconclusive: number;
 }
 
 export const EMPTY_COUNTERS: ProgressCounters = {
@@ -76,6 +78,8 @@ export const EMPTY_COUNTERS: ProgressCounters = {
   testsManual: 0,
   testsPending: 0,
   testsRunning: 0,
+  testsUnsupported: 0,
+  testsInconclusive: 0,
 };
 
 // ---- inventory ----
@@ -156,7 +160,7 @@ export interface InteractionInstance {
 
 // ---- test definitions ----
 
-export const TEST_STATUSES = ['pending', 'running', 'passed', 'failed', 'blocked', 'error', 'skipped', 'not_applicable', 'manual_review_required'] as const;
+export const TEST_STATUSES = ['pending', 'running', 'passed', 'failed', 'blocked', 'error', 'skipped', 'not_applicable', 'manual_review_required', 'unsupported', 'inconclusive'] as const;
 export type TestStatus = (typeof TEST_STATUSES)[number];
 /** Statuses that count as an executed result. Everything else is a gap. */
 export const EXECUTED_STATUSES: readonly TestStatus[] = ['passed', 'failed'];

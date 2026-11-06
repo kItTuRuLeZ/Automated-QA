@@ -57,7 +57,7 @@ export interface DeriveInput {
   now: () => string;
 }
 
-/** The status a group of recorded check outcomes adds up to. A failure wins, then errors, then gaps, then reviews. */
+/** The status a group of recorded check outcomes adds up to. A failure wins, then errors, then gaps (not run, inconclusive, unsupported), then reviews. A pass only counts when nothing else is open. */
 export function statusFromChecks(checks: readonly CheckResult[]): { status: TestStatus; reason?: string; actual: string } {
   const by = (o: CheckResult['outcome']) => checks.filter((c) => c.outcome === o);
   const failed = by('failed');
@@ -66,10 +66,14 @@ export function statusFromChecks(checks: readonly CheckResult[]): { status: Test
   const review = by('needs_review');
   const passed = by('passed');
   const na = by('not_applicable');
+  const inconclusive = by('inconclusive');
+  const unsupported = by('unsupported');
   const ids = (list: readonly CheckResult[]) => [...new Set(list.map((c) => c.ruleId))].join(', ');
   if (failed.length) return { status: 'failed', actual: `${failed.length} check${failed.length === 1 ? '' : 's'} failed (${ids(failed)}).` };
   if (error.length) return { status: 'error', reason: `The engine reported an error (${ids(error)}): ${error[0]!.reasonDetail ?? error[0]!.reason ?? 'no detail'}`, actual: 'No result: the check itself failed to run.' };
   if (notTested.length) return { status: 'blocked', reason: `Not tested (${ids(notTested)}): ${notTested[0]!.reasonDetail ?? notTested[0]!.reason ?? 'no reason recorded'}`, actual: 'No result: the check did not run.' };
+  if (inconclusive.length) return { status: 'inconclusive', reason: `The result could not be settled (${ids(inconclusive)}): ${inconclusive[0]!.reasonDetail ?? inconclusive[0]!.reason}`, actual: 'No reliable result: what the check saw does not settle the question.' };
+  if (unsupported.length) return { status: 'unsupported', reason: `Not supported by the scanner (${ids(unsupported)}): ${unsupported[0]!.reasonDetail ?? unsupported[0]!.reason}`, actual: 'Not checked: the scanner cannot check this kind of content.' };
   if (review.length) return { status: 'manual_review_required', reason: `The scanner could not decide (${ids(review)}). A person needs to look.`, actual: `${review.length} item${review.length === 1 ? '' : 's'} need review.` };
   if (passed.length) return { status: 'passed', actual: `${passed.length} check${passed.length === 1 ? '' : 's'} passed (${ids(passed)}).` };
   if (na.length) return { status: 'not_applicable', reason: na[0]!.reasonDetail ?? 'The check did not apply to this screen.', actual: 'Not applicable.' };

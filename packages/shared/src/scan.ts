@@ -228,7 +228,7 @@ export interface CoverageSummary {
   budgetsReached: ReasonCode[];
   blockedRequests: number;
   /** Authoring platform recognized on the first page, when known. */
-  platform?: 'storyline' | 'unknown';
+  platform?: 'storyline' | 'rise' | 'unknown';
 }
 
 export interface ScanRun {

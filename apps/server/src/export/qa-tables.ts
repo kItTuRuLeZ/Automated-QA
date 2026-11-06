@@ -28,7 +28,7 @@ const STATUS_WORDS: Record<string, string> = {
   in_progress: 'In progress',
   issues_found: 'Issues found',
   needs_manual_review: 'Needs manual review',
-  passed_automated: 'Passed automated checks',
+  passed_automated: 'Passed configured checks',
 };
 const BADGE_WORDS: Record<string, string> = {
   partially_checked: 'Partially checked',

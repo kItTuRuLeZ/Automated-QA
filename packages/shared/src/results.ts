@@ -90,6 +90,9 @@ export interface CheckResult {
   executedAt: IsoTimestamp;
   /** Engine version that produced this result (e.g. axe-core 4.x). */
   engineVersion?: string;
+  /** 1 unless the check was repeated. A result reached on a later attempt keeps the first outcome beside it. */
+  attempt?: number;
+  firstAttemptOutcome?: CheckOutcome;
 }
 
 export interface Evidence {

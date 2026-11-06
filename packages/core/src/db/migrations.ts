@@ -333,4 +333,31 @@ CREATE TABLE review_dispositions (
 CREATE INDEX idx_review_dispositions_target ON review_dispositions(run_id, target_kind, target_id);
 `,
   },
+  {
+    // Adds the 'unsupported' and 'inconclusive' outcomes. SQLite cannot change a CHECK constraint in place, so the table is
+    // rebuilt and every existing row is copied as it is; older scans keep exactly the outcomes they had.
+    version: 8,
+    name: 'check_outcomes_unsupported_inconclusive',
+    sql: `
+CREATE TABLE check_results_v8 (
+  id TEXT PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES scan_runs(id) ON DELETE CASCADE,
+  rule_id TEXT NOT NULL,
+  state_id TEXT,
+  viewport_name TEXT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('passed','failed','needs_review','not_applicable','not_tested','error','unsupported','inconclusive')),
+  reason TEXT,
+  reason_detail TEXT,
+  duration_ms INTEGER NOT NULL,
+  data_json TEXT NOT NULL,
+  executed_at TEXT NOT NULL,
+  CHECK (outcome NOT IN ('not_tested','error','unsupported','inconclusive') OR reason IS NOT NULL)
+);
+INSERT INTO check_results_v8 (id, run_id, rule_id, state_id, viewport_name, outcome, reason, reason_detail, duration_ms, data_json, executed_at)
+  SELECT id, run_id, rule_id, state_id, viewport_name, outcome, reason, reason_detail, duration_ms, data_json, executed_at FROM check_results;
+DROP TABLE check_results;
+ALTER TABLE check_results_v8 RENAME TO check_results;
+CREATE INDEX idx_checks_run ON check_results(run_id);
+`,
+  },
 ];

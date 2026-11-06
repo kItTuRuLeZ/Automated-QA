@@ -39,6 +39,11 @@ describe('archive safety', () => {
     ['drive letter', { 'C:/evil.txt': 'x' }],
     ['backslash', { 'a\\evil.txt': 'x' }],
     ['empty segment', { 'a//evil.txt': 'x' }],
+    // Windows treats these specially: device names open a device, and a trailing dot or space is silently dropped (so two entries can land on one file).
+    ['Windows device name', { 'CON.html': 'x' }],
+    ['Windows device name in a folder', { 'media/aux/clip.mp3': 'x' }],
+    ['trailing dot', { 'lesson./index.html': 'x' }],
+    ['trailing space', { 'index.html ': 'x' }],
   ])('rejects %s and writes nothing', (_name, files) => {
     const dest = path.join(tmp(), 'out');
     expect(codeOf(() => extractArchive(makeZip(files), dest))).toBe('unsafe_path');

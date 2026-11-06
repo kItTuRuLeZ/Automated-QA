@@ -138,7 +138,7 @@ export interface RunReport {
   /** AI-written recommendations, kept separate from deterministic findings. */
   advisory: ReportIssue[];
   coverage: { screensScanned: number; budgetsReached: string[]; blockedRequests: number };
-  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number };
+  checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number; unsupported: number; inconclusive: number };
 }
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
@@ -199,7 +199,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
 
   const reasons = new Map<string, number>();
   for (const c of store.listCheckResults(runId)) {
-    if ((c.outcome === 'not_tested' || c.outcome === 'error') && c.reason) reasons.set(c.reason, (reasons.get(c.reason) ?? 0) + 1);
+    if ((c.outcome === 'not_tested' || c.outcome === 'error' || c.outcome === 'unsupported' || c.outcome === 'inconclusive') && c.reason) reasons.set(c.reason, (reasons.get(c.reason) ?? 0) + 1);
   }
 
   const layoutOn = run.config.engines.layout;
@@ -312,6 +312,8 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       notApplicable: summary.byOutcome.not_applicable,
       notTested: summary.byOutcome.not_tested,
       errors: summary.byOutcome.error,
+      unsupported: summary.byOutcome.unsupported,
+      inconclusive: summary.byOutcome.inconclusive,
     },
   };
 }

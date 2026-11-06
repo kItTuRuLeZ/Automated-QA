@@ -339,6 +339,8 @@ const STATUS_COUNTER: Record<TestStatus, keyof ProgressCounters | undefined> = {
   pending: 'testsPending',
   running: 'testsRunning',
   not_applicable: undefined,
+  unsupported: 'testsUnsupported',
+  inconclusive: 'testsInconclusive',
 };
 
 interface ProgressRow {

@@ -18,10 +18,16 @@ export interface StatusCounts {
   notApplicable: number;
   /** Not-applicable cases that carry no reason. They are not excluded; they count as a gap. */
   notApplicableWithoutReason: number;
+  /** The scanner cannot check this content. A gap, never a pass. */
+  unsupported: number;
+  /** The check ran but could not settle the question. A gap, never a pass. */
+  inconclusive: number;
+  /** A status this version does not know. Counted as a gap so a new status can never slip through as a pass. */
+  unknown: number;
 }
 
 export function countStatuses(executions: readonly TestExecution[]): StatusCounts {
-  const c: StatusCounts = { passed: 0, failed: 0, blocked: 0, error: 0, skipped: 0, manual: 0, pending: 0, running: 0, notApplicable: 0, notApplicableWithoutReason: 0 };
+  const c: StatusCounts = { passed: 0, failed: 0, blocked: 0, error: 0, skipped: 0, manual: 0, pending: 0, running: 0, notApplicable: 0, notApplicableWithoutReason: 0, unsupported: 0, inconclusive: 0, unknown: 0 };
   for (const e of executions) {
     switch (e.status as TestStatus) {
       case 'passed':
@@ -52,6 +58,14 @@ export function countStatuses(executions: readonly TestExecution[]): StatusCount
         if (e.reason && e.reason.trim()) c.notApplicable++;
         else c.notApplicableWithoutReason++;
         break;
+      case 'unsupported':
+        c.unsupported++;
+        break;
+      case 'inconclusive':
+        c.inconclusive++;
+        break;
+      default:
+        c.unknown++;
     }
   }
   return c;
@@ -71,7 +85,7 @@ export interface ScreenResult {
 }
 
 /** A gap is anything that keeps a screen from being called passed. */
-export const gapCount = (c: StatusCounts): number => c.blocked + c.error + c.skipped + c.manual + c.pending + c.notApplicableWithoutReason;
+export const gapCount = (c: StatusCounts): number => c.blocked + c.error + c.skipped + c.manual + c.pending + c.notApplicableWithoutReason + c.unsupported + c.inconclusive + c.unknown;
 
 /**
  * The automated status of one screen.
@@ -139,6 +153,9 @@ export function screenStatus(
     if (counts.manual) reasons.push(`${counts.manual} check${counts.manual === 1 ? ' needs' : 's need'} a person (no automation for it, or the expected result is unknown).`);
     if (counts.blocked) reasons.push(`${counts.blocked} check${counts.blocked === 1 ? ' was' : 's were'} blocked.`);
     if (counts.error) reasons.push(`${counts.error} check${counts.error === 1 ? '' : 's'} hit a runner error (not a confirmed course defect).`);
+    if (counts.unsupported) reasons.push(`${counts.unsupported} check${counts.unsupported === 1 ? ' is' : 's are'} not supported by the scanner here (for example drawn on a canvas or inside a frame it cannot open). Check by hand.`);
+    if (counts.inconclusive) reasons.push(`${counts.inconclusive} check${counts.inconclusive === 1 ? '' : 's'} ran but could not settle the result.`);
+    if (counts.unknown) reasons.push(`${counts.unknown} check${counts.unknown === 1 ? ' has' : 's have'} a status this version of the tool does not recognise.`);
     if (counts.skipped) reasons.push(`${counts.skipped} check${counts.skipped === 1 ? ' was' : 's were'} skipped.`);
     if (counts.pending) reasons.push(`${counts.pending} check${counts.pending === 1 ? ' has' : 's have'} not run yet.`);
     if (counts.notApplicableWithoutReason) reasons.push(`${counts.notApplicableWithoutReason} check${counts.notApplicableWithoutReason === 1 ? ' was' : 's were'} marked not applicable without a reason.`);
@@ -173,6 +190,8 @@ export interface CoverageSummary {
   manual: { outstanding: number; manualOnlyCases: number };
   /** Blocks, layers, scenes and package items that are listed but not tracked one by one. */
   listedNotTracked: number;
+  /** Rise blocks a browser scrolled into view, of the blocks the course lists. Seen is not tested. */
+  blocksSeen: Ratio;
   gaps: { blocked: number; errored: number; skipped: number; pending: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
   counts: StatusCounts;
   /** One statement built from the numbers above. */
@@ -219,6 +238,9 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
   const visited = primary.filter((u) => u.visitedAt).length;
   const visit = ratio(visited, completeness === 'unknown' ? undefined : primary.length, completeness === 'unknown' ? `The total number of ${noun.plural} is not known, so there is no visit percentage. ${visited} found and visited so far.` : 'Nothing discovered.');
 
+  const blocks = units.filter((u) => u.kind === 'block');
+  const blocksSeen = ratio(blocks.filter((u) => u.visitedAt).length, blocks.length, 'The course lists no blocks.');
+
   const counts = countStatuses(executions);
   const mapped = executions.filter((e) => {
     if (e.status === 'not_applicable' && e.reason) return false;
@@ -257,6 +279,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
       ? 'No automated checks were mapped.'
       : `${terminal} of ${mapped.length} mapped automated checks executed (${counts.passed} passed, ${counts.failed} failed); ${counts.blocked + counts.error + counts.skipped + counts.pending + counts.running} blocked, errored, skipped or not run.`,
   );
+  if (blocksSeen.available) parts.push(`${blocksSeen.numerator} of ${blocksSeen.denominator} blocks were scrolled into view (seen, not tested).`);
   if (unitsNotReached.length) parts.push(`${unitsNotReached.length} ${unitsNotReached.length === 1 ? noun.singular : noun.plural} not reached.`);
   if (interactionRatio.available && interactionRatio.numerator < interactionRatio.denominator) {
     const unexercised = interactionRatio.denominator - interactionRatio.numerator;
@@ -273,6 +296,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     interactions: { total: interactions.length, exercised: interactionRatio },
     manual: { outstanding: manualOutstanding, manualOnlyCases },
     listedNotTracked: units.length - primary.length,
+    blocksSeen,
     gaps,
     counts,
     statement: parts.join(' '),

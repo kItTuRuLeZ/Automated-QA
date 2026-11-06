@@ -12,11 +12,15 @@ export const CHECK_OUTCOMES = [
   'not_applicable',
   'not_tested',
   'error',
+  /** The scanner cannot check this kind of content (canvas, an uninspectable frame, a control it has no automation for). Never a pass. */
+  'unsupported',
+  /** The check ran but what it saw does not settle the question (timing-sensitive, contradictory, or ambiguous). Never a pass. */
+  'inconclusive',
 ] as const;
 export type CheckOutcome = (typeof CHECK_OUTCOMES)[number];
 
 /** Outcomes that must carry a reason. */
-export const OUTCOMES_REQUIRING_REASON = ['not_tested', 'error'] as const satisfies readonly CheckOutcome[];
+export const OUTCOMES_REQUIRING_REASON = ['not_tested', 'error', 'unsupported', 'inconclusive'] as const satisfies readonly CheckOutcome[];
 
 /**
  * Lifecycle of a scan run. `completed` means the configured scan finished,
@@ -154,6 +158,8 @@ export const REASON_CODES = [
   'no_baseline',
   'baseline_incompatible',
   'excluded_by_profile',
+  'browser_unavailable',
+  'browser_crashed',
 ] as const;
 export type ReasonCode = (typeof REASON_CODES)[number];
 

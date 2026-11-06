@@ -95,6 +95,9 @@ export function unsafeName(name: string): string | undefined {
   const parts = name.replace(/\/$/, '').split('/');
   if (parts.some((s) => s === '..')) return 'contains ".."';
   if (parts.some((s) => s === '' || s === '.')) return 'contains an empty or "." segment';
+  // Windows drops a trailing dot or space (two entries could land on one file) and opens device names such as CON or AUX instead of a file.
+  if (parts.some((s) => /[. ]$/.test(s))) return 'has a name ending in a dot or space';
+  if (parts.some((s) => /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i.test(s))) return 'uses a name Windows reserves for a device';
   return undefined;
 }
 

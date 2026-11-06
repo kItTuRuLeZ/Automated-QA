@@ -117,6 +117,25 @@ describe('screen status rules', () => {
 });
 
 describe('coverage numbers', () => {
+  it('reports Rise blocks seen on screen as their own number, separate from lesson visits', () => {
+    const lesson = unit({ id: 'L', kind: 'lesson', source: 'authoring_export' });
+    const blocks = [
+      unit({ id: 'b1', kind: 'block', parentId: 'L', source: 'authoring_export' }),
+      unit({ id: 'b2', kind: 'block', parentId: 'L', source: 'authoring_export' }),
+      unit({ id: 'b3', kind: 'block', parentId: 'L', source: 'authoring_export', visitedAt: undefined, visitedStateIds: [] }),
+    ];
+    const c = summarizeCoverage({ units: [lesson, ...blocks], executions: [], interactions: [], definitions: new Map(), unitNoun: { singular: 'lesson', plural: 'lessons' } });
+    expect(c.visit).toMatchObject({ available: true, numerator: 1, denominator: 1 });
+    expect(c.blocksSeen).toMatchObject({ available: true, numerator: 2, denominator: 3 });
+    expect(c.statement).toMatch(/2 of 3 blocks were scrolled into view \(seen, not tested\)/);
+  });
+
+  it('has no block number when the course lists no blocks', () => {
+    const c = summarizeCoverage({ units: [unit({ source: 'manifest' })], executions: [], interactions: [], definitions: new Map() });
+    expect(c.blocksSeen).toMatchObject({ available: false });
+    expect(c.statement).not.toMatch(/blocks/);
+  });
+
   it('never reports a percentage for an empty or unknown denominator', () => {
     expect(ratio(0, 0, 'none')).toEqual({ available: false, reason: 'none' });
     expect(ratio(3, undefined, 'unknown')).toEqual({ available: false, reason: 'unknown' });
