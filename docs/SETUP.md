@@ -60,6 +60,7 @@ The setting accepts only loopback address and port pairs. Anything else, includi
 | `CQA_ALLOW_LOCAL_TARGETS` | unset | Comma-separated `127.0.0.1:port` pairs that may be scanned (offline sample pack) |
 | `CQA_PACKAGE_PORT` | `4318` | Port of the separate local address that serves uploaded course packages |
 | `CQA_RETENTION_DAYS` | unset | If set, scans older than this many days are deleted at start-up |
+| `CQA_WORKER_CONCURRENCY` | `1` | How many scans run at the same time (1 to 4). Each scan uses its own Chromium, so raise it only on a machine with memory to spare |
 
 ## Course packages (ZIP uploads)
 
@@ -93,3 +94,5 @@ Restore checks every checksum and the database's own integrity check before chan
 | A scan of a local or intranet address is refused (NET-001) | Local and private addresses are blocked by design; see the sample pack section for the offline exception |
 | PDF download fails but HTML and Excel work | The scanning browser is missing (see above) |
 | `npm run restore` says the app is running | Stop `npm start` first |
+| A scan fails with "The scan browser (Chromium) was not found at …" | The browser is not where Playwright looks. Run `npm run browsers:install`. If the `PLAYWRIGHT_BROWSERS_PATH` environment variable is set, it must point at the folder that holds the browsers (by default `%LOCALAPPDATA%\ms-playwright` on Windows), or be removed |
+| A scan fails with "The scan browser closed or crashed during the scan" | Chromium stopped part-way (out of memory, killed process). Results up to that point are kept; run the scan again, with fewer scans at once if `CQA_WORKER_CONCURRENCY` is above 1 |

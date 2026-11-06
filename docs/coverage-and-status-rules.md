@@ -6,8 +6,8 @@ How the app turns recorded test results into the statuses and numbers it shows. 
 
 | Kind | Who sets it | Values |
 | --- | --- | --- |
-| **Test status** (one per check on one screen or control) | The scanner, when a check ends | Not run yet, Running, Passed, Failed, Blocked, Runner error, Skipped, Not applicable, Needs manual review |
-| **Automated screen status** (one per screen) | Computed from that screen’s test statuses | Not tested, In progress, Issues found, Needs manual review, Passed automated checks |
+| **Test status** (one per check on one screen or control) | The scanner, when a check ends | Not run yet, Running, Passed, Failed, Blocked, Runner error, Skipped, Not applicable, Needs manual review, Not supported, Inconclusive |
+| **Automated screen status** (one per screen) | Computed from that screen’s test statuses | Not tested, In progress, Issues found, Needs manual review, Passed configured checks |
 | **Reviewer decision** | A person | Accepted, False positive, Retest requested, Manual pass, Manual fail |
 
 A reviewer decision is stored beside the automated result with who decided, when, why, and what the automated status was at that moment. It never replaces the automated result, and it never turns an automated failure into an automated pass.
@@ -17,7 +17,11 @@ Every status other than Passed carries a reason.
 - A **Failed** check has a confirmed expected behavior and an observed behavior that differs from it.
 - A **Runner error** or **Blocked** check is about the scan, not about the course. A control that could not be found again, a page that did not load, or an ambiguous selector is never reported as a course defect.
 - **Needs manual review** is used when the expected result is unknown, the scanner has no automation for the case, or the outcome could not be observed.
+- **Not supported** means the scanner cannot check this kind of content: canvas drawing, a frame it cannot open, or a control it has no automation for. It is a limit of the tool, not a course defect, and never a pass.
+- **Inconclusive** means the check ran but what it saw does not settle the question, for example a timing-sensitive result. It is never a pass.
 - **Not applicable** is only counted as excluded when it has a recorded reason. A not-applicable result with no reason counts as a gap.
+- **Retries:** a check that passes only on a later attempt is stored with its attempt number and its first outcome (`attempt: 2`, `firstAttemptOutcome: failed`), so it never looks like a first-time pass.
+- **Unknown statuses:** a status this version of the tool does not recognise is counted as a gap, never as a pass.
 
 ## Screen status, in order
 
@@ -25,9 +29,9 @@ The first rule that fits wins.
 
 1. **In progress**: at least one check on the screen is running.
 2. **Issues found**: at least one applicable check failed. Gaps on the same screen are still shown beside it as badges, so a screen with issues and gaps shows both.
-3. **Not tested**: no check passed and nothing is open (no blocked, errored, skipped, manual or not-yet-run checks). An empty result is never a pass.
-4. **Passed automated checks**: at least one check passed, nothing is open, and either a browser actually showed the screen or every executed check was a static one.
-5. **Needs manual review**: everything else. That includes a screen with passes plus one blocked, errored, skipped, manual or pending check; a screen with only manual-review cases; and a screen that passed checks but that no browser ever showed.
+3. **Not tested**: no check passed and nothing is open (no blocked, errored, skipped, manual, not supported, inconclusive or not-yet-run checks). An empty result is never a pass.
+4. **Passed configured checks**: at least one check passed, nothing is open, and either a browser actually showed the screen or every executed check was a static one.
+5. **Needs manual review**: everything else. That includes a screen with passes plus one blocked, errored, skipped, manual, not supported, inconclusive or pending check; a screen with only manual-review cases; and a screen that passed checks but that no browser ever showed.
 
 Badges that can sit beside a status: Partially checked, Not visited by a browser, Manual checks pending, Static checks only, Blocked checks, Runner errors, Reviewer decision recorded.
 

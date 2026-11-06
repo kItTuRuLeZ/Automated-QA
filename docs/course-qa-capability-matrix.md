@@ -49,7 +49,7 @@ This matrix provides a comprehensive breakdown of automated, hybrid, and manual 
 
 ### What the Scanner Guarantees
 1. **Zero False Passes**: An unopened screen or unvisited branch is never marked as passed.
-2. **Deterministic Status Derivation**: Screen statuses (`Passed automated checks`, `Issues found`, `Needs manual review`, `Not tested`) are computed purely from execution rows.
+2. **Deterministic Status Derivation**: Screen statuses (`Passed configured checks`, `Issues found`, `Needs manual review`, `Not tested`) are computed purely from execution rows.
 3. **Explicit Denominators**: Every percentage (visits, executed checks, pass rate) is presented alongside its numerator and denominator (e.g., `12 of 14 screens (85.7%)`).
 4. **Local Privacy**: Runs strictly on `127.0.0.1` without outbound network access.
 

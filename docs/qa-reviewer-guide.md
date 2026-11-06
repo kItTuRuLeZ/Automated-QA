@@ -29,7 +29,7 @@ The progress panel shows the real stage, the screen being checked, how many scre
 
 Open the **Screens** tab. The left side is the course outline; the middle is the selected screen’s results; the evidence for one result sits below or beside it.
 
-Filters: **Needs attention** (the default), **Issues found**, **Needs manual review**, **Passed automated checks**, **Not tested**, **All screens**. You do not have to open every passed screen. **Spot-check a passed screen** opens one at random if you want a sample.
+Filters: **Needs attention** (the default), **Issues found**, **Needs manual review**, **Passed configured checks**, **Not tested**, **All screens**. You do not have to open every passed screen. **Spot-check a passed screen** opens one at random if you want a sample.
 
 What the statuses mean:
 
@@ -37,7 +37,7 @@ What the statuses mean:
 | --- | --- |
 | **Issues found** | A check that applies here failed. The result shows what was expected, what happened, and the evidence. |
 | **Needs manual review** | Nothing failed, but something could not be decided: no automation exists, the expected result is unknown, a check was blocked or hit a runner error, or the screen was never opened. |
-| **Passed automated checks** | At least one check passed, nothing else is open, and a browser really showed the screen. This is not “error-free”. It says only that the automated checks that apply here passed. |
+| **Passed configured checks** | At least one check passed, nothing else is open, and a browser really showed the screen. This is not “error-free”. It says only that the automated checks that apply here passed. |
 | **Not tested** | No check ran. No findings here does not mean it was tested. |
 
 **Blocked** and **Runner error** describe the scan, not the course. Do not report them as defects.
