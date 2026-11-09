@@ -65,6 +65,17 @@ const RuleInput = z.object({
   reviewState: z.enum(REVIEW_STATES).default('draft'),
 });
 
+const RULES_FORMAT = 'cqa-behavior-rules';
+const ImportedItem = z.object({ label: z.string().trim().min(1).max(200), locator: z.string().trim().max(300).optional() }).strict();
+/** A rules file is data. Anything that is not a known field is refused, so nothing in a file can act as code or as an instruction. */
+const RulesFile = z
+  .object({
+    format: z.literal(RULES_FORMAT).optional(),
+    formatVersion: z.literal(1).optional(),
+    rules: z.array(RuleInput.extend({ requiredItems: z.array(ImportedItem).min(1).max(40), optionalItems: z.array(ImportedItem).max(40).default([]), expectationSource: z.enum(EXPECTATION_SOURCES).default('specification') }).strict()).min(1).max(200),
+  })
+  .strict();
+
 export function registerQaRoutes(app: FastifyInstance, opts: QaRouteOptions): QaStore {
   const { store, artifacts } = opts;
   const qa = new QaStore(store.db);
@@ -449,6 +460,26 @@ ${example.map((c) => `"${c}"`).join(',')}
     const at = nowIso();
     const saved = qa.saveRule({ ...parsed.data, id: newId<string & { __brand: 'rule' }>(), projectId: req.params.id, createdAt: at, updatedAt: at } as BehaviorRule);
     return reply.code(201).send(saved);
+  });
+
+  app.get<{ Params: { id: string } }>('/api/projects/:id/behavior-rules/export', async (req, reply) => {
+    if (!isOpaqueId(req.params.id) || !store.getProject(req.params.id)) return notFound(reply, 'Project not found.');
+    const rules = qa.listRules(req.params.id).map(({ id: _id, projectId: _project, version: _version, createdAt: _created, updatedAt: _updated, ...rule }) => rule);
+    reply.header('content-disposition', 'attachment; filename="behavior-rules.json"');
+    return { format: RULES_FORMAT, formatVersion: 1, rules };
+  });
+
+  app.post<{ Params: { id: string } }>('/api/projects/:id/behavior-rules/import', { bodyLimit: IMPORT_LIMIT }, async (req, reply) => {
+    if (!isOpaqueId(req.params.id) || !store.getProject(req.params.id)) return notFound(reply, 'Project not found.');
+    const parsed = RulesFile.safeParse(req.body);
+    if (!parsed.success) {
+      const first = parsed.error.issues[0];
+      return bad(reply, `Nothing was imported. ${first ? `${first.path.join('.') || 'The file'}: ${first.message}` : 'The file is not a rules file.'}`, parsed.error.issues);
+    }
+    const at = nowIso();
+    // Imported rules always arrive as drafts: approving one is a reviewer's decision, not something a file can claim.
+    for (const rule of parsed.data.rules) qa.saveRule({ ...rule, reviewState: 'draft', id: newId<string & { __brand: 'rule' }>(), projectId: req.params.id, createdAt: at, updatedAt: at } as BehaviorRule);
+    return reply.code(201).send({ imported: parsed.data.rules.length });
   });
 
   app.put<{ Params: { id: string } }>('/api/behavior-rules/:id', async (req, reply) => {

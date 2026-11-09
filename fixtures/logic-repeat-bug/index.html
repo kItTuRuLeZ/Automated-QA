@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>All-click: repeat counted</title></head>
+<body>
+  <main>
+    <h1>All-click: repeat counted</h1>
+    <p>BUG: it counts each change of item, so going back to an earlier item stands in for one never visited.</p>
+    <button type="button" class="item" id="item-a">Alpha</button>
+    <button type="button" class="item" id="item-b">Bravo</button>
+    <button type="button" class="item" id="item-c">Charlie</button>
+    <p><button type="button" id="next" disabled>Next</button></p>
+  </main>
+  <script>
+    var last = null, changes = 0, next = document.getElementById('next');
+    document.querySelectorAll('.item').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (b.id !== last) { changes++; last = b.id; }
+        if (changes >= 3) next.disabled = false;
+      });
+    });
+  </script>
+</body>
+</html>

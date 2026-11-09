@@ -6,6 +6,12 @@ export function parseDragItem(label: string): { from: string; to: string } | und
   return m ? { from: m[1]!, to: m[2]! } : undefined;
 }
 
+/** A rule item written "media: Play narration" requires the media beside that control to play to its end. */
+export function parseMediaItem(label: string): { control: string } | undefined {
+  const m = /^\s*media\s*:\s*(.+?)\s*$/i.exec(label);
+  return m ? { control: m[1]! } : undefined;
+}
+
 /**
  * Finds the one thing a drag item names: a visible element by its text, alt text, accessible name, or a selector the
  * reviewer wrote. Several matches are fine when they sit on the same spot (a drawn shape and the transparent copy

@@ -14,7 +14,7 @@ What the scanner really tests, and on what evidence. "Real course" means a scan 
 | Dialogs and layers | LAY-01, LAY-02 | Opens with content; closes; focus returns | Fixtures | Control gone: Blocked |
 | Next and Previous | NAV-02 | Next changes the content; Previous returns | Real course (Rise Continue buttons have no way back, so 11 are Needs manual review); fixtures | Disabled Next or no Previous: Needs manual review |
 | Links | LNK rules | Link target status, without crawling outside | Fixtures; real scans | Outside links in packages are not requested |
-| "After all clicks" rules | LOG-01 to LOG-05 | Reviewer-defined rules (Phase 7 extends these) | Fixtures | Rule cannot find its screen: Blocked |
+| Conditional rules: all items used, media finished, or a mix | LOG-01 to LOG-05 | Reviewer-defined rules: locked until met, a repeat does not count as a missing item, the named outcome appears | Fixtures only | Rule cannot find its screen, or media does not finish in 2 minutes: Blocked. A rule only inferred from behavior: Inconclusive |
 
 ## Not automated yet
 

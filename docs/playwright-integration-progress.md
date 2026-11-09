@@ -10,7 +10,8 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 3. Upload and launch | Done (4 Nov 2026) | See "Phase 3" below |
 | 5. Discovery and coverage | Done (6 Nov 2026) | See "Phase 5" below |
 | 6. Interaction recipes | Done (7 Nov 2026) | See "Phase 6" below and `docs/interaction-support-matrix.md` |
-| 7–15 | Not started | |
+| 7. Conditional rules | Done (9 Nov 2026) | See "Phase 7" below |
+| 8–15 | Not started | |
 
 ## Phase 1 test run
 
@@ -305,6 +306,36 @@ The scan took about 6.5 minutes and ended `partial`.
 - **Replay route:** deep routes through Continue buttons can fail to replay, as "Course wrap-up" did.
 - **Two workers:** starting a second copy of the tool on the same data folder clears the temp folders of a running scan, which is the likely cause of one failed scan here. Add a guard in Phase 12.
 - **Storyline:** the Storyline walk was not re-scanned on a real course in this phase.
+
+## Phase 7
+
+Extends the existing behavior rules (LOG-01 to LOG-05) rather than adding a second engine. Every scenario uses normal learner clicks from a fresh copy of the screen; no course variable is read or changed.
+
+### What changed
+
+- **Repeat does not substitute** (`engines/functional.ts`, `rule_duplicate`): one walk activates N-1 distinct items, repeats one, and only then activates the last. The outcome must stay absent until that last item.
+- **Media requirements** (`adapters/drag.ts` `parseMediaItem`, `functional.ts`): an item written `media: Play narration` must play to its end, waited for up to 2 minutes (longer is Blocked, never passed). LOG-02 adds "started but not finished". Media and ordinary items combine in one rule. The course walk does not wait for media and records a coverage gap (`traversal.ts`).
+- **Provisional rules** (`runOne`): a rule sourced from `observed_hypothesis` turns a pass or fail into Inconclusive with a reason, and raises no FUN-002 finding.
+- **Versions** (`qa-store.ts`, `qa.ts`): every save raises `version`; each rule test's trace names the version it ran against.
+- **Import and export** (`qa-routes.ts`, `RulesPanel.tsx`): `GET` and `POST /api/projects/:id/behavior-rules/export|import`. Import uses a strict schema: an unknown field refuses the whole file and saves nothing. Imported rules are always drafts.
+- **Fixtures:** `logic-repeat-bug`, `logic-wrong-target`, `logic-media-gate` (`?early` unlocks on play). Premature unlocking and failure to unlock were already covered by `logic-allclick-early` and `logic-never-fires`.
+
+### Tests (9 Nov 2026)
+
+- `tests/rules.integration.test.ts`: 11 of 11 pass. Before the change the repeat-counting fixture went uncaught (`expected 'passed' to be 'failed'`).
+- Type-check: clean.
+- Whole suite: 384 passed, 6 failed, 1 file skipped (`real-exports`). All 6 were time-limit failures. Five traversal tests hit 60 s in the full run and pass when `tests/traversal.integration.test.ts` runs alone. One functional test ran three scans inside 240 s; it is now two tests and both pass. The whole suite was not re-run after that split.
+
+### Not done in Phase 7
+
+- **No real course:** rules have only been run on local fixtures.
+- **Persistence and reset:** not tested. Every scenario starts fresh, and `resetPolicy` is still not acted on.
+- **Orders:** reverse and one fixed shuffle are tried, not every permutation.
+- **`prerequisites`:** the field is still stored but unused; combined requirements are written as required items.
+- **Early-fire window:** between clicks the check is 350 ms. Longer delays are covered by the full window in the omission scenarios.
+- **Drafts still run:** an imported draft is tested like any other rule. Only a rule marked as observed is provisional.
+- **Owner's Rise bypass and Storyline answer-guessing:** not replaced in this phase. Both stay for Phase 8.
+- **Suite speed:** a simple fixture scan takes about a minute here and the full suite over 30 minutes, which is why time limits are being hit. Not investigated.
 
 ## Architecture decisions
 

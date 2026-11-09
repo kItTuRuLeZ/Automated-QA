@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>All-click: wrong outcome</title></head>
+<body>
+  <main>
+    <h1>All-click: wrong outcome</h1>
+    <p>BUG: finishing the items shows the wrong message.</p>
+    <button type="button" class="item" id="item-a">Alpha</button>
+    <button type="button" class="item" id="item-b">Bravo</button>
+    <p id="wrong" hidden>Wrong panel opened</p>
+    <p id="right" hidden>Well done, section complete</p>
+  </main>
+  <script>
+    var seen = {};
+    document.querySelectorAll('.item').forEach(function (b) {
+      b.addEventListener('click', function () {
+        seen[b.id] = true;
+        if (Object.keys(seen).length === 2) document.getElementById('wrong').hidden = false;
+      });
+    });
+  </script>
+</body>
+</html>

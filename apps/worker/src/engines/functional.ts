@@ -1,6 +1,6 @@
 import { contentRoot, waitForContentRoot } from '../adapters/content-root.js';
-import { parseDragItem, performDrag } from '../adapters/drag.js';
-import type { Browser, BrowserContext, Locator, Page } from 'playwright';
+import { parseDragItem, parseMediaItem, performDrag } from '../adapters/drag.js';
+import type { Browser, BrowserContext, ElementHandle, Locator, Page } from 'playwright';
 import type { BehaviorRule, ContentUnit, CourseState, EvidenceId, EvidenceSink, ExecutionTraceStep, InteractionInstance, RuleEvent, RuleItem, ScanRun, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 import { type QaStore, effectiveAutomation, isPrimaryUnit, nowIso } from '@cqa/core';
 import type { NewCheck, NewFinding } from './helpers.js';
@@ -316,6 +316,11 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
     outcome = { status: 'error', reason: `The test runner failed: ${truncate((err as Error).message, 200)}. This is not a confirmed defect in the course.`, actual: 'No result.' };
   } finally {
     await context?.close().catch(() => undefined);
+  }
+
+  // A rule only inferred from what the course did cannot prove or disprove anything until a person confirms it.
+  if (p.rule?.expectationSource === 'observed_hypothesis' && (outcome.status === 'passed' || outcome.status === 'failed')) {
+    outcome = { ...outcome, status: 'inconclusive', reason: `Provisional: this rule was only inferred from what the course did, so a reviewer must confirm it before this counts as a result. Against the inferred rule the test ${outcome.status}${outcome.reason ? `: ${outcome.reason}` : '.'}` };
   }
 
   const done = qa.updateExecution(p.executionId, {
@@ -808,12 +813,32 @@ interface Scenario {
   expect: 'fires' | 'absent';
   /** For "fires" scenarios, the event must not appear before the last click. */
   noEarlyFire: boolean;
+  /** A media item that is started but not left to finish, to show that starting it is not enough. */
+  startOnly?: RuleItem;
+}
+
+const itemName = (item: RuleItem) => parseMediaItem(item.label)?.control ?? item.label;
+
+/** The longest a single media requirement is left to play. A longer one leaves the test blocked, never passed. */
+const MEDIA_WAIT_MS = 120_000;
+
+async function nearestMedia(control: Locator): Promise<ElementHandle<HTMLMediaElement> | null> {
+  const handle = await control.evaluateHandle((el) => {
+    if (el instanceof HTMLMediaElement) return el;
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const m = p.querySelector('audio, video');
+      if (m) return m;
+    }
+    return null;
+  });
+  return handle.asElement() as ElementHandle<HTMLMediaElement> | null;
 }
 
 async function testRule(page: Page, p: Planned, cap: string, input: FunctionalInput, navTimeout: number, t: Tracer): Promise<Outcome> {
   const rule = p.rule!;
   const required = rule.requiredItems;
   if (required.length === 0) return { status: 'blocked', reason: `The rule "${rule.title}" lists no required items.` };
+  t.add('note', `Testing rule "${rule.title}", version ${rule.version ?? 1}. Expectation source: ${sourceLabel(rule.expectationSource)}.`);
   const observer = await makeObserver(page, rule, t);
   if (!observer.ok) return { status: 'blocked', reason: observer.why };
 
@@ -824,7 +849,8 @@ async function testRule(page: Page, p: Planned, cap: string, input: FunctionalIn
       break;
     case 'rule_premature':
       scenarios = [
-        ...required.slice(0, MAX_OMISSIONS).map((omit) => ({ name: `Leave "${omit.label}" untouched`, clicks: required.filter((_, j) => j !== required.indexOf(omit)), expect: 'absent' as const, noEarlyFire: false })),
+        ...required.slice(0, MAX_OMISSIONS).map((omit) => ({ name: `Leave "${itemName(omit)}" untouched`, clicks: required.filter((_, j) => j !== required.indexOf(omit)), expect: 'absent' as const, noEarlyFire: false })),
+        ...required.filter((x) => parseMediaItem(x.label)).map((m) => ({ name: `"${itemName(m)}" started but not finished, every other item activated`, clicks: [...required.filter((x) => x !== m), m], startOnly: m, expect: 'absent' as const, noEarlyFire: false })),
         ...(rule.optionalItems.length
           ? [
               { name: 'Activate only the optional items', clicks: rule.optionalItems, expect: 'absent' as const, noEarlyFire: false },
@@ -833,10 +859,20 @@ async function testRule(page: Page, p: Planned, cap: string, input: FunctionalIn
           : []),
       ];
       break;
-    case 'rule_duplicate':
-      scenarios = [required[0]!, required[required.length - 1]!].filter((x, k, a) => a.indexOf(x) === k).map((item) => ({ name: `Activate "${item.label}" four times, leaving the other items untouched`, clicks: [item, item, item, item], expect: 'absent' as const, noEarlyFire: false }));
+    case 'rule_duplicate': {
       if (required.length === 1) return { status: 'not_applicable', reason: 'The rule has a single required item, so repeated clicks on it are the requirement.' };
+      // Repeating media would only pause it, so only ordinary items are repeated.
+      const repeatable = required.filter((x) => !parseMediaItem(x.label));
+      const missing = required[required.length - 1]!;
+      const again = repeatable[0];
+      scenarios = [
+        ...[required[0]!, missing].filter((x, k, a) => a.indexOf(x) === k && repeatable.includes(x)).map((item) => ({ name: `Activate "${item.label}" four times, leaving the other items untouched`, clicks: [item, item, item, item], expect: 'absent' as const, noEarlyFire: false })),
+        // One walk through the rule: locked after N-1 distinct items, still locked after a repeat, unlocked by the real last item.
+        ...(again && again !== missing ? [{ name: `Activate all but "${itemName(missing)}", repeat "${again.label}", then activate "${itemName(missing)}"`, clicks: [...required.slice(0, -1), again, missing], expect: 'fires' as const, noEarlyFire: true }] : []),
+      ];
+      if (scenarios.length === 0) return { status: 'not_applicable', reason: 'Every required item is media, and repeating media would only pause it.' };
       break;
+    }
     case 'rule_order': {
       const reversed = [...required].reverse();
       const shuffled = seededShuffle(required, rule.id);
@@ -964,20 +1000,42 @@ async function runScenario(page: Page, rule: BehaviorRule, sc: Scenario, obs: Ob
   }
   t.add('observed', `Before any click, ${obs.describe} is not true (as expected).`);
   const unique = new Set<string>();
+  let started: ElementHandle<HTMLMediaElement> | null = null;
+  const tooShort = async (): Promise<Outcome | undefined> =>
+    started && (await started.evaluate((m) => m.ended)) ? { status: 'blocked', reason: 'The media finished before the check could tell whether starting it was enough.', actual: 'The scenario could not separate starting the media from finishing it.' } : undefined;
   for (const [k, item] of sc.clicks.entries()) {
-    const found = await locate(page, item.locator || item.label);
-    if (!found.ok) return { status: 'blocked', reason: `The item "${item.label}" could not be used: ${found.why}`, actual: 'The scenario could not be carried out.' };
+    const name = itemName(item);
+    const isMedia = Boolean(parseMediaItem(item.label));
+    const found = await locate(page, item.locator || name);
+    if (!found.ok) return { status: 'blocked', reason: `The item "${name}" could not be used: ${found.why}`, actual: 'The scenario could not be carried out.' };
+    // Found before the click: a play control often renames itself once pressed.
+    const media = isMedia ? await nearestMedia(found.loc) : null;
+    if (isMedia && !media) return { status: 'blocked', reason: `No audio or video was found beside "${name}", so the rule cannot tell when it has finished.`, actual: 'The scenario could not be carried out.' };
     await found.loc.click({ timeout: STEP_TIMEOUT_MS });
-    unique.add(item.label);
-    t.add('action', `Activate "${item.label}"${sc.clicks.indexOf(item) !== k ? ' (again)' : ''}.`, { uniqueItemsActivated: [...unique], clickNumber: k + 1 });
+    unique.add(name);
+    t.add('action', `Activate "${name}"${sc.clicks.indexOf(item) !== k ? ' (again)' : ''}.`, { uniqueItemsActivated: [...unique], clickNumber: k + 1 });
+    if (media && sc.startOnly === item) {
+      started = media;
+      t.add('note', `"${name}" was started and is deliberately not left to finish.`);
+    } else if (media) {
+      const ended = await page.waitForFunction((m) => m.ended, media, { timeout: MEDIA_WAIT_MS, polling: 100 }).then(() => true, () => false);
+      if (!ended) {
+        const at = await media.evaluate((m) => ({ position: m.currentTime, duration: m.duration, paused: m.paused }));
+        t.add('observed', `"${name}" did not reach its end.`, at);
+        return { status: 'blocked', reason: `"${name}" did not play to its end within ${MEDIA_WAIT_MS / 1000} seconds, so the rule could not be tested.`, actual: `The media stopped at ${at.position.toFixed(1)} of ${at.duration.toFixed(1)} seconds.` };
+      }
+      t.add('observed', `"${name}" played to its end.`);
+    }
     await quick();
     const last = k === sc.clicks.length - 1;
     if (!last || sc.expect === 'absent') {
       // Give an event wired to a click a moment to show up before deciding it has not.
       await sleep(350);
       if (await obs.present()) {
+        const blocked = await tooShort();
+        if (blocked) return blocked;
         const early = !last || sc.expect === 'absent';
-        t.add('observed', `After click ${k + 1} ("${item.label}"), ${obs.describe}.`, { uniqueItemsActivated: [...unique] });
+        t.add('observed', `After click ${k + 1} ("${name}"), ${obs.describe}.`, { uniqueItemsActivated: [...unique] });
         if (early && (sc.noEarlyFire || sc.expect === 'absent')) {
           return { status: 'failed', reason: sc.expect === 'absent' ? 'The event fired when it should not have.' : 'The event fired before the last required item.', actual: `After ${k + 1} click${k === 0 ? '' : 's'} (${unique.size} unique item${unique.size === 1 ? '' : 's'}: ${[...unique].map((u) => `"${u}"`).join(', ')}), ${obs.describe}. The rule requires ${rule.requiredItems.length} unique items.` };
         }
@@ -1012,10 +1070,13 @@ async function runScenario(page: Page, rule: BehaviorRule, sc: Scenario, obs: Ob
     return { status: 'passed', actual: `${obs.describe[0]!.toUpperCase()}${obs.describe.slice(1)} only after the last required item.` };
   }
   // Absence is judged over a window, never from one instant.
-  const windowMs = Math.min(Math.max(rule.timingWindowMs, 800), 3_000);
+  // Kept short while media is playing, so the window closes before a short clip can finish by itself.
+  const windowMs = sc.startOnly ? 800 : Math.min(Math.max(rule.timingWindowMs, 800), 3_000);
   const end = Date.now() + windowMs;
   while (Date.now() < end) {
     if (await obs.present()) {
+      const blocked = await tooShort();
+      if (blocked) return blocked;
       t.add('observed', `During the ${windowMs} ms observation window, ${obs.describe}.`);
       return { status: 'failed', reason: 'The event fired when it should not have.', actual: `${[...unique].length} unique of ${rule.requiredItems.length} required item(s) were activated, yet ${obs.describe}.` };
     }

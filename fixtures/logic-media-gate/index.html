@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Gate: read and listen</title></head>
+<body>
+  <main>
+    <h1>Gate: read and listen</h1>
+    <p>Next unlocks after the policy is opened and the narration has played to its end. Add ?early to unlock as soon as play is pressed (a defect).</p>
+    <button type="button" id="policy">Open policy</button>
+    <div class="player"><audio id="narration" preload="auto" aria-label="Narration"></audio><button type="button" id="play" aria-label="Play narration">Play</button></div>
+    <p><button type="button" id="next" disabled>Next</button></p>
+  </main>
+  <script>
+    var early = location.search.indexOf('early') !== -1;
+    var opened = false, finished = false, next = document.getElementById('next');
+    var check = function () { if (opened && finished) next.disabled = false; };
+    document.getElementById('policy').addEventListener('click', function () { opened = true; check(); });
+    // Two seconds of quiet tone, made here so the fixture has no binary file.
+    var rate = 8000, n = rate * 2, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+    var w = function (o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+    for (var i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(20 * Math.sin(i / 8)));
+    var audio = document.getElementById('narration');
+    audio.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+    audio.addEventListener('ended', function () { finished = true; check(); });
+    document.getElementById('play').addEventListener('click', function () { audio.play(); if (early) { finished = true; check(); } });
+  </script>
+</body>
+</html>

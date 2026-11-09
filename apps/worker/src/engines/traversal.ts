@@ -16,7 +16,7 @@ import type {
   TraversalAction,
 } from '@cqa/shared';
 import { contentRoot } from '../adapters/content-root.js';
-import { parseDragItem, performDrag, resolveDragEnd } from '../adapters/drag.js';
+import { parseDragItem, parseMediaItem, performDrag, resolveDragEnd } from '../adapters/drag.js';
 import { TRAVERSAL_RULES, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/core';
 import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-html.js';
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
@@ -905,6 +905,10 @@ export class Traversal {
     const gateRule = use;
     const steps: Candidate[] = [];
     for (const item of gateRule.items) {
+      if (parseMediaItem(item.label)) {
+        coverage.push({ reason: 'not_implemented', detail: `The rule "${gateRule.title}" needs media to finish, which the scan does not wait for while walking the course, so it could not get past "${node.state.title ?? node.state.url}" with it. The rule is still tested as written.`, stateId: node.state.id });
+        return;
+      }
       const drag = parseDragItem(item.label);
       if (drag) {
         const from = await resolveDragEnd(cur, drag.from);

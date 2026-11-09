@@ -296,6 +296,8 @@ export type RuleEvent = (typeof RULE_EVENTS)[number];
 export interface BehaviorRule {
   id: string;
   projectId: string;
+  /** Raised on every save, so a result can name the rule it was tested against. Absent on rules last saved before versioning; read as 1. */
+  version?: number;
   title: string;
   /** Which content unit the rule applies to (a title or source id fragment), or empty for the launch page. */
   unitMatch: string;

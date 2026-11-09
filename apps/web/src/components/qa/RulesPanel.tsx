@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { type ChangeEvent, useState } from 'react';
 import type { BehaviorRule, RuleItem } from '@cqa/shared';
 import { qaApi } from '../../api-qa';
 import { Alert, Empty, ErrorBox, Loading, useLoader } from '../ui';
@@ -41,6 +41,29 @@ export function RulesPanel({ projectId }: { projectId: string }) {
   const rules = useLoader(() => qaApi.rules(projectId), [projectId]);
   const [editing, setEditing] = useState<BehaviorRule | 'new'>();
   const [template, setTemplate] = useState<Partial<BehaviorRule>>();
+  const [imported, setImported] = useState<{ tone: 'ok' | 'error'; text: string }>();
+
+  const importFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const f = input.files?.[0];
+    if (!f) return;
+    setImported(undefined);
+    try {
+      let content: unknown;
+      try {
+        content = JSON.parse(await f.text());
+      } catch {
+        throw new Error('That file is not valid JSON, so nothing was imported.');
+      }
+      const { imported: n } = await qaApi.importRules(projectId, content);
+      setImported({ tone: 'ok', text: `Imported ${n} rule${n === 1 ? '' : 's'} as draft. Review each one before relying on it.` });
+      rules.reload();
+    } catch (err) {
+      setImported({ tone: 'error', text: (err as Error).message });
+    } finally {
+      input.value = '';
+    }
+  };
 
   return (
     <section className="card" aria-labelledby="rules-h">
@@ -60,6 +83,13 @@ export function RulesPanel({ projectId }: { projectId: string }) {
           </button>
         </div>
       </div>
+      <p>
+        <a className="btn btn-small" href={`/api/projects/${encodeURIComponent(projectId)}/behavior-rules/export`}>Export rules</a>{' '}
+        <label className="btn btn-small">
+          Import rules<input type="file" accept=".json,application/json" className="sr-only" onChange={(e) => void importFile(e)} />
+        </label>
+      </p>
+      {imported && <p role="status" className={imported.tone === 'error' ? 'alert alert-error' : 'muted'}>{imported.text}</p>}
       {rules.error ? (
         <ErrorBox error={rules.error} onRetry={rules.reload} />
       ) : !rules.data ? (
@@ -72,7 +102,7 @@ export function RulesPanel({ projectId }: { projectId: string }) {
         <ul className="plain">
           {rules.data.map((r) => (
             <li key={r.id}>
-              <strong>{r.title}</strong> <span className="muted">· {r.requiredItems.length} required item{r.requiredItems.length === 1 ? '' : 's'} · {EVENTS.find((e) => e[0] === r.expectedEvent)?.[1]} · {r.reviewState}</span>{' '}
+              <strong>{r.title}</strong> <span className="muted">· {r.requiredItems.length} required item{r.requiredItems.length === 1 ? '' : 's'} · {EVENTS.find((e) => e[0] === r.expectedEvent)?.[1]} · {r.reviewState} · version {r.version ?? 1}{r.expectationSource === 'observed_hypothesis' ? ' · provisional' : ''}</span>{' '}
               <button type="button" className="btn btn-small" onClick={() => setEditing(r)}>
                 Edit<span className="sr-only"> {r.title}</span>
               </button>
@@ -152,7 +182,7 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
         <div className="field">
           <label htmlFor="r-req">Items the learner must use (one per line)</label>
           <textarea id="r-req" required rows={5} value={required} onChange={(e) => setRequired(e.target.value)} placeholder={'Alpha\nBravo\nCharlie\nDelta'} aria-describedby="r-req-h" />
-          <p id="r-req-h" className="help">Type each item’s visible name. If two items share a name, add a selector after a bar: Name | #id.</p>
+          <p id="r-req-h" className="help">Type each item’s visible name. If two items share a name, add a selector after a bar: Name | #id. If audio or video must play to its end, name its play button after media: like this: media: Play narration.</p>
         </div>
         <div className="field">
           <label htmlFor="r-opt">Optional items (one per line)</label>
@@ -268,7 +298,7 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
           </select>
         </div>
       </div>
-      {source === 'observed_hypothesis' && <Alert tone="warn">An observed behavior is a guess until someone confirms it. Results are marked as such.</Alert>}
+      {source === 'observed_hypothesis' && <Alert tone="warn">An observed behavior is a guess until someone confirms it. Its tests show as inconclusive and never count as a pass or a defect. Change the source above once it is confirmed.</Alert>}
       {state === 'error' && <p role="alert" className="alert alert-error">{error}</p>}
       <div className="actions">
         <button type="submit" className="btn btn-primary" disabled={state === 'saving'}>

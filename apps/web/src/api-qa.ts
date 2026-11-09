@@ -92,6 +92,7 @@ export const qaApi = {
   rules: (projectId: string) => request<BehaviorRule[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/behavior-rules`),
   saveRule: (projectId: string, rule: Record<string, unknown>, id?: string) => (id ? request<BehaviorRule>('PUT', `/api/behavior-rules/${encodeURIComponent(id)}`, rule) : request<BehaviorRule>('POST', `/api/projects/${encodeURIComponent(projectId)}/behavior-rules`, rule)),
   deleteRule: (id: string) => request<void>('DELETE', `/api/behavior-rules/${encodeURIComponent(id)}`),
+  importRules: (projectId: string, file: unknown) => request<{ imported: number }>('POST', `/api/projects/${encodeURIComponent(projectId)}/behavior-rules/import`, file),
   discovered: (projectId: string) => request<{ runId?: string; units: Array<{ id: string; title: string }>; items: Array<{ id: string; unitId: string; unitTitle: string; type: string; label: string; locator?: string; canBeActivated: boolean }> }>('GET', `/api/projects/${encodeURIComponent(projectId)}/discovered-items`),
 };
 

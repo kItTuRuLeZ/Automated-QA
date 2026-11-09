@@ -283,8 +283,8 @@ export class QaStore {
 
   saveRule(rule: BehaviorRule): BehaviorRule {
     const at = nowIso();
-    const exists = this.db.prepare('SELECT 1 FROM behavior_rules WHERE id = ?').get(rule.id);
-    const next = { ...rule, updatedAt: at, createdAt: rule.createdAt || at };
+    const exists = this.getRule(rule.id);
+    const next = { ...rule, version: exists ? (exists.version ?? 1) + 1 : 1, updatedAt: at, createdAt: rule.createdAt || at };
     if (exists) this.db.prepare('UPDATE behavior_rules SET title = ?, review_state = ?, rule_json = ?, updated_at = ? WHERE id = ?').run(next.title, next.reviewState, JSON.stringify(next), at, next.id);
     else this.db.prepare('INSERT INTO behavior_rules (id, project_id, title, review_state, rule_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(next.id, next.projectId, next.title, next.reviewState, JSON.stringify(next), next.createdAt, at);
     return next;
