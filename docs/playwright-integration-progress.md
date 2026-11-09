@@ -9,7 +9,7 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 4. Result model | Done (4 Nov 2026) | See "Phase 4" below |
 | 3. Upload and launch | Done (4 Nov 2026) | See "Phase 3" below |
 | 5. Discovery and coverage | Done (6 Nov 2026) | See "Phase 5" below |
-| 6. Interaction recipes | Done (7 Nov 2026), not committed | See "Phase 6" below and `docs/interaction-support-matrix.md` |
+| 6. Interaction recipes | Done (7 Nov 2026) | See "Phase 6" below and `docs/interaction-support-matrix.md` |
 | 7–15 | Not started | |
 
 ## Phase 1 test run
