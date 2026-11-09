@@ -9,7 +9,8 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 4. Result model | Done (4 Nov 2026) | See "Phase 4" below |
 | 3. Upload and launch | Done (4 Nov 2026) | See "Phase 3" below |
 | 5. Discovery and coverage | Done (6 Nov 2026) | See "Phase 5" below |
-| 6–15 | Not started | |
+| 6. Interaction recipes | Done (7 Nov 2026), not committed | See "Phase 6" below and `docs/interaction-support-matrix.md` |
+| 7–15 | Not started | |
 
 ## Phase 1 test run
 
@@ -256,6 +257,54 @@ These were committed because they are not defects in the scans so far, but they 
 
 - `scripts/*.cjs`: 9 throwaway helper scripts with fixed run IDs.
 - `.claude/launch.json`: a personal browser path, no longer needed once Claude restarts without the old Windows setting.
+
+## Phase 6
+
+The recipes extend the existing registry (the test library's `requiredCapability` and the `dispatch` switch in `engines/functional.ts`). What each covers, and on what evidence, is in `docs/interaction-support-matrix.md`.
+
+### What changed
+
+- **New recipes:** Rise flip cards (FLP-01), ARIA carousels (TIM-01), and audio and video playback (AUD-01, VID-01). Playback passes only when the media time is seen moving and stops on pause. A format the scan browser cannot decode is Not supported.
+- **Library upgrade:** `seedStarterLibrary` moves untouched starter cases to the new automation. Cases a person wrote or imported are not changed.
+- **Controls a learner cannot reach:** anything inside `[inert]` or `[aria-hidden="true"]` is no longer a control.
+- **False alarms removed:** a rule committed in Phase 5 treated any button in a quiz or interactive block, or named "flip" or "reveal", as an accordion. That rule is gone. Those buttons are now listed as unrecognised and are not clicked.
+- **Rise walk** (`walkOnly`): exploration follows Continue buttons and lesson links, each destination once, for at most half the run's time. Before, it clicked everything and left no time for the recipes.
+- **Rise lessons:** the scan now scrolls the lesson's own container, not the window. It waits for blocks to be built and for visible controls to stop changing before listing them.
+- **Stable locators:** `data-testid` is preferred over a position in the page, and tabs use block id plus position. Rise tab ids change on each load, which had left all 14 tabs Blocked.
+- **Where tests run:** each test runs on the screen where its control was first found (migration 9 adds `interaction_instances.state_id`). It waits up to 5 s for the control to appear.
+
+### Tests (7 Nov 2026)
+
+New: `tests/recipes.integration.test.ts` (17 tests, working and deliberately broken fixtures) and a Rise-style walk test in `package-launch.integration`. They were seen failing first, with two exceptions: the fade-in check in the walk test passed before its fix, so it does not prove that fix, and some of the broken-fixture cases were written and first run together with the code.
+
+Whole suite, one file at a time: **30 files, 379 tests, all passed.** `real-exports` is skipped because it needs `CQA_REAL_EXPORTS`.
+
+### Real course (Leadership Expectations, 7 Nov 2026, seventh scan of this phase)
+
+The scan took about 6.5 minutes and ended `partial`.
+
+| Result | Detail |
+| --- | --- |
+| Tabs | 9 passed |
+| Flip cards | 10 passed |
+| Video | 1 passed |
+| Navigation menu | 1 passed |
+| Blocked or errored | 0 |
+| NAV-001 and FUN-001 findings | 0 (flip cards, TAKE AGAIN and the menu no longer raise false alarms) |
+| Blocks seen | 69 of 80 |
+| Lessons visited | 12 of 14 |
+| Interactions exercised | 21 of 106 |
+
+- **Why `partial`:** one replay failed, so Continue "Course wrap-up" was not attempted. That is probably why "Congratulations!" was not reached; not confirmed.
+- **The one failed check:** MED-02 (captions), from MED-003: the video has no caption track. This is a real course finding.
+
+### Not done in Phase 6
+
+- **Fixtures only:** carousels and audio. Rise process, gallery, labeled graphic and accordion blocks have no real sample, so the first two and labeled graphics stay manual, and a Rise accordion block is untested.
+- **Video:** seeking is not tested. Playback time only reached 0.2 s before pausing, which is enough to show it moves.
+- **Replay route:** deep routes through Continue buttons can fail to replay, as "Course wrap-up" did.
+- **Two workers:** starting a second copy of the tool on the same data folder clears the temp folders of a running scan, which is the likely cause of one failed scan here. Add a guard in Phase 12.
+- **Storyline:** the Storyline walk was not re-scanned on a real course in this phase.
 
 ## Architecture decisions
 

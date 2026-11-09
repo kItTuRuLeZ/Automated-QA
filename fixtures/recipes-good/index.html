@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Recipes: working interactions</title></head>
+<body>
+<main>
+  <h1>Working interactions</h1>
+
+  <!-- Same structure as a Rise 360 flashcard block. -->
+  <ul>
+    <li class="flashcard" data-card>
+      <div class="flashcard-side flashcard-side--front" role="group" aria-label="Front of card">
+        <button class="flashcard-side-flip__btn" id="card1-front-flip-btn" type="button" aria-label="Click to flip Safety"></button>
+        <p>Safety</p>
+      </div>
+      <div class="flashcard-side flashcard-side--back" role="group" aria-label="Back of card" inert hidden>
+        <button class="flashcard-side-flip__btn" id="card1-back-flip-btn" type="button" aria-label="Click to flip back"></button>
+        <p>Safety means nobody gets hurt.</p>
+      </div>
+    </li>
+  </ul>
+
+  <section aria-roledescription="carousel" aria-label="Steps">
+    <div role="group" aria-roledescription="slide" aria-label="1 of 3"><p>Step one</p></div>
+    <div role="group" aria-roledescription="slide" aria-label="2 of 3" hidden><p>Step two</p></div>
+    <div role="group" aria-roledescription="slide" aria-label="3 of 3" hidden><p>Step three</p></div>
+    <button type="button" aria-label="Previous slide" data-prev>Back a step</button>
+    <button type="button" aria-label="Next slide" data-next>On a step</button>
+  </section>
+
+  <div class="player">
+    <audio id="narration" preload="auto" aria-label="Narration"></audio>
+    <button type="button" aria-label="Play audio" id="play">Play</button>
+  </div>
+
+  <!-- Opens a moment after the click, like the Rise navigation menu. -->
+  <button type="button" id="slow" aria-expanded="false" aria-controls="slow-panel" aria-label="Slow section">More</button>
+  <div id="slow-panel" hidden><p>Revealed after a moment.</p></div>
+
+  <!-- Rise keeps its quiz retry button in the page, hidden from learners, until the quiz is finished. -->
+  <button type="button" aria-hidden="true" tabindex="-1" id="retake">TAKE AGAIN</button>
+</main>
+<script>
+  for (const card of document.querySelectorAll('[data-card]')) {
+    const [front, back] = card.querySelectorAll('.flashcard-side');
+    const show = (flipped) => {
+      card.classList.toggle('flashcard--flipped', flipped);
+      front.inert = flipped; front.hidden = flipped;
+      back.inert = !flipped; back.hidden = !flipped;
+    };
+    front.querySelector('button').addEventListener('click', () => show(true));
+    back.querySelector('button').addEventListener('click', () => show(false));
+  }
+  const slow = document.getElementById('slow');
+  slow.addEventListener('click', () => setTimeout(() => { slow.setAttribute('aria-expanded', 'true'); document.getElementById('slow-panel').hidden = false; }, 700));
+  const slides = [...document.querySelectorAll('[aria-roledescription="slide"]')];
+  let at = 0;
+  const go = (d) => { at = Math.max(0, Math.min(slides.length - 1, at + d)); slides.forEach((s, i) => (s.hidden = i !== at)); };
+  document.querySelector('[data-next]').addEventListener('click', () => go(1));
+  document.querySelector('[data-prev]').addEventListener('click', () => go(-1));
+  // Three seconds of quiet tone, made here so the fixture has no binary file.
+  const rate = 8000, n = rate * 3, buf = new ArrayBuffer(44 + n), v = new DataView(buf);
+  const w = (o, s) => [...s].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate, true); v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+  for (let i = 0; i < n; i++) v.setUint8(44 + i, 128 + Math.round(20 * Math.sin(i / 8)));
+  const audio = document.getElementById('narration');
+  audio.src = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+  const play = document.getElementById('play');
+  play.addEventListener('click', () => {
+    if (audio.paused) { audio.play(); play.setAttribute('aria-label', 'Pause audio'); }
+    else { audio.pause(); play.setAttribute('aria-label', 'Play audio'); }
+  });
+</script>
+</body>
+</html>

@@ -15,7 +15,7 @@ export interface StateSnapshot {
   textHash: string;
 }
 
-export type ControlCategory = 'tab' | 'accordion' | 'details' | 'dialog_open' | 'dialog_close' | 'next' | 'back' | 'link' | 'unsafe' | 'ambiguous' | 'out_of_scope_link';
+export type ControlCategory = 'tab' | 'accordion' | 'details' | 'dialog_open' | 'dialog_close' | 'next' | 'back' | 'link' | 'unsafe' | 'ambiguous' | 'out_of_scope_link' | 'flip_card' | 'carousel' | 'media';
 
 export interface RawControl {
   category: ControlCategory;
@@ -110,6 +110,9 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
   };
   const cssPath = (el: Element): string => {
     if (el.id && document.querySelectorAll(`#${CSS.escape(el.id)}`).length === 1) return `#${CSS.escape(el.id)}`;
+    // A test id survives the page rebuilding around the control; a position in the page may not.
+    const testId = el.getAttribute('data-testid');
+    if (testId && document.querySelectorAll(`[data-testid="${CSS.escape(testId)}"]`).length === 1) return `[data-testid="${CSS.escape(testId)}"]`;
     const parts: string[] = [];
     let cur: Element | null = el;
     while (cur && cur !== document.documentElement) {
@@ -147,14 +150,15 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
 
   const out: RawControl[] = [];
   const seen = new Set<Element>();
-  const push = (el: Element, c: Omit<RawControl, 'name' | 'role' | 'locator'> & { name?: string }) => {
+  const push = (el: Element, c: Omit<RawControl, 'name' | 'role' | 'locator'> & { name?: string; locator?: string }) => {
     if (seen.has(el)) return;
     seen.add(el);
     out.push({ name: c.name ?? nameOf(el), role: el.getAttribute('role') ?? el.tagName.toLowerCase(), locator: cssPath(el), ...c });
   };
 
   const interactive = [...root.querySelectorAll('button, [role="button"], [role="tab"], a[href], input[type="submit"], input[type="button"], input[type="reset"], input[type="file"], summary')].filter(
-    (el) => visible(el) && !disabled(el),
+    // A control inside an inert or aria-hidden part of the page is not something a learner can reach (Rise keeps its "Take again" button there until a quiz ends).
+    (el) => visible(el) && !disabled(el) && !el.closest('[inert],[aria-hidden="true"]'),
   );
 
   for (const el of interactive) {
@@ -169,10 +173,34 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
       push(el, { category: 'unsafe', name, detail: 'Button submits a form' });
       continue;
     }
+    // Rise flashcards: tested by their own recipe, because a flip changes neither aria-expanded nor a linked panel.
+    if (el.matches('.flashcard-side-flip__btn')) {
+      push(el, { category: 'flip_card', name });
+      continue;
+    }
+    // Rise's Continue divider reveals the rest of the lesson, whatever its label says.
+    if (el.matches('[data-continue-btn]')) {
+      push(el, { category: 'next', name });
+      continue;
+    }
+    // A carousel's Next and Previous move inside the screen, so they are not course navigation.
+    const carousel = el.closest('[aria-roledescription="carousel"]');
+    if (carousel && /\b(next|forward)\b/i.test(name)) {
+      push(el, { category: 'carousel', name: carousel.getAttribute('aria-label') ?? name });
+      continue;
+    }
+    if (carousel && /\b(previous|prev|back)\b/i.test(name)) {
+      seen.add(el);
+      continue;
+    }
     if (el.getAttribute('role') === 'tab') {
       if (el.getAttribute('aria-selected') !== 'true') {
         const panel = controlled(el);
-        push(el, { category: 'tab', name, controlsLocator: panel ? cssPath(panel) : undefined });
+        // Rise gives a tab a new random id each time a lesson loads, but its block id and its place among the tabs stay the same.
+        const block = el.closest('[data-block-id]');
+        const tabs = block ? [...block.querySelectorAll('[role="tab"]')] : [];
+        const stable = block ? `[data-block-id="${block.getAttribute('data-block-id')}"] [role="tab"] >> nth=${tabs.indexOf(el)}` : undefined;
+        push(el, { category: 'tab', name, controlsLocator: panel ? cssPath(panel) : undefined, ...(stable ? { locator: stable } : {}) });
       } else seen.add(el); // already selected: nothing to do
       continue;
     }
@@ -204,19 +232,6 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
         push(el, { category: 'next', name });
       }
       continue;
-    }
-    // Flashcards & click-to-flip cards
-    if (el.classList.contains('flashcard') || el.closest('.flashcard') || /flip|reveal/i.test(name)) {
-      push(el, { category: 'accordion', name: name || 'Flashcard' });
-      continue;
-    }
-    // Interactive blocks (e.g. Rise tabs, accordions, labeled graphics, hotspots, knowledge check choices)
-    const interactiveBlock = el.closest('[data-block-type], .block-interactive, .interactive-block, [class*="interactive"], .quiz-card');
-    if (interactiveBlock && (el.tagName === 'BUTTON' || el.getAttribute('role') === 'button' || el.tagName === 'LABEL')) {
-      if (!deniedBy && !seen.has(el)) {
-        push(el, { category: 'accordion', name: name || 'Interactive control' });
-        continue;
-      }
     }
     const dialog = el.closest('[role="dialog"],[role="alertdialog"],dialog');
     if (dialog && /^(close|dismiss|×|✕|x|ok|okay|done|cancel|got it)\b/i.test(name)) {
@@ -251,6 +266,16 @@ export function discoverControls(args: { allowedOrigins: string[]; allowedPathPr
       push(el, { category: inScope(u) ? 'link' : 'out_of_scope_link', name, href: u.toString() });
       continue;
     }
+  }
+
+  // Audio and video are not in the list above: a custom player's <audio> has no box of its own, and its buttons are checked by the media recipe.
+  for (const m of root.querySelectorAll('video, audio')) {
+    // A custom player keeps its <video> transparent until it plays, so a video counts when it has a size on the page.
+    const box = m.getBoundingClientRect();
+    if (m.closest('[inert]') || (m.tagName === 'VIDEO' && (box.width === 0 || box.height === 0))) continue;
+    const src = (m as HTMLMediaElement).currentSrc || m.querySelector('source')?.getAttribute('src') || m.getAttribute('src') || '';
+    const file = src.startsWith('data:') || src.startsWith('blob:') ? '' : decodeURIComponent(src.split(/[?#]/)[0]?.split('/').pop() ?? '');
+    push(m, { category: 'media', name: m.getAttribute('aria-label') || m.getAttribute('title') || file || m.tagName.toLowerCase() });
   }
 
   let ambiguous = 0;

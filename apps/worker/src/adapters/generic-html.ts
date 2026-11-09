@@ -65,6 +65,9 @@ export class GenericHtmlAdapter implements CourseAdapter {
     if (c.category === 'ambiguous') return skip('ambiguous_action', 'No recognized pattern defines what this control should do, so it was not clicked.');
     if (c.category === 'out_of_scope_link') return { ...base, kind: 'navigate', href: sanitizeUrl(c.href!, ctx.config.redaction), reason: 'out_of_scope', reasonDetail: 'Link destination is outside the scan scope.' };
 
+    // These have recipes of their own in the functional tests. Exploration lists them and does not click them.
+    if (c.category === 'flip_card' || c.category === 'carousel' || c.category === 'media') return skip('not_applicable_to_surface', 'Tested by its own interaction recipe, not clicked during exploration.');
+
     const kind = KIND[c.category]!;
     if (!ctx.config.actionPolicy.allowedKinds.includes(kind)) return skip('unsafe_action', `Action kind ${kind} is not allowed by the scan policy.`);
 
@@ -128,6 +131,10 @@ function describe(c: RawControl): string {
     case 'link':
     case 'out_of_scope_link':
       return `link ${label}`;
+    case 'flip_card':
+      return `flip card ${label}`;
+    case 'carousel':
+      return `carousel ${label}`;
     default:
       return `${c.role} ${label}`;
   }

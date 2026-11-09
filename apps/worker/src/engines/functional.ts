@@ -221,11 +221,16 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
         }
         sharedControls.set(key, unit.title);
       }
-      addPlan(def, unit, stateId, { instance: i });
+      // Test it where it was found: on a scrolling lesson that can be after a Continue button.
+      addPlan(def, unit, i?.stateId && replayByState.has(i.stateId) ? i.stateId : stateId, { instance: i });
       count++;
     };
     for (const i of inter) {
       if (i.type === 'tab') plan('TAB-01', i);
+      if (i.type === 'flip_card') plan('FLP-01', i);
+      if (i.type === 'carousel') plan('TIM-01', i);
+      if (i.type === 'audio') plan('AUD-01', i);
+      if (i.type === 'video') plan('VID-01', i);
       if (i.type === 'accordion' || i.type === 'details') plan('ACC-01', i);
       if (i.type === 'dialog') {
         plan('LAY-01', i);
@@ -398,6 +403,8 @@ async function screenshot(page: Page, input: FunctionalInput, state: CourseState
 
 async function dispatch(page: Page, p: Planned, input: FunctionalInput, navTimeout: number, t: Tracer): Promise<Outcome> {
   const cap = p.def.body.requiredCapability;
+  // A lesson may still be building when the route to it has been replayed. Only a control still missing after this wait counts as gone.
+  if (p.instance?.locator) await page.locator(p.instance.locator).first().waitFor({ state: 'attached', timeout: 5_000 }).catch(() => undefined);
   switch (cap) {
     case 'tabs':
       return testTab(page, p.instance!, t, navTimeout);
@@ -411,6 +418,12 @@ async function dispatch(page: Page, p: Planned, input: FunctionalInput, navTimeo
       return testDialog(page, p.instance!, t, navTimeout, true);
     case 'next_previous':
       return testNextPrevious(page, p.instance!, t, navTimeout);
+    case 'flip_card':
+      return testFlipCard(page, p.instance!, t);
+    case 'carousel':
+      return testCarousel(page, p.instance!, t);
+    case 'media_playback':
+      return testMediaPlayback(page, p.instance!, t);
     case 'rule_all_click':
     case 'rule_premature':
     case 'rule_duplicate':
@@ -423,6 +436,198 @@ async function dispatch(page: Page, p: Planned, input: FunctionalInput, navTimeo
 }
 
 // ---- interaction tests ----
+
+/** Polls until the condition holds or the time is up. Animated players need a moment; this is a bounded wait for a stated condition. */
+async function waitUntil(check: () => Promise<boolean>, ms = 2_000): Promise<boolean> {
+  const end = Date.now() + ms;
+  for (;;) {
+    if (await check()) return true;
+    if (Date.now() >= end) return false;
+    await sleep(150);
+  }
+}
+
+/** Rise flashcards: the card gets `flashcard--flipped`, and the back side stops being inert. */
+async function testFlipCard(page: Page, i: InteractionInstance, t: Tracer): Promise<Outcome> {
+  const loc = page.locator(i.locator ?? '').first();
+  if (!i.locator || (await loc.count()) === 0) return { status: 'blocked', reason: `The card "${i.label}" could not be found again on the screen.` };
+  const read = () =>
+    loc.evaluate((el) => {
+      const card = el.closest('.flashcard');
+      const back = card?.querySelector('.flashcard-side--back') as HTMLElement | null | undefined;
+      const text = (back?.textContent ?? '').replace(/\s+/g, ' ').replace(/Click to flip/gi, '').trim();
+      return {
+        hasBack: Boolean(back),
+        flipped: Boolean(card?.classList.contains('flashcard--flipped')),
+        backReachable: Boolean(back && !back.inert && !back.hidden),
+        text,
+        hasMedia: Boolean(back?.querySelector('img,svg:not(button svg),video,audio')),
+        hasBackButton: Boolean(back?.querySelector('.flashcard-side-flip__btn')),
+      };
+    });
+  const before = await read();
+  t.add('observed', 'State before', before);
+  if (!before.hasBack) return { status: 'unsupported', reason: 'No back side was found in the page for this card, so the scanner cannot tell what flipping should show. Check it by hand.', actual: 'Not checked.' };
+  try {
+    await loc.click({ timeout: STEP_TIMEOUT_MS });
+  } catch {
+    return { status: 'blocked', reason: `The card "${i.label}" could not be clicked: it stayed covered or not ready for about 4 seconds.`, actual: 'No result.' };
+  }
+  t.add('action', `Flip ${i.label}.`);
+  const flipped = await waitUntil(async () => (await read()).flipped);
+  const after = await read();
+  t.add('observed', 'State after flipping', after);
+  if (!flipped) return { status: 'failed', reason: 'The card did not flip.', actual: `After activating "${i.label}", the card still showed its front.` };
+  if (!after.text && !after.hasMedia) return { status: 'failed', reason: 'The card flipped but its back is empty.', actual: `The back of "${i.label}" has no text or media.` };
+  const backButton = page.locator(i.locator.replace('-front-flip-btn', '-back-flip-btn')).first();
+  const canTurn = after.hasBackButton && i.locator.includes('-front-flip-btn') && (await backButton.count()) > 0;
+  if (!canTurn) return { status: 'failed', reason: 'The card flipped, but there is no control to turn it back to the front.', actual: `The back of "${i.label}" shows "${truncate(after.text, 120)}" and has no flip control.` };
+  try {
+    await backButton.click({ timeout: STEP_TIMEOUT_MS });
+  } catch {
+    return { status: 'blocked', reason: `The flip control on the back of "${i.label}" could not be clicked.`, actual: `The back shows "${truncate(after.text, 120)}".` };
+  }
+  t.add('action', `Flip back ${i.label}.`);
+  const returned = await waitUntil(async () => !(await read()).flipped);
+  t.add('asserted', `Flipped: true. Back has content: true. Returned to the front: ${returned}.`);
+  if (!returned) return { status: 'failed', reason: 'The card could not be turned back to the front.', actual: `After activating the flip control on the back of "${i.label}", the card still showed its back.` };
+  return { status: 'passed', actual: `The card flipped to "${truncate(after.text, 120)}" and turned back to the front.` };
+}
+
+/** ARIA carousels: Next moves through the slides, Previous comes back. The last slide is reached when Next stops changing anything. */
+async function testCarousel(page: Page, i: InteractionInstance, t: Tracer): Promise<Outcome> {
+  const next = page.locator(i.locator ?? '').first();
+  if (!i.locator || (await next.count()) === 0) return { status: 'blocked', reason: `The carousel "${i.label}" could not be found again on the screen.` };
+  const shown = () =>
+    next.evaluate((el) => {
+      const c = el.closest('[aria-roledescription="carousel"]');
+      const slides = [...(c?.querySelectorAll('[aria-roledescription="slide"]') ?? [])] as HTMLElement[];
+      const on = slides.filter((s) => s.checkVisibility?.({ checkVisibilityCSS: true }) ?? !s.hidden);
+      return (on.length ? on : c ? [c as HTMLElement] : []).map((s) => s.innerText).join(' ').replace(/\s+/g, ' ').trim();
+    });
+  const first = await shown();
+  t.add('observed', 'First slide', { text: truncate(first, 120) });
+  if (await isDisabled(next)) return { status: 'inconclusive', reason: 'Next is disabled on the first slide, so the carousel could not be moved.', actual: 'Not moved.' };
+  const seen = [first];
+  for (let n = 0; n < 20; n++) {
+    if (await isDisabled(next)) break;
+    const was = await shown();
+    try {
+      await next.click({ timeout: STEP_TIMEOUT_MS });
+    } catch {
+      return { status: 'blocked', reason: 'Next could not be clicked: it stayed covered or not ready for about 4 seconds.', actual: `Reached ${seen.length} slide(s).` };
+    }
+    t.add('action', `Next slide in ${i.label}.`);
+    const moved = await waitUntil(async () => (await shown()) !== was, 1_500);
+    if (!moved) break;
+    seen.push(await shown());
+  }
+  t.add('observed', 'Slides reached', { count: seen.length });
+  if (seen.length < 2) return { status: 'failed', reason: 'Next did not change the slide.', actual: `After activating Next in "${i.label}", the slide was unchanged.` };
+  const prev = next.locator('xpath=ancestor::*[@aria-roledescription="carousel"][1]').getByRole('button', { name: /\b(previous|prev|back)\b/i }).first();
+  if ((await prev.count()) === 0) return { status: 'manual_review_required', reason: 'Next worked, but no Previous control was found in the carousel, so the way back could not be tested.', actual: `Reached ${seen.length} slides.` };
+  const last = await shown();
+  await prev.click({ timeout: STEP_TIMEOUT_MS });
+  t.add('action', `Previous slide in ${i.label}.`);
+  const back = await waitUntil(async () => (await shown()) !== last, 1_500);
+  t.add('asserted', `Slides reached: ${seen.length}. Previous changed the slide: ${back}.`);
+  if (!back) return { status: 'failed', reason: 'Previous did not change the slide.', actual: `Reached ${seen.length} slides, then Previous left the last slide showing.` };
+  return { status: 'passed', actual: `Moved through ${seen.length} slides (second: "${truncate(seen[1]!, 80)}") and Previous came back.` };
+}
+
+/**
+ * Audio and video. Plays through a control a learner would use, and passes only when the media time is seen moving and
+ * then stops on pause: loaded metadata alone is not playback. Playwright's Chromium does not decode every format, so a
+ * format it cannot decode is a limit of the scanner, not a course defect.
+ */
+async function testMediaPlayback(page: Page, i: InteractionInstance, t: Tracer): Promise<Outcome> {
+  const media = page.locator(i.locator ?? '').first();
+  if (!i.locator || (await media.count()) === 0) return { status: 'blocked', reason: `The media "${i.label}" could not be found again on the screen.` };
+  const read = () =>
+    media.evaluate((el) => {
+      const m = el as HTMLMediaElement;
+      const types = [m.getAttribute('type'), ...[...m.querySelectorAll('source')].map((s) => s.getAttribute('type'))].filter(Boolean) as string[];
+      return { paused: m.paused, time: m.currentTime, error: m.error?.code ?? 0, ready: m.readyState, src: m.currentSrc || m.querySelector('source')?.src || m.src || '', types, playable: types.length === 0 || types.some((x) => m.canPlayType(x) !== ''), controls: m.controls };
+    });
+  const before = await read();
+  t.add('observed', 'Media before playing', { time: before.time, paused: before.paused, ready: before.ready, error: before.error, types: before.types });
+  if (!before.playable) return { status: 'unsupported', reason: `This scan browser cannot decode ${before.types.join(', ')}, so playback could not be tested. Check it by hand in a normal browser.`, actual: 'Not played.' };
+  const crossOrigin = await media.evaluate((el) => {
+    const src = (el as HTMLMediaElement).currentSrc || (el as HTMLMediaElement).src;
+    try {
+      return Boolean(src) && !src.startsWith('blob:') && !src.startsWith('data:') && new URL(src, location.href).origin !== location.origin;
+    } catch {
+      return false;
+    }
+  });
+  const loadFailed = (error: number): Outcome =>
+    crossOrigin
+      ? { status: 'blocked', reason: 'The media is on an outside website, which this scan does not load unless it is allowed.', actual: `Media error code ${error}.` }
+      : { status: 'failed', reason: 'The media file could not load.', actual: `The browser reported media error code ${error} for "${truncate(before.src, 120)}".` };
+  if (before.error) return loadFailed(before.error);
+
+  // The control a learner would use: a labelled button near the media, or the media's own controls.
+  const control = (name: RegExp) => media.locator('xpath=ancestor::*[.//button][1]').getByRole('button', { name }).first();
+  const useControl = async (name: RegExp): Promise<string | undefined> => {
+    const b = control(name);
+    if ((await b.count()) > 0) {
+      // Read the name first: a play button usually renames itself to Pause once clicked, and this locator would stop matching.
+      const label = (await b.getAttribute('aria-label', { timeout: 1_000 }).catch(() => null)) ?? 'media';
+      await b.click({ timeout: STEP_TIMEOUT_MS });
+      return `the "${label}" control`;
+    }
+    if (before.controls && (await media.isVisible())) {
+      await media.click({ timeout: STEP_TIMEOUT_MS });
+      return 'the player itself';
+    }
+    return undefined;
+  };
+  let used: string | undefined;
+  try {
+    used = await useControl(/^play\b/i);
+  } catch {
+    return { status: 'blocked', reason: 'The play control could not be clicked: it stayed covered or not ready for about 4 seconds.', actual: 'Not played.' };
+  }
+  if (!used) return { status: 'unsupported', reason: 'No play control a learner could use was found next to this media, so playback could not be tested. Check it by hand.', actual: 'Not played.' };
+  t.add('action', `Play ${i.label} with ${used}.`);
+
+  const start = before.time;
+  const moving = await waitUntil(async () => {
+    const m = await read();
+    return m.error !== 0 || (!m.paused && m.time > start + 0.2);
+  }, 6_000);
+  const during = await read();
+  t.add('observed', 'Media after pressing play', { time: during.time, paused: during.paused, error: during.error });
+  if (during.error) return loadFailed(during.error);
+  if (during.paused) return { status: 'failed', reason: 'Pressing play did not start the media.', actual: `After ${used}, the media stayed paused at ${during.time.toFixed(1)} s.` };
+  if (!moving) return { status: 'inconclusive', reason: 'The media reports it is playing, but its time did not move within 6 seconds. It may be buffering.', actual: `Time stayed at ${during.time.toFixed(1)} s.` };
+
+  try {
+    const label = (await useControlLabel(control(/^pause\b/i))) ?? (before.controls ? 'media' : undefined);
+    if (!label) return { status: 'manual_review_required', reason: 'The media plays, but no pause control was found, so pausing could not be tested.', actual: `Time moved to ${during.time.toFixed(1)} s.` };
+    if (label === 'media') await media.click({ timeout: STEP_TIMEOUT_MS });
+    t.add('action', `Pause ${i.label}.`);
+  } catch {
+    return { status: 'blocked', reason: 'The pause control could not be clicked.', actual: `Time moved to ${during.time.toFixed(1)} s.` };
+  }
+  const paused = await waitUntil(async () => (await read()).paused, 1_500);
+  const stopped = await read();
+  await sleep(400);
+  const later = await read();
+  t.add('observed', 'Media time after pausing', { paused: later.paused, time: later.time, timeBefore: stopped.time });
+  t.add('asserted', `Time moved while playing: true. Paused: ${paused}. Time stopped: ${later.time === stopped.time}.`);
+  if (!paused || later.time !== stopped.time) return { status: 'failed', reason: 'Pressing pause did not stop the media.', actual: `Time went from ${stopped.time.toFixed(1)} s to ${later.time.toFixed(1)} s after pausing.` };
+  return { status: 'passed', actual: `The media played (time moved to ${during.time.toFixed(1)} s) and stopped when paused.` };
+}
+
+/** Clicks the control if it exists and returns its name; undefined when there is none. */
+async function useControlLabel(b: Locator): Promise<string | undefined> {
+  if ((await b.count()) === 0) return undefined;
+  const label = (await b.getAttribute('aria-label').catch(() => null)) ?? 'pause';
+  await b.click({ timeout: STEP_TIMEOUT_MS });
+  return label;
+}
+
 
 async function testTab(page: Page, i: InteractionInstance, t: Tracer, navTimeout: number): Promise<Outcome> {
   const loc = page.locator(i.locator ?? '').first();
@@ -470,7 +675,8 @@ async function testAccordion(page: Page, i: InteractionInstance, t: Tracer, navT
   if (!before.expanded) {
     await loc.click({ timeout: STEP_TIMEOUT_MS });
     t.add('action', `Open ${i.label}.`);
-    await quick();
+    // Some players take a moment to open (the Rise navigation menu does).
+    await waitUntil(async () => (await read()).expanded);
   } else t.add('note', 'The item was already open, so it was not clicked.');
   // Panels often animate open; give a slow one up to 2 seconds to show before judging it.
   let after = await read();

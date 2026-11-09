@@ -156,6 +156,8 @@ export interface InteractionInstance {
   /** Capabilities an adapter really implements for this instance ("activate", "observe_expanded", ...). Empty means manual only. */
   capabilities: string[];
   detectedBy: string;
+  /** The first state that showed this control. A control behind a Continue button is only there after pressing it. */
+  stateId?: string;
 }
 
 // ---- test definitions ----

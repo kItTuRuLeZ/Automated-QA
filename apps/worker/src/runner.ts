@@ -323,19 +323,22 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     let traversal: TraversalOutput | undefined;
     let traversalError: string | undefined;
     rec.stage('running', 'Checking screens and exercising controls');
+    const riseWalk = Boolean(run.config.engines.functional) && out.platform === 'rise';
     if (run.config.engines.traversal) {
       if (out.state && !out.navigationFailed && !out.outOfScope) {
         try {
           const engine = new Traversal({
             targetUrl,
             rootState: out.state,
-            deadline: runStartedAt + run.config.budgets.maxRuntimeMs,
+            // On Rise the walk shares the run's time with the interaction tests, which only start when it ends.
+            deadline: runStartedAt + run.config.budgets.maxRuntimeMs * (riseWalk ? 0.5 : 1),
             blocked: () => blocked,
             excludeResourceTypes,
             onStateReady,
             gates: new QaStore(store.db).listRules(run.projectId).filter((r) => r.continueAfter && r.reviewState !== 'retired').map((r) => ({ title: r.title, unitMatch: r.unitMatch, items: r.requiredItems, ordered: r.orderPolicy === 'sequence' })),
             autoAnswer: Boolean(run.config.autoAnswer),
             navigationOnly: Boolean(run.config.engines.functional) && out.platform === 'storyline',
+            walkOnly: riseWalk,
             onActions: (state, candidates) => rec.actionsDiscovered(state, candidates),
             keyboardPass: run.config.engines.keyboard ? (input) => keyboardEngine.activate(input) : undefined,
           });

@@ -360,4 +360,10 @@ ALTER TABLE check_results_v8 RENAME TO check_results;
 CREATE INDEX idx_checks_run ON check_results(run_id);
 `,
   },
+  {
+    // Additive. Older scans have no value here and fall back to the unit's first state, as they did before.
+    version: 9,
+    name: 'interaction_state',
+    sql: `ALTER TABLE interaction_instances ADD COLUMN state_id TEXT;`,
+  },
 ];

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Recipes: broken interactions</title></head>
+<body>
+<main>
+  <h1>Broken interactions</h1>
+
+  <ul>
+    <!-- The flip button does nothing. -->
+    <li class="flashcard">
+      <div class="flashcard-side flashcard-side--front"><button class="flashcard-side-flip__btn" id="dead-front-flip-btn" type="button" aria-label="Click to flip Dead card"></button><p>Dead card</p></div>
+      <div class="flashcard-side flashcard-side--back" inert hidden><p>Never shown</p></div>
+    </li>
+    <!-- It flips, but the back has nothing on it. -->
+    <li class="flashcard" data-flips>
+      <div class="flashcard-side flashcard-side--front"><button class="flashcard-side-flip__btn" id="empty-front-flip-btn" type="button" aria-label="Click to flip Empty back"></button><p>Empty back</p></div>
+      <div class="flashcard-side flashcard-side--back" inert hidden></div>
+    </li>
+    <!-- It flips over but can never be turned back. -->
+    <li class="flashcard" data-flips>
+      <div class="flashcard-side flashcard-side--front"><button class="flashcard-side-flip__btn" id="stuck-front-flip-btn" type="button" aria-label="Click to flip Stuck card"></button><p>Stuck card</p></div>
+      <div class="flashcard-side flashcard-side--back" inert hidden><button class="flashcard-side-flip__btn" id="stuck-back-flip-btn" type="button" aria-label="Click to flip back"></button><p>No way back</p></div>
+    </li>
+    <!-- No back side in the page at all: the scanner cannot judge this one. -->
+    <li class="flashcard">
+      <div class="flashcard-side flashcard-side--front"><button class="flashcard-side-flip__btn" id="oneside-front-flip-btn" type="button" aria-label="Click to flip One sided"></button><p>One sided</p></div>
+    </li>
+  </ul>
+
+  <!-- Next does nothing. -->
+  <section aria-roledescription="carousel" aria-label="Dead steps">
+    <div role="group" aria-roledescription="slide" aria-label="1 of 2"><p>Step one</p></div>
+    <div role="group" aria-roledescription="slide" aria-label="2 of 2" hidden><p>Step two</p></div>
+    <button type="button" aria-label="Next slide">On a step</button>
+  </section>
+
+  <!-- The play button is not connected to anything. -->
+  <div class="player"><audio id="silent" preload="auto" aria-label="Silent narration" src="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA="></audio><button type="button" aria-label="Play audio">Play</button></div>
+
+  <!-- The file does not exist. -->
+  <div class="player"><audio id="missing" preload="auto" aria-label="Missing narration" src="no-such-file.wav"></audio><button type="button" aria-label="Play audio" id="play-missing">Play</button></div>
+
+  <!-- A format this browser cannot decode: a limit of the scanner, not a course defect. -->
+  <video id="odd" preload="metadata" width="320" height="180" aria-label="Odd format video" controls><source src="clip.xyz" type="video/x-no-such-codec"></video>
+</main>
+<script>
+  for (const card of document.querySelectorAll('[data-flips]')) {
+    const [front, back] = card.querySelectorAll('.flashcard-side');
+    front.querySelector('button').addEventListener('click', () => {
+      card.classList.add('flashcard--flipped');
+      front.inert = true; front.hidden = true; back.inert = false; back.hidden = false;
+    });
+  }
+  const m = document.getElementById('missing');
+  document.getElementById('play-missing').addEventListener('click', () => m.play().catch(() => {}));
+</script>
+</body>
+</html>

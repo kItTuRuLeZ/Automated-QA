@@ -21,6 +21,7 @@ import { TRAVERSAL_RULES, newId, nowIso, sanitizeText, sanitizeUrl } from '@cqa/
 import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-html.js';
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
+import { blocksScrolledIntoView, controlsSettled } from '../adapters/rise.js';
 import { isAbort } from './capture.js';
 import type { KeyboardPassInput } from './keyboard.js';
 import { type NewCheck, type NewFinding, check, dedupe, finding, hostOf, truncate } from './helpers.js';
@@ -119,6 +120,11 @@ export class Traversal {
        * budget and every extra click needs the whole path replayed.
        */
       navigationOnly?: boolean;
+      /**
+       * Scrolling courses (Rise): follow Continue buttons and links between lessons and leave in-page controls to the
+       * functional tests, which test each on a fresh copy of the screen. Exploring them too uses up the run's time.
+       */
+      walkOnly?: boolean;
       /** Rules that say how to get past a screen (answer a question, then continue). Performed in order when the walk reaches the screen. */
       /** Answer a question that blocks progress when no rule covers the screen. */
       autoAnswer?: boolean;
@@ -259,6 +265,7 @@ export class Traversal {
     onState(root.state);
     await this.deps.onStateReady?.(root.state, describePath([]), pathKeyOf([]));
     const queue: Node[] = [root];
+    const followed = new Set<string>();
     let stop = false;
     let emptyRetries = 0;
 
@@ -324,6 +331,13 @@ export class Traversal {
       // ---- get past a gated screen (a quiz question) using the reviewer's rule ----
       await this.passGate(node, page, cur, settle, snap, execute, coverage, describePath);
 
+      // A Rise lesson builds its blocks a moment after opening. List its controls only once they are there and have been scrolled past.
+      if (this.deps.walkOnly) {
+        await cur.waitForSelector('[data-block-id]', { timeout: 5_000 }).catch(() => undefined);
+        await blocksScrolledIntoView(cur).catch(() => undefined);
+        await controlsSettled(cur);
+      }
+
       // ---- discover actions ----
       let candidates = (await this.adapter.discoverActions({ ...ctx, page: cur, state: node.state })) as Candidate[];
       // Single-page apps can still be drawing when the content looks stable. If nothing was found, look again a couple of
@@ -377,7 +391,7 @@ export class Traversal {
       this.deps.onActions?.(node.state, candidates);
       const skipped = candidates.filter((c) => c.reason);
       // In-page interactions first; links last, so site navigation does not consume the state budget before the content is explored.
-      const runnable = candidates.filter((c) => !c.reason && (!this.deps.navigationOnly || c.kind === 'next')).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);
+      const runnable = candidates.filter((c) => !c.reason && (!this.deps.navigationOnly || c.kind === 'next') && (!this.deps.walkOnly || c.kind === 'next' || c.kind === 'navigate')).sort((x, y) => KIND_PRIORITY[x.kind] - KIND_PRIORITY[y.kind]);
       for (const s of skipped) actions.push(toAction(ctx.runId, s, 'skipped'));
       const unsafe = skipped.filter((s) => s.reason === 'unsafe_action');
       const ambiguous = skipped.filter((s) => s.reason === 'ambiguous_action');
@@ -414,6 +428,11 @@ export class Traversal {
           budgetsReached.add('budget_runtime');
           actions.push(toAction(ctx.runId, { ...cand, reason: 'budget_runtime' }, 'not_attempted'));
           continue;
+        }
+        // The lesson menu is on every lesson: following a destination once is enough, and each repeat would replay the route to get back here.
+        if (this.deps.walkOnly && cand.kind === 'navigate' && cand.rawHref) {
+          if (followed.has(cand.rawHref)) continue;
+          followed.add(cand.rawHref);
         }
         if (cand.kind === 'navigate' && cand.rawHref && !pages.has(pageKey(cand.rawHref)) && pages.size >= budgets.maxPages) {
           budgetsReached.add('budget_pages');
@@ -545,7 +564,7 @@ export class Traversal {
           onState(target.state);
           await this.deps.onStateReady?.(target.state, describePath(target.path), pathKeyOf(target.path));
           // A slide reached with Next is explored at once, while the browser is still on it; everything else waits its turn.
-          if (this.deps.navigationOnly && cand.kind === 'next') queue.unshift(target);
+          if ((this.deps.navigationOnly || this.deps.walkOnly) && cand.kind === 'next') queue.unshift(target);
           else queue.push(target);
         }
 

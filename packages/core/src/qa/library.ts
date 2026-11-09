@@ -19,6 +19,9 @@ export const ENGINE_CAPABILITIES = [
   'accordion_open', // every accordion item opens and shows content
   'accordion_policy', // observed single-open or multi-open behaviour (needs a declared policy to judge)
   'tabs', // every tab selects its panel
+  'flip_card', // a card flips to readable content and turns back (Rise flashcards)
+  'carousel', // Next moves through the slides and Previous comes back (ARIA carousels)
+  'media_playback', // play and pause, with time observed moving (audio and video)
   'dialog_open', // dialogs and layers open
   'dialog_dismiss', // dialogs dismiss and focus returns
   'rule_all_click', // behavior rule: event fires after the final required item
@@ -94,10 +97,10 @@ const ROWS: Row[] = [
   { id: 'DND-05', area: 'Reset/submit', category: 'Drag and drop', type: 'dnd', title: 'Reset and submit give the right result', action: 'Reset and submit known arrangements', expected: 'State, feedback, and completion are correct', automation: 'manual' },
   { id: 'TXT-01', area: 'Text/numeric input', category: 'Text input', type: 'text_input', title: 'Input validation for valid, invalid, blank and boundary values', action: 'Submit valid, invalid, blank, and boundary values', expected: 'Configured validation is correct', automation: 'manual', note: 'Typing into fields and submitting is treated as unsafe during read-only exploration.' },
   { id: 'SLD-01', area: 'Slider/dial', category: 'Sliders', type: 'slider', title: 'Minimum, maximum and thresholds update dependent content', action: 'Exercise minimum, maximum, and configured thresholds', expected: 'Dependent content updates correctly', automation: 'manual' },
-  { id: 'FLP-01', area: 'Flip cards', category: 'Flip cards', type: 'flip_card', title: 'Every card flips and returns', action: 'Flip each card and return', expected: 'Expected content and completion state are correct', automation: 'manual' },
-  { id: 'TIM-01', area: 'Timeline/carousel', category: 'Timelines and carousels', type: 'timeline', title: 'Every item is reachable; end conditions hold', action: 'Visit each item', expected: 'Forward/back controls and end conditions follow configuration', automation: 'manual' },
-  { id: 'AUD-01', area: 'Audio', category: 'Audio', type: 'audio', title: 'Audio starts, pauses and resumes', action: 'Start/pause/resume', expected: 'Observed media state changes correctly', automation: 'manual', note: 'Autoplay and audio output cannot be observed reliably in a headless browser.' },
-  { id: 'VID-01', area: 'Video', category: 'Video', type: 'video', title: 'Video starts, pauses and seeks', action: 'Start/pause/seek where allowed', expected: 'Observed media state and controls work', automation: 'manual' },
+  { id: 'FLP-01', area: 'Flip cards', category: 'Flip cards', type: 'flip_card', title: 'Every card flips and returns', action: 'Flip each card and return', expected: 'Expected content and completion state are correct', automation: 'automated', capability: 'flip_card' },
+  { id: 'TIM-01', area: 'Timeline/carousel', category: 'Timelines and carousels', type: 'timeline', title: 'Every item is reachable; end conditions hold', action: 'Visit each item', expected: 'Forward/back controls and end conditions follow configuration', automation: 'partially_automated', capability: 'carousel' },
+  { id: 'AUD-01', area: 'Audio', category: 'Audio', type: 'audio', title: 'Audio starts, pauses and resumes', action: 'Start/pause/resume', expected: 'Observed media state changes correctly', automation: 'partially_automated', capability: 'media_playback', note: 'Autoplay and audio output cannot be observed reliably in a headless browser.' },
+  { id: 'VID-01', area: 'Video', category: 'Video', type: 'video', title: 'Video starts, pauses and seeks', action: 'Start/pause/seek where allowed', expected: 'Observed media state and controls work', automation: 'partially_automated', capability: 'media_playback' },
   { id: 'MED-01', area: 'Media completion', category: 'Media', type: 'video', title: 'Media completion fires the declared event', action: 'Observe media end', expected: 'Declared completion/gating event occurs at the intended time', automation: 'manual' },
   { id: 'MED-02', area: 'Captions/transcript', category: 'Media', type: 'video', title: 'Captions or transcript are available', action: 'Enable available captions/transcript', expected: 'Content displays; semantic accuracy remains a manual check', automation: 'partially_automated', capability: 'mapped', note: 'Automation checks that a caption track exists. Accuracy is always manual.' },
   { id: 'MED-03', area: 'Playback failure', category: 'Media', type: 'video', title: 'A failed media load is detectable', action: 'Simulate a controlled failed media load', expected: 'Failure is detectable and the course recovery behavior is reviewed', automation: 'partially_automated', capability: 'mapped', note: 'Automation reports media that failed to load. Simulated failures are not injected.' },
@@ -192,9 +195,16 @@ function applicabilityFor(r: Row): string {
 
 /** Adds any starter case that is missing. Never overwrites a case a person has edited or imported. */
 export function seedStarterLibrary(qa: QaStore): { added: number; total: number } {
-  const have = new Set(qa.listDefinitions().map((d) => d.id));
+  const existing = new Map(qa.listDefinitions().map((d) => [d.id, d]));
+  const have = new Set(existing.keys());
   let added = 0;
   for (const d of starterDefinitions()) {
+    const old = existing.get(d.id);
+    // A starter case the engine can now run picks that up. A case a person imported or wrote is never changed.
+    if (old && old.origin === 'starter' && old.automation === 'manual' && !old.body.requiredCapability && d.body.requiredCapability) {
+      qa.saveDefinition({ ...old, automation: d.automation, body: { ...old.body, requiredCapability: d.body.requiredCapability, actions: d.body.actions, assertions: d.body.assertions, evidence: d.body.evidence } }, 'system', 'The scanner can now run this case');
+      continue;
+    }
     if (have.has(d.id)) continue;
     qa.saveDefinition(d, 'system', 'Starter case added');
     added++;

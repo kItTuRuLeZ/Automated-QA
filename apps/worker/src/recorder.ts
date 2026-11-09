@@ -96,7 +96,7 @@ export class RunRecorder {
       const m = mapCandidate(c);
       if (!m) continue;
       const id = `i-${createHash('sha1').update(`${unitId}|${m.type}|${c.locator ?? ''}|${c.targetDescription}`).digest('hex').slice(0, 12)}`;
-      items.push({ id, unitId, type: m.type, label: c.targetDescription, locator: c.locator, confidence: m.capabilities.length ? 'high' : 'low', capabilities: m.capabilities, detectedBy: c.adapter });
+      items.push({ id, unitId, type: m.type, label: c.targetDescription, locator: c.locator, confidence: m.capabilities.length ? 'high' : 'low', capabilities: m.capabilities, detectedBy: c.adapter, stateId: state.id });
     }
     const added = this.qa.addInteractions(this.runId, items);
     if (added.length) {
@@ -138,6 +138,10 @@ export class RunRecorder {
 
 /** Which kind of interaction a discovered action is, and what automation can really do with it. */
 export function mapCandidate(c: Pick<CandidateAction, 'kind' | 'reason' | 'targetDescription'>): { type: InteractionType; capabilities: string[] } | undefined {
+  if (c.targetDescription.startsWith('flip card ')) return { type: 'flip_card', capabilities: ['activate', 'observe_flip'] };
+  if (c.targetDescription.startsWith('carousel ')) return { type: 'carousel', capabilities: ['activate', 'observe_slide'] };
+  if (c.reason === 'not_applicable_to_surface' && c.targetDescription.startsWith('audio ')) return { type: 'audio', capabilities: ['activate', 'observe_playback'] };
+  if (c.reason === 'not_applicable_to_surface' && c.targetDescription.startsWith('video ')) return { type: 'video', capabilities: ['activate', 'observe_playback'] };
   if (c.reason === 'out_of_scope') return { type: 'link', capabilities: [] };
   if (c.reason === 'unsafe_action' || c.reason === 'ambiguous_action') return { type: 'unknown_control', capabilities: [] };
   switch (c.kind) {

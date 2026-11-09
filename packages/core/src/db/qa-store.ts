@@ -155,11 +155,11 @@ export class QaStore {
   addInteractions(runId: string, items: Array<Omit<InteractionInstance, 'runId'>>): InteractionInstance[] {
     return this.db.transaction(() => {
       const known = new Set((this.db.prepare('SELECT id FROM interaction_instances WHERE run_id = ?').all(runId) as Array<{ id: string }>).map((r) => r.id));
-      const stmt = this.db.prepare('INSERT INTO interaction_instances (id, run_id, unit_id, type, label, locator, confidence, capabilities_json, detected_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      const stmt = this.db.prepare('INSERT INTO interaction_instances (id, run_id, unit_id, type, label, locator, confidence, capabilities_json, detected_by, state_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
       const added: InteractionInstance[] = [];
       for (const i of items) {
         if (known.has(i.id)) continue;
-        stmt.run(i.id, runId, i.unitId, i.type, i.label, i.locator ?? null, i.confidence, JSON.stringify(i.capabilities), i.detectedBy);
+        stmt.run(i.id, runId, i.unitId, i.type, i.label, i.locator ?? null, i.confidence, JSON.stringify(i.capabilities), i.detectedBy, i.stateId ?? null);
         known.add(i.id);
         added.push({ ...i, runId });
       }
@@ -169,7 +169,7 @@ export class QaStore {
 
   listInteractions(runId: string, unitId?: string): InteractionInstance[] {
     const rows = (unitId ? this.db.prepare('SELECT * FROM interaction_instances WHERE run_id = ? AND unit_id = ?').all(runId, unitId) : this.db.prepare('SELECT * FROM interaction_instances WHERE run_id = ?').all(runId)) as InteractionRow[];
-    return rows.map((r) => ({ id: r.id, runId: r.run_id, unitId: r.unit_id, type: r.type as InteractionInstance['type'], label: r.label, locator: r.locator ?? undefined, confidence: r.confidence as InteractionInstance['confidence'], capabilities: JSON.parse(r.capabilities_json) as string[], detectedBy: r.detected_by }));
+    return rows.map((r) => ({ id: r.id, runId: r.run_id, unitId: r.unit_id, type: r.type as InteractionInstance['type'], label: r.label, locator: r.locator ?? undefined, confidence: r.confidence as InteractionInstance['confidence'], capabilities: JSON.parse(r.capabilities_json) as string[], detectedBy: r.detected_by, stateId: r.state_id ?? undefined }));
   }
 
   // ---- test definitions ----
@@ -418,6 +418,7 @@ interface InteractionRow {
   confidence: string;
   capabilities_json: string;
   detected_by: string;
+  state_id: string | null;
 }
 interface DispositionRow {
   id: string;
