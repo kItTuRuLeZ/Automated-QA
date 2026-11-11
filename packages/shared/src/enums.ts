@@ -108,6 +108,7 @@ export const EVIDENCE_KINDS = [
   'text_excerpt',
   'package_entry',
   'scorm_api_call',
+  'trace',
 ] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 

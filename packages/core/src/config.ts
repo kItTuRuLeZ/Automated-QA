@@ -179,6 +179,7 @@ export function buildScanConfig(input: {
   functional?: boolean;
   qaProfile?: ScanConfig['qaProfile'];
   autoAnswer?: boolean;
+  traces?: 'off' | 'first_failure';
   maxStates?: number;
   maxDepth?: number;
   terminology?: TerminologyRule[];
@@ -222,6 +223,7 @@ export function buildScanConfig(input: {
     configVersion: 1,
     ...(input.qaProfile ? { qaProfile: input.qaProfile } : {}),
     ...(input.autoAnswer ? { autoAnswer: true } : {}),
+    ...(input.traces ? { traces: input.traces } : {}),
     ...(input.profile ? { profileId: input.profile.id, profile: input.profile } : {}),
   };
 }

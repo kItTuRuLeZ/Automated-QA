@@ -184,6 +184,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
       functional: input.functional,
       qaProfile: input.qaProfile,
       autoAnswer: input.autoAnswer,
+      traces: input.traces,
       viewports: input.viewports ? viewportsByName(input.viewports) : fromProfile?.viewportNames.length ? viewportsByName(fromProfile.viewportNames) : undefined,
       perf: fromProfile && Object.keys(fromProfile.perf).length ? fromProfile.perf : undefined,
       profile: fromProfile?.snapshot,

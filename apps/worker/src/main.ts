@@ -1,5 +1,6 @@
 import { ArtifactStore, NetworkPolicy, PACKAGE_PORT, parseLocalTargets, Store, createLogger, openDatabase, resolveDataPaths } from '@cqa/core';
-import { concurrencyFromEnv, startWorker } from './worker.js';
+import { type WorkerLoop, concurrencyFromEnv, startWorker } from './worker.js';
+import { WorkerAlreadyRunningError } from './worker-lock.js';
 
 const log = createLogger('worker');
 const paths = resolveDataPaths();
@@ -17,7 +18,15 @@ const artifacts = new ArtifactStore(paths.artifacts, store);
 // Production policy: no exemptions unless explicitly configured. Private, loopback, and reserved destinations are denied by default.
 // One scan at a time unless CQA_WORKER_CONCURRENCY says otherwise (each scan is a full Chromium).
 const concurrency = concurrencyFromEnv(process.env.CQA_WORKER_CONCURRENCY);
-const worker = startWorker({ concurrency, store, artifacts, policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }], allowPrivateAddresses }), tmpRoot: paths.tmp, log });
+let worker: WorkerLoop;
+try {
+  worker = startWorker({ concurrency, store, artifacts, policy: new NetworkPolicy({ exemptAddresses: [...localTargets.exemptions, { ip: '127.0.0.1', port: PACKAGE_PORT }], allowPrivateAddresses }), tmpRoot: paths.tmp, log });
+} catch (err) {
+  if (!(err instanceof WorkerAlreadyRunningError)) throw err;
+  log.error(err.message);
+  store.db.close();
+  process.exit(1);
+}
 log.info({ dataDir: paths.root, concurrency }, 'worker started');
 
 const shutdown = async () => {

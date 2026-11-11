@@ -24,7 +24,7 @@ import type { BlockedConnection } from '../net/egress-proxy.js';
 import { blocksScrolledIntoView, controlsSettled } from '../adapters/rise.js';
 import { isAbort } from './capture.js';
 import type { KeyboardPassInput } from './keyboard.js';
-import { type NewCheck, type NewFinding, check, dedupe, finding, hostOf, truncate } from './helpers.js';
+import { type NewCheck, type NewFinding, assertionKey, check, dedupe, finding, hostOf, truncate } from './helpers.js';
 
 type Candidate = CandidateAction & { rawHref?: string };
 
@@ -501,7 +501,10 @@ export class Traversal {
         let retried = false;
         // A defect must reproduce: before reporting a recognized control as broken, restore the state and try once more.
         collecting = false; // reloading for the retry must not attribute page-load problems to this action
-        if (!postOk && ruleId !== 'NAV-002' && timeLeft() && (await restore(node))) {
+        // The first attempt keeps its own picture, so a pass on the retry still shows what went wrong the first time.
+        const canRetry = !postOk && ruleId !== 'NAV-002' && timeLeft();
+        const firstShot = canRetry ? await screenshot(`First attempt, before the retry: ${stepText(cand)}`, node.state.id) : undefined;
+        if (canRetry && (await restore(node))) {
           collecting = true;
           retried = true;
           try {
@@ -569,11 +572,13 @@ export class Traversal {
         }
 
         const stateForResult = target ?? node;
+        // Same grain as the finding's own target: one finding can span several screens, and each must be able to match it.
+        const checkKey = assertionKey('control', ruleId, cand.targetDescription, cand.expectedPostcondition ?? '');
         if (postOk) {
-          checks.push(check(ruleId, 'passed', duration, [], { stateId: node.state.id, viewportName, reasonDetail: retried ? 'Passed on the second attempt; the first attempt did not show the expected result in time.' : undefined, ...(retried ? { attempt: 2, firstAttemptOutcome: 'failed' as const } : {}) }));
+          checks.push(check(ruleId, 'passed', duration, retried && firstShot ? [firstShot] : [], { stateId: node.state.id, viewportName, targetKey: checkKey, reasonDetail: retried ? 'Passed on the second attempt; the first attempt did not show the expected result in time.' : undefined, ...(retried ? { attempt: 2, firstAttemptOutcome: 'failed' as const } : {}) }));
         } else {
           const shot = await screenshot(`After ${stepText(cand)}`, stateForResult.state.id);
-          const ev = shot ? [shot] : [];
+          const ev = [...(shot ? [shot] : []), ...(firstShot ? [firstShot] : [])];
           const repro = [...describePath(node.path), stepText(cand), `Expected: ${cand.expectedPostcondition}`];
           if (ruleId === 'NAV-002') {
             checks.push(check(ruleId, 'needs_review', duration, ev, { stateId: node.state.id, viewportName }));
@@ -585,9 +590,10 @@ export class Traversal {
               reproductionSteps: repro,
               remediation: 'Check whether the control should do something at this point in the course.',
               targetKey: cand.targetDescription,
+              checkKey,
             }, { selector: cand.locator, elementDescription: cand.targetDescription });
           } else {
-            checks.push(check(ruleId, 'failed', duration, ev, { stateId: node.state.id, viewportName, reasonDetail: controlKeyOf(cand) }));
+            checks.push(check(ruleId, 'failed', duration, ev, { stateId: node.state.id, viewportName, reasonDetail: controlKeyOf(cand), targetKey: checkKey }));
             addFinding(ruleId, node, {
               title: ruleId === 'NAV-003' ? `Dialog did not close with ${cand.targetDescription}` : `${capitalizeFirst(cand.targetDescription)} did not work as expected`,
               observed: `After activating ${cand.targetDescription}, the expected result was not observed within ${POST_TIMEOUT_MS} ms, on two separate attempts.`,
@@ -596,6 +602,7 @@ export class Traversal {
               reproductionSteps: repro,
               remediation: ruleId === 'NAV-003' ? 'Make the close control hide the dialog and return focus to the page.' : 'Fix the control so it updates its state (aria-selected / aria-expanded) and shows the content it controls.',
               targetKey: cand.targetDescription,
+              checkKey,
             }, { selector: cand.locator, elementDescription: cand.targetDescription });
           }
         }

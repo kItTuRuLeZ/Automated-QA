@@ -505,6 +505,7 @@ function scormSection(store: Store, run: ScanRun): ReportScorm | undefined {
       'It does not evaluate sequencing or navigation rules, does not move between lessons, and does not decide pass or fail from a mastery score. It tests one lesson per scan.',
       `Resume is tested only when the course sets its exit value to "suspend". A new attempt keeps nothing but what ${v === 'SCORM 1.2' ? 'that version retains (status and score)' : 'the data model defines'}, and the course returning to the right screen needs a person to confirm.`,
       'Journeys are scripted by the person; a journey that could not be carried out is reported as not tested, never as a pass.',
+      'Rise courses exported to load only inside an LMS are allowed to load here: the tool removes that one restriction and supplies stand-in progress calls so the content can be tested. Launching this way says nothing about how the course behaves in an LMS.',
     ],
     lmsChecklist: SCORM_LMS_CHECKLIST.map((i) => ({ id: i.id, title: i.title, howToCheck: i.howToCheck })),
   };

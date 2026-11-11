@@ -96,7 +96,8 @@ describe('behavior rules: the all-click scenario', () => {
     const finding = h.store.listFindings(run.id).find((f) => f.ruleId === 'FUN-002')!;
     expect(finding.title).toMatch(/LOG-01 failed/);
     expect(finding.expected).toMatch(/reviewer-approved case/);
-    expect(by('LOG-01')[0]!.evidenceIds.length).toBe(1); // a screenshot of the state at the failure
+    // A screenshot of the state at the failure, and the browser trace of the check (Phase 9).
+    expect(h.store.getEvidence(by('LOG-01')[0]!.evidenceIds).map((e) => e.kind).sort()).toEqual(['screenshot', 'trace']);
   });
 
   it('a counter that counts clicks instead of unique items is caught by the duplicate-click case', async () => {

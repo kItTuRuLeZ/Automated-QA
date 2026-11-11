@@ -148,6 +148,7 @@ export const api = {
       functional?: boolean;
       qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
       autoAnswer?: boolean;
+      traces?: 'off' | 'first_failure';
       testNonResponsive?: boolean;
       viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>;
       maxStates?: number;
@@ -172,7 +173,7 @@ export const api = {
     if (!res.ok) throw new ApiError(data.error ?? `Upload failed (${res.status})`, res.status);
     return data as unknown as PackageView;
   },
-  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; qaProfile?: 'quick' | 'functional' | 'full' | 'custom'; functional?: boolean; autoAnswer?: boolean; maxStates?: number; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
+  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; qaProfile?: 'quick' | 'functional' | 'full' | 'custom'; functional?: boolean; autoAnswer?: boolean; traces?: 'off' | 'first_failure'; maxStates?: number; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
     request<{ runs: ScanRun[]; scanned: string[]; notScanned: string[] }>('POST', `/api/packages/${encodeURIComponent(id)}/scans`, input),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),

@@ -52,6 +52,7 @@ export function PackagePage({ id }: { id: string }) {
   const [journeys, setJourneys] = useState<JourneyDraft[]>(presetJourneys('2004'));
   const [interactions, setInteractions] = useState(true);
   const [autoAnswer, setAutoAnswer] = useState(true);
+  const [traces, setTraces] = useState(true);
   const [maxScreens, setMaxScreens] = useState(100);
 
   if (error) return <ErrorBox error={error} onRetry={reload} />;
@@ -78,7 +79,7 @@ export function PackagePage({ id }: { id: string }) {
         launch: effective.length === choices.length && choices.length > 1 ? 'all' : effective,
         acknowledgeLocalExecution: ack,
         allowedExternalOrigins: allowed.split('\n').map((x) => x.trim()).filter(Boolean),
-        ...(interactions ? { qaProfile: 'full' as const, functional: true, autoAnswer } : {}),
+        ...(interactions ? { qaProfile: 'full' as const, functional: true, autoAnswer, traces: traces ? ('first_failure' as const) : ('off' as const) } : {}),
         maxStates: Math.min(200, Math.max(1, Math.round(maxScreens) || 100)),
       });
       window.location.hash = `/runs/${res.runs[0]!.id}`;
@@ -150,6 +151,13 @@ export function PackagePage({ id }: { id: string }) {
                 <span>
                   <strong>Test interactions</strong>
                   <span className="help" style={{ display: 'block' }}>Clicks tabs, accordions, pop-ups, menus and Next/Back buttons and checks that each one works. Takes longer.</span>
+                </span>
+              </label>
+              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem' }}>
+                <input type="checkbox" checked={interactions && traces} disabled={!interactions} onChange={(e) => setTraces(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                <span>
+                  <strong>Keep a browser trace when a check fails</strong>
+                  <span className="help" style={{ display: 'block' }}>If a check fails, a step-by-step browser recording is kept for it. It can include page content and network data, so turn this off for courses with sensitive information.</span>
                 </span>
               </label>
               <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem' }}>

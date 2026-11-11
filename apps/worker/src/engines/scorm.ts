@@ -119,6 +119,9 @@ async function runSession(input: ScormRunInput, opts: { name: string; kind: 'jou
       while (Date.now() < end && !ctx.signal.aborted) await page.waitForTimeout(200);
     }
 
+    // What the learner can see at the end, including inside frames, to compare with what the course reported.
+    const screenText = (await Promise.all(page.frames().map((f) => f.evaluate(() => document.body?.innerText ?? '').catch(() => '')))).join('\n').slice(0, 100_000);
+
     // Read the state while the page is still there, then leave and let unload handlers run.
     const snap = await page.evaluate(() => (window as unknown as { __cqaScorm?: { snapshot(): { calls: HarnessCall[]; cmi: Record<string, string>; committed: Record<string, string>; lookups: Array<{ name: string; t: number }> } } }).__cqaScorm?.snapshot()).catch(() => undefined);
     for (const c of snap?.calls ?? []) emitted.set(c.seq, c);
@@ -146,6 +149,7 @@ async function runSession(input: ScormRunInput, opts: { name: string; kind: 'jou
       stepsTotal: steps.length,
       stepsRun,
       stepFailure,
+      screenText,
       expect: opts.journey?.expect,
       restoredFrom: opts.restore,
     };

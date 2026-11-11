@@ -277,7 +277,20 @@ function ExecutionDetail({ runId, e, onChanged }: { runId: string; e: ExecutionR
       )}
       <h4>Evidence</h4>
       {evidence.data && evidence.data.length > 0 ? (
-        evidence.data.filter((x) => x.artifactId).map((x) => <ScreenshotViewer key={x.id} src={api.artifactUrl(x.artifactId!)} alt={`Evidence: ${x.caption}`} caption={x.caption} title={x.caption} />)
+        evidence.data
+          .filter((x) => x.artifactId)
+          .map((x) =>
+            x.kind === 'trace' ? (
+              <p key={x.id}>
+                <a className="btn btn-small" href={api.artifactUrl(x.artifactId!)} download={`browser-trace-${e.definitionId}.zip`}>
+                  Download the browser trace
+                </a>{' '}
+                <span className="muted">A step-by-step recording of this check. Open it with the Playwright Trace Viewer: npx playwright show-trace followed by the file name. It can contain page content and network data.</span>
+              </p>
+            ) : (
+              <ScreenshotViewer key={x.id} src={api.artifactUrl(x.artifactId!)} alt={`Evidence: ${x.caption}`} caption={x.caption} title={x.caption} />
+            ),
+          )
       ) : e.evidenceIds.length ? (
         <p className="muted">{evidence.error ? 'Evidence could not be loaded.' : 'Loading evidence…'}</p>
       ) : (

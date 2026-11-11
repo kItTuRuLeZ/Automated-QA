@@ -156,6 +156,9 @@ describe('defects must reproduce', () => {
     expect(checks.find((c) => c.ruleId === 'NAV-001')?.reasonDetail).toContain('second attempt');
     // The retried pass keeps its history instead of looking like a first-time pass.
     expect(checks.find((c) => c.ruleId === 'NAV-001')).toMatchObject({ outcome: 'passed', attempt: 2, firstAttemptOutcome: 'failed' });
+    // The first attempt has its own evidence, separate from the pass.
+    const first = h.store.getEvidence(checks.find((c) => c.ruleId === 'NAV-001')!.evidenceIds);
+    expect(first.map((e) => e.caption)).toEqual([expect.stringMatching(/^First attempt, before the retry/)]);
   });
 });
 

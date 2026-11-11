@@ -194,6 +194,29 @@ describe('coverage numbers', () => {
     expect(finalStage({ runStatus: 'completed', coverage: c })).toBe('completed_with_gaps');
   });
 
+  it.each([
+    ['unsupported', 'unsupported'],
+    ['inconclusive', 'inconclusive'],
+    ['a status from a newer version', 'unknown'],
+  ] as const)('%s results are counted as a gap in the final summary', (_name, kind) => {
+    const status = (kind === 'unknown' ? 'brand_new' : kind) as TestStatus;
+    const c = summarizeCoverage({ units: [unit({ source: 'manifest' })], executions: [exec('passed'), exec(status, { definitionId: 'B' })], interactions: [], definitions: new Map() });
+    expect(c.gaps[kind]).toBe(1);
+    expect(c.statement).toMatch(/1 check could not give a result/);
+    expect(finalStage({ runStatus: 'completed', coverage: c })).toBe('completed_with_gaps');
+  });
+
+  it('a shared player control linked to a real result counts as exercised; one with no linked result does not', () => {
+    const inter = (id: string): InteractionInstance => ({ id, runId: 'r1', unitId: 'u1', type: 'tab', label: id, confidence: 'high', capabilities: ['activate'], detectedBy: 't' });
+    const note = (sourceStatus: string) => [{ at: '', step: 'note' as const, detail: 'x', data: { sourceExecutionId: 'e0', sourceStatus } }];
+    const base = { units: [unit({ source: 'manifest' })], interactions: [inter('a'), inter('b')], definitions: new Map() };
+    const linked = summarizeCoverage({ ...base, executions: [exec('passed', { instanceId: 'a' }), exec('not_applicable', { instanceId: 'b', trace: note('passed') })] });
+    expect(linked.interactions.exercised).toMatchObject({ numerator: 2, denominator: 2 });
+    expect(finalStage({ runStatus: 'completed', coverage: linked })).toBe('completed');
+    const plain = summarizeCoverage({ ...base, executions: [exec('passed', { instanceId: 'a' }), exec('not_applicable', { instanceId: 'b' })] });
+    expect(plain.interactions.exercised).toMatchObject({ numerator: 1, denominator: 2 });
+  });
+
   it('a finished run with gaps is completed with gaps, never plain completed', () => {
     const base = { units: [unit({ source: 'manifest' })], interactions: [], definitions: new Map() };
     const clean = summarizeCoverage({ ...base, executions: [exec('passed')] });

@@ -4,7 +4,7 @@ import type { LookupFunction } from 'node:net';
 import type { EngineResult, EvidenceId, EvidenceSink, FindingOccurrence, ReasonCode, ScanConfig } from '@cqa/shared';
 import { type NetworkPolicy, effectivePort, nowIso, sanitizeUrl } from '@cqa/core';
 import type { LinkAppearance } from './content.js';
-import { type NewCheck, type NewFinding, check, finding, truncate } from './helpers.js';
+import { type NewCheck, type NewFinding, assertionKey, check, finding, truncate } from './helpers.js';
 
 const USER_AGENT = 'CourseQA-LinkCheck/0.1 (+local QA scan)';
 const CONCURRENCY = 4;
@@ -175,11 +175,11 @@ export class LinkChecker {
       const linkLabel = truncate(first.link.text || shown, 60);
 
       if (r.verdict === 'ok') {
-        checks.push(check('LNK-001', 'passed', r.durationMs, [ev], { itemsEvaluated: seen.length }));
+        checks.push(check('LNK-001', 'passed', r.durationMs, [ev], { itemsEvaluated: seen.length, targetKey: assertionKey('LNK-001', u) }));
         continue;
       }
       if (r.verdict === 'broken') {
-        checks.push(check('LNK-001', 'failed', r.durationMs, [ev], { itemsEvaluated: seen.length }));
+        checks.push(check('LNK-001', 'failed', r.durationMs, [ev], { itemsEvaluated: seen.length, targetKey: assertionKey('LNK-001', u) }));
         const f = finding('LNK-001', location, {
           title: `Broken link "${linkLabel}" (${statusText})`,
           observed: `${shown} answered ${statusText}${r.chain.length > 1 ? ` after redirects: ${r.chain.map(san).join(' → ')}` : ''}.`,
@@ -188,6 +188,7 @@ export class LinkChecker {
           reproductionSteps: repro,
           remediation: 'Update the link to the correct destination or remove it.',
           targetKey: u,
+          checkKey: assertionKey('LNK-001', u),
           stateKey: '',
         });
         f.occurrences = occurrences;

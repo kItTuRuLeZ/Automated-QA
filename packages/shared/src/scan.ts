@@ -170,6 +170,10 @@ export interface ScormExpectation {
   scoreMin?: number;
   scoreMax?: number;
   mustReportScore?: boolean;
+  /** Text the learner should see at the end. Compared with the tracking, so a screen that says "complete" while the course reports otherwise is caught. */
+  screenShows?: string;
+  /** The saved location (`cmi.core.lesson_location` or `cmi.location`) the course should leave behind. */
+  bookmark?: string;
 }
 
 export interface ScormJourney {
@@ -196,6 +200,8 @@ export interface ScanConfig {
   qaProfile?: 'quick' | 'functional' | 'full' | 'custom';
   /** When a screen asks a question and blocks progress, answer it (first choice, then Submit) so the walk can continue. */
   autoAnswer?: boolean;
+  /** Keep a Playwright trace for each functional check that fails (the default), or none. Traces can hold page and network data. */
+  traces?: 'off' | 'first_failure';
   projectId: ProjectId;
   target: ScanTarget;
   scope: ScanScope;

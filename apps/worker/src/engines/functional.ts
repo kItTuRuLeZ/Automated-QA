@@ -1,9 +1,14 @@
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { contentRoot, waitForContentRoot } from '../adapters/content-root.js';
 import { parseDragItem, parseMediaItem, performDrag } from '../adapters/drag.js';
 import type { Browser, BrowserContext, ElementHandle, Locator, Page } from 'playwright';
-import type { BehaviorRule, ContentUnit, CourseState, EvidenceId, EvidenceSink, ExecutionTraceStep, InteractionInstance, RuleEvent, RuleItem, ScanRun, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
+import { isRuleConfirmed } from '@cqa/shared';
+import type { AssessmentSpec, BehaviorRule, ContentUnit, CourseState, EvidenceId, EvidenceSink, ExecutionTraceStep, InteractionInstance, RuleEvent, RuleItem, ScanRun, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 import { type QaStore, effectiveAutomation, isPrimaryUnit, nowIso } from '@cqa/core';
-import type { NewCheck, NewFinding } from './helpers.js';
+import { testAssessment } from './assessment.js';
+import { type NewCheck, type NewFinding, assertionKey, wholePhrase } from './helpers.js';
 import { check, finding, truncate } from './helpers.js';
 import type { ReplayPath } from './traversal.js';
 import type { RunRecorder } from '../recorder.js';
@@ -41,6 +46,8 @@ export interface FunctionalInput {
   newContext: () => Promise<BrowserContext>;
   contentHash?: string;
   configHash?: string;
+  /** How many traces this run has kept so far. */
+  traceBudget?: { kept: number };
 }
 
 interface Planned {
@@ -52,7 +59,7 @@ interface Planned {
   rule?: BehaviorRule;
 }
 
-type Outcome = { status: TestStatus; reason?: string; actual?: string };
+type Outcome = { status: TestStatus; reason?: string; actual?: string; evidenceId?: EvidenceId; extraEvidence?: EvidenceId[]; reproSteps?: string[] };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** A short wait for an in-page action to take effect. Full load waiting is only done after navigating. */
@@ -154,11 +161,13 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
       configHash: input.configHash,
     });
     planned.push({ executionId: e.id, def, unit, stateId, ...extra });
+    return e.id;
   };
 
   // A control the player draws on every screen (a Resources tab, a menu) is the same control each time. It is tested once, on the
-  // first screen that shows it, and the other screens say so instead of repeating the test (and, when it is broken, the finding).
-  const sharedControls = new Map<string, string>();
+  // first screen that shows it, and the other screens carry that test's real outcome once it has run. Lesson content is never shared.
+  const sharedControls = new Map<string, { title: string; executionId: string }>();
+  const sharedUses: SharedControlUse[] = [];
   for (const unit of units) {
     const stateId = baseStateOf(unit);
     if (!stateId || !replayByState.has(stateId)) continue;
@@ -192,37 +201,33 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
         });
         return;
       }
-      if (i && i.type !== 'next' && i.locator) {
-        const key = `${id}|${i.type}|${i.label}|${i.locator}`;
-        const first = sharedControls.get(key);
-        if (first && first !== unit.title) {
-          qa.insertExecution({
-            runId: run.id,
-            definitionId: def.id,
-            definitionVersion: def.version,
-            externalId: def.externalId,
-            unitId: unit.id,
-            instanceId: i.id,
-            statePath: stateId,
-            status: 'not_applicable',
-            reason: `Not repeated: "${i.label}" is the same control on every screen and was already tested on "${first}". That result applies wherever the control appears.`,
-            expected: def.body.expectedResult,
-            expectedSource: def.body.expectationSource,
-            trace: [],
-            evidenceIds: [],
-            scope: 'functional',
-            engineVersion: ENGINE_VERSION,
-            contentHash: input.contentHash,
-            configHash: input.configHash,
-            startedAt: nowIso(),
-            finishedAt: nowIso(),
-          });
-          return;
-        }
-        sharedControls.set(key, unit.title);
+      const sharedKey = i && isPlayerControl(i) ? `${id}|${i.type}|${i.label}|${i.locator}` : undefined;
+      const first = sharedKey ? sharedControls.get(sharedKey) : undefined;
+      if (first && first.title !== unit.title) {
+        const copy = qa.insertExecution({
+          runId: run.id,
+          definitionId: def.id,
+          definitionVersion: def.version,
+          externalId: def.externalId,
+          unitId: unit.id,
+          instanceId: i!.id,
+          statePath: stateId,
+          status: 'pending',
+          expected: def.body.expectedResult,
+          expectedSource: def.body.expectationSource,
+          trace: [],
+          evidenceIds: [],
+          scope: 'functional',
+          engineVersion: ENGINE_VERSION,
+          contentHash: input.contentHash,
+          configHash: input.configHash,
+        });
+        sharedUses.push({ executionId: copy.id, sourceExecutionId: first.executionId, label: i!.label, sourceTitle: first.title });
+        return;
       }
       // Test it where it was found: on a scrolling lesson that can be after a Continue button.
-      addPlan(def, unit, i?.stateId && replayByState.has(i.stateId) ? i.stateId : stateId, { instance: i });
+      const executionId = addPlan(def, unit, i?.stateId && replayByState.has(i.stateId) ? i.stateId : stateId, { instance: i });
+      if (sharedKey) sharedControls.set(sharedKey, { title: unit.title, executionId });
       count++;
     };
     for (const i of inter) {
@@ -245,15 +250,16 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
 
   for (const rule of input.rules.filter((r) => r.reviewState !== 'retired')) {
     const unit = pickUnit(units, rule, baseStateOf);
+    const quizIds = rule.assessment ? assessmentCases(rule.assessment) : undefined;
     if (!unit) {
-      for (const id of ['LOG-01', 'LOG-02', 'LOG-03']) {
+      for (const id of quizIds ?? ['LOG-01', 'LOG-02', 'LOG-03']) {
         const def = input.definitions.get(id);
         if (def) qa.insertExecution({ runId: run.id, definitionId: id, definitionVersion: def.version, instanceId: `rule:${rule.id}`, status: 'blocked', reason: `The rule "${rule.title}" names a screen ("${rule.unitMatch || 'the launch page'}") that no browser visit reached, so it could not be tested.`, expected: def.body.expectedResult, expectedSource: rule.expectationSource, trace: [], evidenceIds: [], scope: 'functional', engineVersion: ENGINE_VERSION, startedAt: nowIso(), finishedAt: nowIso() });
       }
       continue;
     }
     const stateId = baseStateOf(unit)!;
-    const ids = ['LOG-01', 'LOG-02', 'LOG-03', rule.orderPolicy === 'any_order' ? 'LOG-04' : 'LOG-05'];
+    const ids = quizIds ?? ['LOG-01', 'LOG-02', 'LOG-03', rule.orderPolicy === 'any_order' ? 'LOG-04' : 'LOG-05'];
     for (const id of ids) {
       const def = usable(id);
       if (def) addPlan(def, unit, stateId, { rule });
@@ -265,18 +271,67 @@ export async function runFunctionalTests(input: FunctionalInput): Promise<{ chec
   const byUnit = new Map<string, Planned[]>();
   for (const p of planned) byUnit.set(p.unit.id, [...(byUnit.get(p.unit.id) ?? []), p]);
 
-  for (const [, list] of byUnit) {
-    for (const p of list) {
-      if (input.signal.aborted) throw new Error('aborted');
-      if (Date.now() > input.deadline) {
-        qa.updateExecution(p.executionId, { status: 'skipped', reason: 'The scan ran out of time before this check could run.', finishedAt: nowIso() });
-        continue;
+  try {
+    for (const [, list] of byUnit) {
+      for (const p of list) {
+        if (input.signal.aborted) throw new Error('aborted');
+        if (Date.now() > input.deadline) {
+          qa.updateExecution(p.executionId, { status: 'skipped', reason: 'The scan ran out of time before this check could run.', finishedAt: nowIso() });
+          continue;
+        }
+        await runOne(input, p, navTimeout, replayByState.get(p.stateId)!, stateById.get(p.stateId), checks, findings);
       }
-      await runOne(input, p, navTimeout, replayByState.get(p.stateId)!, stateById.get(p.stateId), checks, findings);
     }
+  } finally {
+    // Also on cancel: a copy must never be left waiting for a test that will not run.
+    resolveSharedControls(qa, sharedUses);
   }
   qa.recount(run.id);
   return { checks, findings };
+}
+
+const findState = (input: FunctionalInput, id: string) => input.states.find((s) => (s.id as string) === id);
+
+/** Which library cases an answer key can test. */
+function assessmentCases(spec: AssessmentSpec): string[] {
+  return [
+    spec.selection === 'single' ? 'MCQ-01' : 'MSQ-01',
+    ...(spec.unanswered ? ['MCQ-02'] : []),
+    ...(spec.cases.some((c) => c.correct) ? ['MCQ-03'] : []),
+    ...(spec.cases.some((c) => !c.correct) ? ['MCQ-04'] : []),
+    ...(spec.retry ? ['QUIZ-01'] : []),
+  ];
+}
+
+/** Names players draw on every screen. A matching name alone is not enough: see isPlayerControl. */
+const PLAYER_CONTROL_NAME = /^(resources?|resorces|menu|contents|outline|glossary|transcript|notes|search|help|sidebar|settings|exit|volume|captions)$/i;
+
+/**
+ * Only a control named like part of the player, at a fixed address outside the lesson's own blocks, is treated as one shared control.
+ * A position such as "first tab in the tab list" is not a fixed address: every lesson's tabs can match it.
+ */
+function isPlayerControl(i: InteractionInstance): boolean {
+  if (i.type === 'next' || !i.locator || /data-block-id|data-testid|:nth-/.test(i.locator)) return false;
+  return PLAYER_CONTROL_NAME.test((/"([^"]+)"/.exec(i.label)?.[1] ?? i.label).trim().replace(/[.:!?]+$/, ''));
+}
+
+export interface SharedControlUse {
+  executionId: string;
+  sourceExecutionId: string;
+  label: string;
+  sourceTitle: string;
+}
+
+/** Gives each screen that shares a player control the real outcome of the one test, now that it has run. Anything short of a result stays a gap. */
+export function resolveSharedControls(qa: QaStore, uses: readonly SharedControlUse[]): void {
+  for (const use of uses) {
+    const status = qa.getExecution(use.sourceExecutionId)?.status;
+    const settled = status === 'passed' || status === 'failed';
+    const reason = settled
+      ? `Not repeated: "${use.label}" is a player control shared by every screen. Its check ${status} on "${use.sourceTitle}"${status === 'failed' ? ', and the issue is recorded there' : ''}.`
+      : `Not tested here: "${use.label}" is a player control shared by every screen, and its check on "${use.sourceTitle}" could not be confirmed (${status ?? 'no result'}).`;
+    qa.updateExecution(use.executionId, { status: settled ? 'not_applicable' : 'skipped', reason, trace: [{ at: nowIso(), step: 'note', detail: `Result taken from the check on "${use.sourceTitle}".`, data: { sourceExecutionId: use.sourceExecutionId, sourceStatus: status ?? null } }], startedAt: nowIso(), finishedAt: nowIso() });
+  }
 }
 
 function pickUnit(units: ContentUnit[], rule: BehaviorRule, baseStateOf: (u: ContentUnit) => string | undefined): ContentUnit | undefined {
@@ -296,31 +351,47 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
 
   let outcome: Outcome;
   let shot: EvidenceId | undefined;
+  let traceId: EvidenceId | undefined;
+  let keepTrace = false;
+  let tracing = false;
   let context: BrowserContext | undefined;
+  // Quiz checks open their own fresh screens, so this page would only show an untouched screen: it is not opened at all.
+  const ownScreens = Boolean(p.def.body.requiredCapability?.startsWith('assess_'));
   try {
-    context = await input.newContext();
-    const page = await context.newPage();
-    const reached = await replay(page, input.targetUrl, path, navTimeout, tracer);
-    if (!reached.ok) {
-      outcome = { status: 'blocked', reason: `The screen could not be reached again to run this check: ${reached.why}`, actual: 'No result.' };
+    if (ownScreens) {
+      outcome = await dispatch(undefined as unknown as Page, p, input, navTimeout, tracer);
+      shot = outcome.evidenceId;
     } else {
-      // Courses that show the lesson in a frame (Rise) are tested in that frame. Behavior rules keep the page: the SCORM test harness lives there.
-      const root = (await contentRoot(page)) as unknown as Page;
-      outcome = await dispatch(p.def.body.requiredCapability?.startsWith('rule_') ? page : root, p, input, navTimeout, tracer);
-    }
-    if (outcome.status === 'failed' || outcome.status === 'manual_review_required' || outcome.status === 'passed') {
-      shot = await screenshot(page, input, state, `${p.def.id}: ${p.def.title}`);
+      context = await input.newContext();
+      tracing = await startTrace(context, input);
+      const page = await context.newPage();
+      const reached = await replay(page, input.targetUrl, path, navTimeout, tracer);
+      if (!reached.ok) {
+        outcome = { status: 'blocked', reason: `The screen could not be reached again to run this check: ${reached.why}`, actual: 'No result.' };
+      } else {
+        // Courses that show the lesson in a frame (Rise) are tested in that frame. Behavior rules keep the page: the SCORM test harness lives there.
+        const root = (await contentRoot(page)) as unknown as Page;
+        outcome = await dispatch(p.def.body.requiredCapability?.startsWith('rule_') ? page : root, p, input, navTimeout, tracer);
+      }
+      if (outcome.status === 'failed' || outcome.status === 'manual_review_required' || outcome.status === 'passed') {
+        shot = await screenshot(page, input, state, `${p.def.id}: ${p.def.title}`, tracer);
+      }
+      keepTrace = outcome.status === 'failed';
     }
   } catch (err) {
     if (input.signal.aborted) throw err;
+    keepTrace = true;
     outcome = { status: 'error', reason: `The test runner failed: ${truncate((err as Error).message, 200)}. This is not a confirmed defect in the course.`, actual: 'No result.' };
   } finally {
+    if (context && tracing) traceId = await stopTrace(context, input, state, keepTrace, `${p.def.id}: ${p.def.title}`, tracer);
     await context?.close().catch(() => undefined);
   }
+  const evidenceIds = [shot, ...(outcome.extraEvidence ?? []), traceId].filter((x): x is EvidenceId => Boolean(x));
 
-  // A rule only inferred from what the course did cannot prove or disprove anything until a person confirms it.
-  if (p.rule?.expectationSource === 'observed_hypothesis' && (outcome.status === 'passed' || outcome.status === 'failed')) {
-    outcome = { ...outcome, status: 'inconclusive', reason: `Provisional: this rule was only inferred from what the course did, so a reviewer must confirm it before this counts as a result. Against the inferred rule the test ${outcome.status}${outcome.reason ? `: ${outcome.reason}` : '.'}` };
+  // A rule nobody has approved, or one only inferred from what the course did, cannot prove or disprove anything yet.
+  const unconfirmed = !p.rule || isRuleConfirmed(p.rule) ? undefined : p.rule.expectationSource === 'observed_hypothesis' ? 'was only inferred from what the course did' : `is still a ${p.rule.reviewState} and has not been approved`;
+  if (unconfirmed && (outcome.status === 'passed' || outcome.status === 'failed')) {
+    outcome = { ...outcome, status: 'inconclusive', reason: `Provisional: this rule ${unconfirmed}, so a reviewer must confirm it before this counts as a result. Against the rule as written the test ${outcome.status}${outcome.reason ? `: ${outcome.reason}` : '.'}` };
   }
 
   const done = qa.updateExecution(p.executionId, {
@@ -328,7 +399,7 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
     reason: outcome.status === 'passed' ? undefined : (outcome.reason ?? 'No reason was recorded.'),
     actual: outcome.actual,
     trace: tracer.steps,
-    evidenceIds: shot ? [shot] : [],
+    evidenceIds,
     finishedAt: nowIso(),
   })!;
   qa.appendEvent(run.id, 'test_finished', { executionId: p.executionId, caseId: p.def.id, unitId: p.unit.id, status: done.status });
@@ -336,8 +407,10 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
 
   // Failures become findings so they flow into the issue list, statuses and reports. Errors and blocks do not.
   const ruleId = p.rule ? 'FUN-002' : 'FUN-001';
+  // A changed case, rule version or expectation makes a different key, so an old finding cannot be confirmed by a new meaning.
+  const checkKey = assertionKey(p.def.id, p.def.version, p.instance?.id ?? null, p.rule?.id ?? null, p.rule?.version ?? null, p.rule?.expectationSource ?? p.def.body.expectationSource, p.def.body.expectedResult);
   if (done.status === 'passed' || done.status === 'failed') {
-    checks.push(check(ruleId, done.status === 'passed' ? 'passed' : 'failed', 0, shot ? [shot] : [], { stateId: state?.id, viewportName: run.config.viewports[0]?.name }));
+    checks.push(check(ruleId, done.status === 'passed' ? 'passed' : 'failed', 0, evidenceIds, { stateId: state?.id, viewportName: run.config.viewports[0]?.name, targetKey: checkKey }));
   }
   if (done.status === 'failed' && state) {
     const subject = p.rule ? `Rule "${p.rule.title}"` : p.instance?.label ?? p.unit.title;
@@ -349,10 +422,11 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
           title: `${p.def.id} failed: ${truncate(p.def.title, 80)}${p.instance ? ` (${truncate(p.instance.label, 60)})` : ''}`,
           observed: `${done.actual ?? done.reason ?? 'The expected behavior was not observed.'}`,
           expected: `${p.def.body.expectedResult} (source: ${sourceLabel(p.rule ? p.rule.expectationSource : p.def.body.expectationSource)}${p.def.body.expectationSource === 'starter_baseline' && !p.rule ? '; a baseline, not a client requirement' : ''}).`,
-          evidenceIds: shot ? [shot] : [],
-          reproductionSteps: [`Open ${input.targetUrl}.`, ...path.steps.map((s) => `Activate ${s.description}.`), ...tracer.steps.filter((t) => t.step === 'action').map((t) => t.detail)],
+          evidenceIds,
+          reproductionSteps: [`Open ${input.targetUrl}.`, ...path.steps.map((s) => `Activate ${s.description}.`), ...(outcome.reproSteps ?? tracer.steps.filter((t) => t.step === 'action').map((t) => t.detail))],
           remediation: p.rule ? `Check the trigger logic for "${subject}". The ordered action trace shows the click sequence and when the event appeared.` : `Check how "${subject}" is built or authored. The trace in the test result shows what was done and what was observed.`,
           targetKey: `${p.def.id}|${p.instance?.id ?? p.rule?.id ?? ''}`,
+          checkKey,
           stateKey: '',
           type: p.def.body.expectationSource === 'starter_baseline' && !p.rule ? 'heuristic_warning' : 'automated_defect',
         },
@@ -396,12 +470,57 @@ async function replay(page: Page, targetUrl: string, path: ReplayPath, navTimeou
   }
 }
 
-async function screenshot(page: Page, input: FunctionalInput, state: CourseState | undefined, caption: string): Promise<EvidenceId | undefined> {
+/** At most this many traces per scan: each can be several megabytes. */
+const MAX_TRACES_PER_RUN = 25;
+
+async function startTrace(context: BrowserContext, input: FunctionalInput): Promise<boolean> {
+  if (input.run.config.traces === 'off') return false;
+  try {
+    await context.tracing.start({ screenshots: true, snapshots: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Keeps the trace of a failed check as evidence, or discards it. Captured from the first attempt on purpose: a retry is not
+ * needed to have one. A trace that cannot be saved is said so in the result, and nothing is linked.
+ */
+async function stopTrace(context: BrowserContext, input: FunctionalInput, state: CourseState | undefined, keep: boolean, caption: string, t: Tracer): Promise<EvidenceId | undefined> {
+  if (!keep) {
+    await context.tracing.stop().catch(() => undefined);
+    return undefined;
+  }
+  const budget = (input.traceBudget ??= { kept: 0 });
+  if (budget.kept >= MAX_TRACES_PER_RUN) {
+    await context.tracing.stop().catch(() => undefined);
+    t.add('note', `No browser trace was kept: this scan already holds the limit of ${MAX_TRACES_PER_RUN}.`);
+    return undefined;
+  }
+  const dir = mkdtempSync(join(tmpdir(), 'cqa-trace-'));
+  try {
+    const file = join(dir, 'trace.zip');
+    await context.tracing.stop({ path: file });
+    const artifactId = await input.evidence.writeArtifact({ kind: 'trace', mime: 'application/zip', bytes: readFileSync(file) });
+    const ev = await input.evidence.addEvidence({ kind: 'trace', artifactId, caption: `Browser trace for ${caption}. Open it with the Playwright Trace Viewer (npx playwright show-trace <file>). It can contain page content and network data.`, stateId: state?.id, viewportName: input.run.config.viewports[0]?.name, capturedAt: nowIso(), redacted: false });
+    budget.kept++;
+    return ev.id;
+  } catch (err) {
+    t.add('note', `The browser trace could not be saved: ${truncate((err as Error).message, 160)}. No trace is linked.`);
+    return undefined;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+async function screenshot(page: Page, input: FunctionalInput, state: CourseState | undefined, caption: string, t?: Tracer): Promise<EvidenceId | undefined> {
   try {
     const bytes = await page.screenshot({ type: 'png', timeout: 8_000 });
     const artifactId = await input.evidence.writeArtifact({ kind: 'screenshot', mime: 'image/png', bytes });
     return (await input.evidence.addEvidence({ kind: 'screenshot', artifactId, caption, stateId: state?.id, viewportName: input.run.config.viewports[0]?.name, capturedAt: nowIso(), redacted: false })).id;
-  } catch {
+  } catch (err) {
+    t?.add('note', `The screenshot could not be saved: ${truncate((err as Error).message, 160)}. No screenshot is linked.`);
     return undefined;
   }
 }
@@ -435,6 +554,33 @@ async function dispatch(page: Page, p: Planned, input: FunctionalInput, navTimeo
     case 'rule_order':
     case 'rule_sequence':
       return testRule(page, p, cap, input, navTimeout, t);
+    case 'assess_selection':
+    case 'assess_unanswered':
+    case 'assess_answer_key':
+    case 'assess_retry':
+      return testAssessment(cap, {
+        rule: p.rule!,
+        caseId: p.def.id,
+        locate,
+        add: (step, detail, data) => t.add(step, detail, data),
+        capture: (screen, caption) => screenshot(screen, input, findState(input, p.stateId), caption),
+        fresh: async () => {
+          const context = await input.newContext();
+          const tracing = await startTrace(context, input);
+          const fresh = await context.newPage();
+          const reached = await replay(fresh, input.targetUrl, input.replay.find((r) => r.stateId === p.stateId)!, navTimeout, t);
+          if (!reached.ok) {
+            await context.close().catch(() => undefined);
+            return { ok: false, why: reached.why };
+          }
+          const close = async (keep: boolean) => {
+            const id = tracing ? await stopTrace(context, input, findState(input, p.stateId), keep, `${p.def.id}: ${p.def.title}`, t) : undefined;
+            await context.close().catch(() => undefined);
+            return id;
+          };
+          return { ok: true, page: (await contentRoot(fresh)) as unknown as Page, close };
+        },
+      });
     default:
       return { status: 'manual_review_required', reason: `This case names the capability "${cap ?? 'none'}", which the scanner does not implement.` };
   }
@@ -955,7 +1101,7 @@ async function makeObserver(page: Page, rule: BehaviorRule, t: Tracer): Promise<
     }
     case 'message_shown': {
       if (!target) return { ok: false, why: 'The rule names no message text to look for.' };
-      return { ok: true, describe: `the message "${truncate(target, 50)}" is shown`, present: async () => page.getByText(target).filter({ visible: true }).count().then((n) => n > 0).catch(() => false) };
+      return { ok: true, describe: `the message "${truncate(target, 50)}" is shown`, present: async () => page.getByText(wholePhrase(target, 'iu')).filter({ visible: true }).count().then((n) => n > 0).catch(() => false) };
     }
     case 'layer_opened': {
       return {
@@ -1093,7 +1239,7 @@ async function runScenario(page: Page, rule: BehaviorRule, sc: Scenario, obs: Ob
  * Records, once for the run, every case that was not executed by an engine: the manual queue, cases that need a
  * configured expectation, and automated cases with nothing to apply to. None of these is a pass.
  */
-export function recordRunLevelCases(args: { qa: QaStore; runId: string; definitions: ReadonlyMap<string, TestDefinition>; hasRules: boolean; mappedIds: ReadonlySet<string>; engineVersion?: string; contentHash?: string; configHash?: string }): void {
+export function recordRunLevelCases(args: { qa: QaStore; runId: string; definitions: ReadonlyMap<string, TestDefinition>; hasRules: boolean; hasAnswerKeys?: boolean; mappedIds: ReadonlySet<string>; engineVersion?: string; contentHash?: string; configHash?: string }): void {
   const { qa, runId } = args;
   const at = nowIso();
   const current = qa.currentExecutions(runId);
@@ -1104,6 +1250,10 @@ export function recordRunLevelCases(args: { qa: QaStore; runId: string; definiti
     const base = { runId, definitionId: def.id, definitionVersion: def.version, externalId: def.externalId, expected: def.body.expectedResult, expectedSource: def.body.expectationSource, trace: [] as ExecutionTraceStep[], evidenceIds: [] as string[], scope: 'functional' as const, engineVersion: args.engineVersion ?? ENGINE_VERSION, contentHash: args.contentHash, configHash: args.configHash, startedAt: at, finishedAt: at };
     if (auto === 'manual') {
       qa.insertExecution({ ...base, status: 'manual_review_required', reason: def.body.requiredCapability ? `The case needs the capability "${def.body.requiredCapability}", which this scanner does not have.` : 'No automation exists for this case. A person checks it and records the result.', actual: 'Not executed by the scanner.' });
+    } else if (def.body.requiredCapability?.startsWith('assess_') && args.hasAnswerKeys) {
+      qa.insertExecution({ ...base, status: 'not_applicable', reason: 'The answer keys for this course do not cover this check (for example no retry, or no answer required), so it does not apply.', actual: 'Nothing to test.' });
+    } else if (def.body.requiredCapability?.startsWith('assess_')) {
+      qa.insertExecution({ ...base, status: 'manual_review_required', reason: 'No answer key is configured for this question. Correct answers are never guessed: add an answer key to test it automatically, or check it by hand.', actual: 'Not executed.' });
     } else if (def.id.startsWith('LOG-') && !args.hasRules) {
       qa.insertExecution({ ...base, status: 'manual_review_required', reason: 'The expected behavior is unknown: no behavior rule is configured for this course. Add a rule to test it automatically.', actual: 'Not executed.' });
     } else if (def.id === 'LOG-04' || def.id === 'LOG-05') {

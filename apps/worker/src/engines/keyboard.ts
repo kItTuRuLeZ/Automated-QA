@@ -4,7 +4,7 @@ import { nowIso } from '@cqa/core';
 import { type CandidateAction } from '../adapters/generic-html.js';
 import type { StateSnapshot } from '../adapters/dom-scripts.js';
 import { type FocusInfo, blurredStyle, describeActive, focusIsOn, focusWithin, focusabilityOf, prepareTabbing } from '../adapters/a11y-scripts.js';
-import { type NewCheck, type NewFinding, check, finding, truncate } from './helpers.js';
+import { type NewCheck, type NewFinding, assertionKey, check, finding, truncate } from './helpers.js';
 
 export interface KeyboardResult {
   checks: NewCheck[];
@@ -234,7 +234,7 @@ export class KeyboardChecks {
         continue;
       }
       if (!foc.focusable) {
-        checks.push(check('KBD-004', 'failed', Date.now() - t0, [], base));
+        checks.push(check('KBD-004', 'failed', Date.now() - t0, [], { ...base, targetKey: assertionKey('KBD-004', cand.targetDescription) }));
         findings.push(
           finding('KBD-004', loc(), {
             title: `${cap(cand.targetDescription)} cannot be reached with the keyboard`,
@@ -244,6 +244,7 @@ export class KeyboardChecks {
             reproductionSteps: [...steps, 'Observe that focus never lands on it.'],
             remediation: 'Use a native <button> or <a href>, or add tabindex="0", a role, and Enter/Space key handling.',
             targetKey: `${cand.targetDescription}|focus`,
+            checkKey: assertionKey('KBD-004', cand.targetDescription),
             stateKey: '',
           }),
         );
@@ -266,7 +267,7 @@ export class KeyboardChecks {
         if (operated) break;
       }
       if (!operated) {
-        checks.push(check('KBD-004', 'failed', Date.now() - t0, [], base));
+        checks.push(check('KBD-004', 'failed', Date.now() - t0, [], { ...base, targetKey: assertionKey('KBD-004', cand.targetDescription) }));
         findings.push(
           finding('KBD-004', loc(), {
             title: `${cap(cand.targetDescription)} cannot be operated with the keyboard`,
@@ -276,12 +277,13 @@ export class KeyboardChecks {
             reproductionSteps: [...steps, 'Press Enter, then Space.', `Expected: ${cand.expectedPostcondition}`],
             remediation: 'Handle keyboard activation (native <button> does this automatically).',
             targetKey: `${cand.targetDescription}|operate`,
+            checkKey: assertionKey('KBD-004', cand.targetDescription),
             stateKey: '',
           }),
         );
         continue;
       }
-      checks.push(check('KBD-004', 'passed', Date.now() - t0, [], { ...base, reasonDetail: `Operated with ${usedKey}.` }));
+      checks.push(check('KBD-004', 'passed', Date.now() - t0, [], { ...base, targetKey: assertionKey('KBD-004', cand.targetDescription), reasonDetail: `Operated with ${usedKey}.` }));
 
       if (cand.kind === 'open_dialog') {
         const dialogLoc = cand.postconditions.find((p) => p.type === 'visible')?.locator;
@@ -349,9 +351,9 @@ export class KeyboardChecks {
     const ev: EvidenceId = (
       await ctx.evidence.addEvidence({ kind: 'focus_sequence', caption: `Dialog keyboard test for ${cand.targetDescription}`, data: { log: focusLog, notes }, stateId: state.id, viewportName: ctx.viewport.name, capturedAt: nowIso(), redacted: false })
     ).id;
-    if (problems.length === 0) return { checks: [check('KBD-003', 'passed', 0, [ev], { ...base, reasonDetail: notes.join('; ') || undefined })], findings: [] };
+    if (problems.length === 0) return { checks: [check('KBD-003', 'passed', 0, [ev], { ...base, targetKey: assertionKey('KBD-003', cand.targetDescription), reasonDetail: notes.join('; ') || undefined })], findings: [] };
     return {
-      checks: [check('KBD-003', 'failed', 0, [ev], base)],
+      checks: [check('KBD-003', 'failed', 0, [ev], { ...base, targetKey: assertionKey('KBD-003', cand.targetDescription) })],
       findings: problems.map((p) =>
         finding('KBD-003', loc(), {
           title: `Dialog opened by ${cand.targetDescription} ${p.what}`,
@@ -361,6 +363,7 @@ export class KeyboardChecks {
           reproductionSteps: [...steps, 'Press Enter to open the dialog.', 'Use Tab, then close the dialog with its close button.'],
           remediation: p.remediation,
           targetKey: `${cand.targetDescription}|${p.what}`,
+          checkKey: assertionKey('KBD-003', cand.targetDescription),
           stateKey: '',
         }),
       ),

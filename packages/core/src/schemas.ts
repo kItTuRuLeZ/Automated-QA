@@ -48,6 +48,7 @@ export const CreateScanInput = z.object({
   /** Which preset the person chose, kept on the scan so a report can say what was selected. */
   qaProfile: z.enum(['quick', 'functional', 'full', 'custom']).optional(),
   autoAnswer: z.boolean().optional(),
+  traces: z.enum(['off', 'first_failure']).optional(),
   testNonResponsive: z.boolean().optional(),
   /** Viewport preset names: desktop, laptop, tablet, mobile. The first is the primary viewport. */
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),

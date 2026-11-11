@@ -47,7 +47,18 @@ const IMPORT_LIMIT = 4 * 1024 * 1024;
 
 const actorOf = (v: unknown): string => (typeof v === 'string' && v.trim() ? v.trim().slice(0, 60) : 'Reviewer');
 
+const AssessmentInput = z
+  .object({
+    submit: z.string().trim().min(1).max(200),
+    selection: z.enum(['single', 'multiple']),
+    unanswered: z.object({ message: z.string().trim().max(300).optional() }).strict().optional(),
+    cases: z.array(z.object({ name: z.string().trim().min(1).max(120), answers: z.array(z.string().trim().min(1).max(200)).min(1).max(20), correct: z.boolean(), feedback: z.string().trim().min(1).max(300), score: z.string().trim().max(120).optional() }).strict()).min(1).max(12),
+    retry: z.object({ control: z.string().trim().min(1).max(200), maxAttempts: z.number().int().min(1).max(10).optional() }).strict().optional(),
+  })
+  .strict();
+
 const RuleInput = z.object({
+  assessment: AssessmentInput.optional(),
   title: z.string().trim().min(1).max(160),
   unitMatch: z.string().trim().max(200).default(''),
   requiredItems: z.array(z.object({ label: z.string().trim().min(1).max(200), locator: z.string().trim().max(300).optional() })).min(1).max(40),
@@ -250,7 +261,7 @@ export function registerQaRoutes(app: FastifyInstance, opts: QaRouteOptions): Qa
         let status: 'included' | 'missing' | 'no-file' = 'no-file';
         let path: string | undefined;
         if (art) {
-          path = `evidence/${art.id}.${art.mime === 'image/png' ? 'png' : 'bin'}`;
+          path = `evidence/${art.id}.${art.mime === 'image/png' ? 'png' : art.mime === 'application/zip' ? 'zip' : 'bin'}`;
           try {
             if (!seen.has(art.id)) files[path] = new Uint8Array(readFileSync(artifacts.absolutePath(art)));
             seen.add(art.id);

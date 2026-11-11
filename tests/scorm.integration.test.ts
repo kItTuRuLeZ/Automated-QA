@@ -105,6 +105,7 @@ describe('SCORM 1.2 harness against a well-behaved course', () => {
     expect(report.scorm!.sessions.map((s) => s.name)).toEqual(['Leave part-way', 'Pass journey', 'Fail journey', 'Leave part-way, reopened']);
     expect(report.scorm!.sessions.find((s) => s.name === 'Pass journey')!.finalStatus).toContain('passed');
     expect(report.scorm!.limitations.join(' ')).toMatch(/do not show how any LMS will behave/);
+    expect(report.scorm!.limitations.join(' ')).toMatch(/Rise courses exported to load only inside an LMS are allowed to load here/);
     expect(report.scorm!.lmsChecklist.map((i) => i.id)).toContain('LMS-002');
     const html = buildHtmlReport(report, {});
     expect(html).toContain('test harness results');
@@ -132,6 +133,22 @@ describe('SCORM 1.2 harness against faulty courses', () => {
     expect(outcomes(b.checks, 'SCO12-007')).toEqual(['needs_review']);
     expect(titles(b.findings, 'SCO12-007')[0]).toMatch(/does not read its bookmark/);
     expect(h.store.listEvidenceByKind(b.run.id, 'scorm_api_call')).toHaveLength(2);
+  });
+
+  it('catches a screen that says complete while the course reports otherwise, and a wrong bookmark', async () => {
+    const says = course12(`api.LMSInitialize('');api.LMSSetValue('cmi.core.lesson_status','incomplete');${wire(`document.getElementById('finish').onclick=function(){document.body.insertAdjacentHTML('beforeend','<p>Course complete</p>');api.LMSSetValue('cmi.core.lesson_location','page-1');api.LMSCommit('');api.LMSFinish('')};`)}`);
+    const a = await scorm({ 'imsmanifest.xml': manifest12(), 'index.html': says }, { journeys: [{ name: 'Finish', steps: [{ action: 'click', target: '#finish' }], expect: { status: 'completed', screenShows: 'Course complete', bookmark: 'page-9' } }] });
+    expect(outcomes(a.checks, 'SCO12-008')).toEqual(['failed']);
+    const f = a.findings.find((x) => x.ruleId === 'SCO12-008')!;
+    expect(f.observed).toMatch(/the screen showed "Course complete" but the course reported otherwise/);
+    expect(f.observed).toMatch(/lesson status was "incomplete", expected "completed"/);
+    expect(f.observed).toMatch(/bookmark was "page-1", expected "page-9"/);
+    expect(a.findings.some((x) => /screen did not show/.test(x.observed))).toBe(false);
+
+    const quiet = course12(`api.LMSInitialize('');${wire(`document.getElementById('finish').onclick=function(){api.LMSSetValue('cmi.core.lesson_status','completed');api.LMSCommit('');api.LMSFinish('')};`)}`);
+    const b = await scorm({ 'imsmanifest.xml': manifest12(), 'index.html': quiet }, { journeys: [{ name: 'Finish', steps: [{ action: 'click', target: '#finish' }], expect: { status: 'completed', screenShows: 'Course complete' } }] });
+    expect(outcomes(b.checks, 'SCO12-008')).toEqual(['failed']);
+    expect(b.findings.find((x) => x.ruleId === 'SCO12-008')!.observed).toMatch(/screen did not show "Course complete"/);
   });
 
   it('reports an expectation mismatch as a failure, and a journey that cannot be carried out as not tested', async () => {

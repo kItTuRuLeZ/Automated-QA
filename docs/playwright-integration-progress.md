@@ -11,7 +11,10 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 5. Discovery and coverage | Done (6 Nov 2026) | See "Phase 5" below |
 | 6. Interaction recipes | Done (7 Nov 2026) | See "Phase 6" below and `docs/interaction-support-matrix.md` |
 | 7. Conditional rules | Done (9 Nov 2026) | See "Phase 7" below |
-| 8–15 | Not started | |
+| Audit of 9 Nov | Five priority findings fixed; A6, A7 open | `docs/audit-2026-11-09-status.md` |
+| 8. Assessments and SCORM | Done (11 Nov 2026), not committed | See "Phase 8" below |
+| 9. Evidence and diagnostics | Done (11 Nov 2026), not committed | See "Phase 9" below |
+| 10–15 | Not started | |
 
 ## Phase 1 test run
 
@@ -333,9 +336,74 @@ Extends the existing behavior rules (LOG-01 to LOG-05) rather than adding a seco
 - **Orders:** reverse and one fixed shuffle are tried, not every permutation.
 - **`prerequisites`:** the field is still stored but unused; combined requirements are written as required items.
 - **Early-fire window:** between clicks the check is 350 ms. Longer delays are covered by the full window in the omission scenarios.
-- **Drafts still run:** an imported draft is tested like any other rule. Only a rule marked as observed is provisional.
+- **Drafts:** corrected after the 9 Nov audit. A draft rule is still tested, but its results stay Inconclusive until it is approved. See `docs/audit-2026-11-09-status.md`.
 - **Owner's Rise bypass and Storyline answer-guessing:** not replaced in this phase. Both stay for Phase 8.
-- **Suite speed:** a simple fixture scan takes about a minute here and the full suite over 30 minutes, which is why time limits are being hit. Not investigated.
+- **Suite speed:** a fixture scan takes about a minute and the full suite over 45 minutes. Measured on 9 Nov: 53 s for one four-item rule, of which 49 s is its 10 scenarios at about 5 s each. Every scenario opens a fresh page and then waits the observation windows on purpose (350 ms after each click, up to 3 s to prove nothing happens). This is the cost of the checks, not a fault, and shortening it would weaken them.
+
+## Phase 8
+
+### Built so far
+
+- **Answer keys** (`AssessmentSpec` in `packages/shared/src/qa.ts`, `apps/worker/src/engines/assessment.ts`, editor in `RulesPanel.tsx`): a rule can carry a supplied answer key. MCQ-01 to 04, MSQ-01 and QUIZ-01 then test selection, blank submission, correct and incorrect feedback and score, retry reset and the attempt limit, each from a fresh start. Without a key they go to a person; answers are never guessed.
+- **Screen against tracking** (`scorm.ts`, `scorm-analysis.ts`, `ScormJourneys.tsx`): a journey can say what the screen should show and which bookmark to leave, so a screen saying "complete" while the course reports otherwise fails.
+- **Rise load workaround** is now disclosed in the SCORM limitations of the report.
+- **Separate code review** raised 10 points. Nine were fixed. The tenth, player controls beyond the name list being retested on every screen, was only reduced by adding exit, volume and captions.
+
+### Tests
+
+- 9 Nov, whole suite: 431 passed, 0 failed, 1 file skipped (`real-exports`).
+- 9 Nov, 16 behaviors removed one at a time: 12 made a test fail. On 11 Nov the four weak tests were strengthened and all four now fail when their behavior is removed: the blank-answer test uses a key with no message, the failure test checks the screenshot caption and a second case's steps, and the Rise test checks the full sentence. Every file was confirmed restored afterwards.
+- 11 Nov: the answer-key text format has its own tests (`tests/answer-key.test.ts`, 4 of 4). Breaking its escaping makes 2 of them fail.
+- 11 Nov: the answer-key editor opened in a browser with no console errors. A rule was not saved, so the tool's data was not changed.
+- 11 Nov, whole suite: 434 passed, 1 failed, 1 file skipped (`real-exports`). The failure was a time limit (240 s) on "a rule only guessed from behaviour", which normally takes about 30 s. It then passed three times: twice on its own and once with its whole file in order. The cause is not known: the error was the test time limit, not the scan's own 230 s limit, which suggests the scan finished but the worker did not go idle. This is unconfirmed and recorded as an open flaky test.
+
+### Not done in Phase 8
+
+- **No real course:** quizzes and the screen check have only run on local fixtures.
+- **Randomized questions:** answers are found by their own words, so a shuffled order is fine. An answer key that does not match the question shown is Blocked; question pools are not tracked.
+- **Graded production attempts:** never used. Every attempt runs in a fresh browser against a local copy or the test harness.
+- **Storyline answer-guessing** (`autoAnswer`): still there. It is opt-in and only helps the walk, with no verdict. An answer key with "use to get past this screen" is the replacement.
+- **Audit A6 and A7:** still open.
+- **Player controls:** controls not on the name list are retested on each screen, which is slower but not wrong.
+
+
+## Phase 9
+
+Builds on the evidence that already existed (screenshots, console and page errors, failed requests, the SCORM call log, and the evidence archive with its manifest). The gaps were browser traces, separate evidence for retries, and honest reporting when evidence could not be saved.
+
+### What changed
+
+- **Browser traces** (`functional.ts` `startTrace`/`stopTrace`): each functional check runs with `context.tracing` started explicitly. The trace is kept when the check fails or errors, on the first attempt, so no retry is needed; otherwise it is thrown away. At most 25 are kept per scan. They are stored as `trace` evidence (a zip) and open with the Playwright Trace Viewer.
+- **Quiz attempts** keep the trace and screenshot of the attempt that failed, taken on that attempt's own screen. A quiz check no longer opens an extra page that it never uses.
+- **Retried controls** (`traversal.ts`): the first attempt's screenshot is kept separately. A pass on the retry links it, and a confirmed failure lists it after the final screenshot.
+- **Failed saves**: when a screenshot or trace cannot be written, the result says so in its trace, and nothing is linked.
+- **Setting**: "Keep a browser trace when a check fails" on both scan pages (on by default), and `traces: 'off' | 'first_failure'` in the API, because traces can hold page and network data.
+- **Display and export**: a result shows a download link for its trace. The evidence archive includes trace files, with relative paths in its manifest.
+- **Separate code review** raised 10 points and 9 were acted on:
+  - rule messages are case-insensitive again;
+  - "Complete" no longer matches "incomplete";
+  - player controls must match by full name;
+  - an answer key that leaves a check out marks it not applicable, not "no key";
+  - the trace limit is held per run;
+  - an empty answer key gives a message instead of a crash;
+  - the final screenshot stays first in a failure's evidence.
+
+  The tenth point is trace overhead: every functional check records a trace, and most are discarded. It is not acted on, because capturing the first failure needs the trace running from the start.
+
+### Tests (11 Nov 2026)
+
+- `tests/evidence.integration.test.ts`, 5 of 5: a failure keeps an openable trace beside its screenshot; a pass keeps none; traces can be turned off; the archive includes the trace with a relative path; a simulated disk failure leaves a note and no link.
+- `tests/phrase-matching.test.ts`, the extra quiz, audit and traversal assertions: all pass.
+- Removing each of 11 Phase 9 behaviors: 10 made a test fail at first. The save-failure test also passed on the trace note alone, so it was tightened to require both notes, and it now fails when the screenshot note is removed. Every file was confirmed restored.
+- Whole suite: 443 passed, 1 failed, 1 file skipped (`real-exports`). The failure was an older test that expected exactly one evidence item and now saw two, the screenshot and the new trace. It was updated to expect both, and passes.
+
+### Not done in Phase 9
+
+- **Course walk traces:** the walk itself (traversal) records no trace. It is one long session, and a trace of it would be large. Its failures keep screenshots and the ordered action log.
+- **Video:** not added. The pack makes it optional.
+- **Redaction:** traces are not redacted, and the setting tells people so.
+- **Access control:** evidence is served only by the local tool, which has no login.
+- **Background requests:** these are handled as before (the excluded resource types and RUN rules). This phase did not revisit them.
 
 ## Architecture decisions
 

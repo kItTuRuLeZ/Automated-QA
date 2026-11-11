@@ -35,7 +35,7 @@ export interface CoverageSummary {
   interactions: { total: number; exercised: Ratio };
   manual: { outstanding: number; manualOnlyCases: number };
   listedNotTracked: number;
-  gaps: { blocked: number; errored: number; skipped: number; pending: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
+  gaps: { blocked: number; errored: number; skipped: number; pending: number; unsupported?: number; inconclusive?: number; unknown?: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
   counts: StatusCounts;
   statement: string;
 }

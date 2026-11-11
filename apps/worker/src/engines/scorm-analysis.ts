@@ -1,6 +1,6 @@
 import type { ScormExpectation, ScormSettings } from '@cqa/shared';
 import type { HarnessCall, ScormVersion } from '../adapters/scorm-harness.js';
-import { type NewCheck, check } from './helpers.js';
+import { type NewCheck, check, wholePhrase } from './helpers.js';
 
 /**
  * Turns what a course did against the test harness into rule results. Pure:
@@ -22,6 +22,8 @@ export interface SessionResult {
   stepsTotal: number;
   stepsRun: number;
   stepFailure?: string;
+  /** What the learner could see at the end of the session. */
+  screenText?: string;
   expect?: ScormExpectation;
   /** Resume sessions: what the harness handed back. */
   restoredFrom?: Record<string, string>;
@@ -239,6 +241,11 @@ export function analyzeExpectation(s: SessionResult): RuleResult | undefined {
     if (e.completion !== undefined && (got('cmi.completion_status') || 'unknown') !== e.completion) problems.push(`completion status was "${got('cmi.completion_status') || 'unknown'}", expected "${e.completion}"`);
     if (e.success !== undefined && (got('cmi.success_status') || 'unknown') !== e.success) problems.push(`success status was "${got('cmi.success_status') || 'unknown'}", expected "${e.success}"`);
   }
+  const trackingDiffers = problems.length > 0;
+  const screenAgrees = e.screenShows !== undefined && wholePhrase(e.screenShows, 'iu').test(s.screenText ?? '');
+  if (e.screenShows !== undefined && !screenAgrees) problems.push(`the screen did not show "${e.screenShows}"`);
+  if (e.bookmark !== undefined && got(n.loc) !== e.bookmark) problems.push(`the bookmark was "${got(n.loc)}", expected "${e.bookmark}"`);
+  if (screenAgrees && trackingDiffers) problems.unshift(`the screen showed "${e.screenShows}" but the course reported otherwise`);
   const raw = got(n.score);
   if (e.mustReportScore && raw === '') problems.push('no score was recorded');
   if (raw !== '') {

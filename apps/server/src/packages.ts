@@ -41,6 +41,8 @@ const Expectation = z.object({
   scoreMin: z.number().min(-1000).max(1000).optional(),
   scoreMax: z.number().min(-1000).max(1000).optional(),
   mustReportScore: z.boolean().optional(),
+  screenShows: z.string().trim().min(1).max(300).optional(),
+  bookmark: z.string().trim().max(1000).optional(),
 });
 const ScormInput = z.object({
   /** Run the SCORM test harness. On by default for SCORM 1.2 and 2004 packages. */
@@ -65,6 +67,7 @@ const PackageScanInput = z.object({
   functional: z.boolean().optional(),
   qaProfile: z.enum(['quick', 'functional', 'full', 'custom']).optional(),
   autoAnswer: z.boolean().optional(),
+  traces: z.enum(['off', 'first_failure']).optional(),
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
   maxDepth: z.number().int().min(0).max(60).optional(),
@@ -292,6 +295,7 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         functional: input.functional,
         qaProfile: input.qaProfile,
         autoAnswer: input.autoAnswer,
+        traces: input.traces,
         viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
         maxStates: input.maxStates ?? recommendedMaxStates,
         maxDepth: input.maxDepth ?? recommendedMaxDepth,

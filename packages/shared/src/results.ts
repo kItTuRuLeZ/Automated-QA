@@ -84,6 +84,8 @@ export interface CheckResult {
   reason?: ReasonCode;
   reasonDetail?: string;
   durationMs: number;
+  /** Which exact assertion this was, for rules that run once per control or case. A retest matches it against `Finding.checkKey`. */
+  targetKey?: string;
   /** Number of elements/items evaluated, when meaningful. */
   itemsEvaluated?: number;
   evidenceIds: EvidenceId[];
@@ -162,6 +164,8 @@ export interface Finding {
   reviewer: ReviewerState;
   /** SHA-256 of ruleId | normalized origin+path | state key | target key. */
   fingerprint: string;
+  /** The exact assertion that failed, when its rule covers many controls or cases. Only a pass of this same key can confirm a fix. */
+  checkKey?: string;
   /** For `ai_recommendation` only: provider/model/prompt version and scope (Phase 8). */
   advisory?: {
     provider: string;

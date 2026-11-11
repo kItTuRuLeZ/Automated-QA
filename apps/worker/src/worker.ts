@@ -2,6 +2,7 @@ import { readdirSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { type WorkerDeps, runScan } from './runner.js';
+import { acquireWorkerLock } from './worker-lock.js';
 
 export interface WorkerLoop {
   stop(): Promise<void>;
@@ -28,6 +29,8 @@ export function startWorker(deps: Omit<WorkerDeps, 'workerId'> & { pollMs?: numb
   const workerId = randomUUID();
   const full: WorkerDeps = { ...deps, workerId };
   const limit = Math.min(Math.max(1, Math.floor(deps.concurrency ?? 1)), MAX_CONCURRENCY);
+  // Before anything else: the two steps below assume no other worker is using this data folder.
+  const releaseLock = acquireWorkerLock(deps.tmpRoot);
   const recovered = deps.store.recoverOrphanedRuns({ all: deps.recoverAllOnStart ?? true });
   if (recovered.length) deps.log.warn({ runs: recovered }, 'marked orphaned runs after restart');
   for (const entry of safeReaddir(deps.tmpRoot)) rmSync(path.join(deps.tmpRoot, entry), { recursive: true, force: true });
@@ -71,6 +74,7 @@ export function startWorker(deps: Omit<WorkerDeps, 'workerId'> & { pollMs?: numb
       stopped = true;
       if (timer) clearTimeout(timer);
       await Promise.all([...active]);
+      releaseLock();
     },
     async idle() {
       while (active.size) await Promise.all([...active]);

@@ -52,6 +52,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
   const [qaProfile, setQaProfile] = useState<'quick' | 'functional' | 'full' | 'custom'>('full');
   const [functional, setFunctional] = useState(true);
   const [autoAnswer, setAutoAnswer] = useState(true);
+  const [traces, setTraces] = useState(true);
   const library = useLoader(() => qaApi.library(), []);
   const [explore, setExplore] = useState(true);
   const [accessibility, setAccessibility] = useState(true);
@@ -149,6 +150,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
         accessibility,
         functional,
         autoAnswer: functional && autoAnswer,
+        traces: traces ? 'first_failure' : 'off',
         qaProfile,
         maxStates,
         maxDepth,
@@ -375,6 +377,10 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                 <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                   <input type="checkbox" checked={autoAnswer} disabled={!functional} onChange={(e) => setAutoAnswer(e.target.checked)} style={{ marginTop: '0.2rem' }} />
                   <span><strong>Answer quiz questions automatically</strong><span className="help">Selects answers and submits to proceed past blocking quiz gates.</span></span>
+                </label>
+                <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
+                  <input type="checkbox" checked={traces} disabled={!functional} onChange={(e) => setTraces(e.target.checked)} style={{ marginTop: '0.2rem' }} />
+                  <span><strong>Keep a browser trace when a check fails</strong><span className="help">If a check fails, a step-by-step browser recording is kept for it. It can include page content and network data, so turn this off for courses with sensitive information.</span></span>
                 </label>
               </div>
             </fieldset>

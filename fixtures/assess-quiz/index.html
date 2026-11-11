@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Knowledge check</title></head>
+<body>
+  <main>
+    <h1>Knowledge check</h1>
+    <p>A quiz with known behavior. Add ?multi for multiple select, and ?bug=blank, feedback, keeps, endless or both for one seeded fault.</p>
+    <form id="form" onsubmit="return false"></form>
+    <p><button type="button" id="submit">Submit</button> <button type="button" id="retry" hidden>Try again</button></p>
+    <p id="msg" role="alert"></p>
+    <p id="fb"></p>
+    <p id="score"></p>
+  </main>
+  <script>
+    var q = new URLSearchParams(location.search), bug = q.get('bug'), multi = q.has('multi');
+    var options = multi ? ['Red', 'Blue', 'Green'] : ['Paris', 'London', 'Rome'];
+    var right = multi ? ['Red', 'Blue'] : ['Paris'];
+    var form = document.getElementById('form'), attempts = 0;
+    var type = multi || bug === 'both' ? 'checkbox' : 'radio';
+    options.forEach(function (o) {
+      var l = document.createElement('label');
+      l.innerHTML = '<input type="' + type + '" name="q" value="' + o + '"> ' + o;
+      form.appendChild(l);
+      form.appendChild(document.createElement('br'));
+    });
+    var $ = function (id) { return document.getElementById(id); };
+    var boxes = function () { return Array.prototype.slice.call(document.querySelectorAll('input[name=q]')); };
+    $('submit').addEventListener('click', function () {
+      var picked = boxes().filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+      $('msg').textContent = '';
+      if (!picked.length && bug !== 'blank') { $('msg').textContent = 'Please choose an answer.'; return; }
+      attempts++;
+      var ok = picked.length === right.length && right.every(function (r) { return picked.indexOf(r) !== -1; });
+      $('fb').textContent = ok || bug === 'feedback' ? 'Well done.' : 'Not quite.';
+      $('score').textContent = ok ? 'Score: 100' : 'Score: 0';
+      $('retry').hidden = ok || (attempts >= 2 && bug !== 'endless');
+    });
+    $('retry').addEventListener('click', function () {
+      if (bug !== 'keeps') boxes().forEach(function (b) { b.checked = false; });
+      $('fb').textContent = '';
+      $('score').textContent = '';
+      $('retry').hidden = true;
+    });
+  </script>
+</body>
+</html>

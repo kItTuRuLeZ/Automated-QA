@@ -293,11 +293,27 @@ export const RULE_EVENTS = ['next_enabled', 'message_shown', 'layer_opened', 'na
 export type RuleEvent = (typeof RULE_EVENTS)[number];
 
 /** "After every required item has been visited, enable Next." Entered by a reviewer in a form, not as code. */
+/** A supplied answer key for one question. Correct answers come only from here, never from what the course shows. */
+export interface AssessmentSpec {
+  /** The control that submits an answer. */
+  submit: string;
+  selection: 'single' | 'multiple';
+  /** Present when an answer is required: submitting blank must be refused, optionally with this message. */
+  unanswered?: { message?: string };
+  cases: Array<{ name: string; answers: string[]; correct: boolean; feedback: string; score?: string }>;
+  retry?: { control: string; maxAttempts?: number };
+}
+
+/** Whether a rule's results can count as a verdict: someone has approved it, and it states a real expectation rather than a guess. */
+export const isRuleConfirmed = (rule: { reviewState: ReviewState; expectationSource: ExpectationSource }): boolean => (rule.reviewState === 'reviewed' || rule.reviewState === 'approved') && rule.expectationSource !== 'observed_hypothesis';
+
 export interface BehaviorRule {
   id: string;
   projectId: string;
   /** Raised on every save, so a result can name the rule it was tested against. Absent on rules last saved before versioning; read as 1. */
   version?: number;
+  /** When present, this rule is a quiz question tested against this answer key instead of a click rule. */
+  assessment?: AssessmentSpec;
   title: string;
   /** Which content unit the rule applies to (a title or source id fragment), or empty for the launch page. */
   unitMatch: string;

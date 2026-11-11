@@ -84,6 +84,12 @@ export interface ScreenResult {
   reviewerDecision?: ReviewDisposition;
 }
 
+/** Interactions with a real result: tested directly, or a shared player control linked to the one test that really ran. */
+function exercisedInstanceIds(executions: readonly TestExecution[]): Set<string> {
+  const linked = (e: TestExecution) => e.status === 'not_applicable' && e.trace.some((t) => t.data?.sourceExecutionId && (t.data.sourceStatus === 'passed' || t.data.sourceStatus === 'failed'));
+  return new Set(executions.filter((e) => e.instanceId && (e.status === 'passed' || e.status === 'failed' || linked(e))).map((e) => e.instanceId!));
+}
+
 /** A gap is anything that keeps a screen from being called passed. */
 export const gapCount = (c: StatusCounts): number => c.blocked + c.error + c.skipped + c.manual + c.pending + c.notApplicableWithoutReason + c.unsupported + c.inconclusive + c.unknown;
 
@@ -113,11 +119,7 @@ export function screenStatus(
   const badges: ScreenBadge[] = [];
 
   const unitInteractions = interactions.filter((i) => i.unitId === unit.id);
-  const exercisedIds = new Set(
-    executions
-      .filter((e) => (e.status === 'passed' || e.status === 'failed') && e.instanceId)
-      .map((e) => e.instanceId!),
-  );
+  const exercisedIds = exercisedInstanceIds(executions);
   const unexercisedInteractions = unitInteractions.filter((i) => !exercisedIds.has(i.id));
 
   if (!visited && !staticOnly) badges.push('runtime_not_visited');
@@ -192,7 +194,7 @@ export interface CoverageSummary {
   listedNotTracked: number;
   /** Rise blocks a browser scrolled into view, of the blocks the course lists. Seen is not tested. */
   blocksSeen: Ratio;
-  gaps: { blocked: number; errored: number; skipped: number; pending: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
+  gaps: { blocked: number; errored: number; skipped: number; pending: number; unsupported: number; inconclusive: number; unknown: number; unitsNotVisited: number; unitsNotReached: Array<{ id: string; title: string; reason: string }> };
   counts: StatusCounts;
   /** One statement built from the numbers above. */
   statement: string;
@@ -251,7 +253,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
   const execution = ratio(terminal, mapped.length, 'No automated check was mapped to this scan.');
   const passRate = ratio(counts.passed, counts.passed + counts.failed, 'No automated check reached a pass or fail result.');
 
-  const exercisedIds = new Set(executions.filter((e) => (e.status === 'passed' || e.status === 'failed') && e.instanceId).map((e) => e.instanceId!));
+  const exercisedIds = exercisedInstanceIds(executions);
   const exercised = interactions.filter((i) => exercisedIds.has(i.id)).length;
   const interactionRatio = ratio(exercised, interactions.length, 'No interactions were detected.');
 
@@ -263,6 +265,9 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     errored: counts.error,
     skipped: counts.skipped,
     pending: counts.pending + counts.running,
+    unsupported: counts.unsupported,
+    inconclusive: counts.inconclusive,
+    unknown: counts.unknown,
     unitsNotVisited: unitsNotReached.length,
     unitsNotReached,
   };
@@ -279,6 +284,11 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
       ? 'No automated checks were mapped.'
       : `${terminal} of ${mapped.length} mapped automated checks executed (${counts.passed} passed, ${counts.failed} failed); ${counts.blocked + counts.error + counts.skipped + counts.pending + counts.running} blocked, errored, skipped or not run.`,
   );
+  const unresolved = counts.unsupported + counts.inconclusive + counts.unknown;
+  if (unresolved) {
+    const kinds = [counts.unsupported && `${counts.unsupported} not supported`, counts.inconclusive && `${counts.inconclusive} inconclusive`, counts.unknown && `${counts.unknown} unrecognised`].filter(Boolean).join(', ');
+    parts.push(`${unresolved} check${unresolved === 1 ? '' : 's'} could not give a result (${kinds}).`);
+  }
   if (blocksSeen.available) parts.push(`${blocksSeen.numerator} of ${blocksSeen.denominator} blocks were scrolled into view (seen, not tested).`);
   if (unitsNotReached.length) parts.push(`${unitsNotReached.length} ${unitsNotReached.length === 1 ? noun.singular : noun.plural} not reached.`);
   if (interactionRatio.available && interactionRatio.numerator < interactionRatio.denominator) {
@@ -309,6 +319,6 @@ export function finalStage(args: { runStatus: 'completed' | 'partial' | 'failed'
   if (args.runStatus === 'cancelled') return 'cancelled';
   const c = args.coverage;
   const unexercisedInteractions = c.interactions.exercised.available ? c.interactions.exercised.denominator - c.interactions.exercised.numerator : 0;
-  const gaps = c.gaps.blocked + c.gaps.errored + c.gaps.skipped + c.gaps.pending + c.gaps.unitsNotVisited + c.manual.outstanding + unexercisedInteractions;
+  const gaps = c.gaps.blocked + c.gaps.errored + c.gaps.skipped + c.gaps.pending + c.gaps.unsupported + c.gaps.inconclusive + c.gaps.unknown + c.gaps.unitsNotVisited + c.manual.outstanding + unexercisedInteractions;
   return args.runStatus === 'partial' || gaps > 0 || c.discovery.completeness !== 'complete' ? 'completed_with_gaps' : 'completed';
 }

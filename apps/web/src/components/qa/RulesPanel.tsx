@@ -1,7 +1,8 @@
 import { type ChangeEvent, useState } from 'react';
-import type { BehaviorRule, RuleItem } from '@cqa/shared';
+import { type AssessmentSpec, type BehaviorRule, type RuleItem, isRuleConfirmed } from '@cqa/shared';
 import { qaApi } from '../../api-qa';
 import { Alert, Empty, ErrorBox, Loading, useLoader } from '../ui';
+import { keyToLines, linesToKey } from './answer-key';
 
 const EVENTS: Array<[BehaviorRule['expectedEvent'], string, string]> = [
   ['next_enabled', 'A button becomes enabled', 'Name the button, for example Next.'],
@@ -30,6 +31,7 @@ const fromLines = (s: string): RuleItem[] =>
       return locator ? { label: label!, locator } : { label: label! };
     });
 
+
 /** Behavior rules in plain fields: "After every required item has been visited, enable Next." No selectors or code are needed. */
 const TEMPLATES: Array<{ id: string; label: string; draft: Partial<BehaviorRule> }> = [
   { id: 'quiz', label: 'Quiz question: answer and continue', draft: { title: 'Quiz question: answer and continue', unitMatch: 'QUESTION', requiredItems: [{ label: '[first option]' }, { label: 'Submit' }], expectedEvent: 'next_enabled', eventTarget: 'Next', orderPolicy: 'sequence', continueAfter: true } },
@@ -56,7 +58,7 @@ export function RulesPanel({ projectId }: { projectId: string }) {
         throw new Error('That file is not valid JSON, so nothing was imported.');
       }
       const { imported: n } = await qaApi.importRules(projectId, content);
-      setImported({ tone: 'ok', text: `Imported ${n} rule${n === 1 ? '' : 's'} as draft. Review each one before relying on it.` });
+      setImported({ tone: 'ok', text: `Imported ${n} rule${n === 1 ? '' : 's'} as draft. Their tests stay inconclusive until each one is approved.` });
       rules.reload();
     } catch (err) {
       setImported({ tone: 'error', text: (err as Error).message });
@@ -102,7 +104,7 @@ export function RulesPanel({ projectId }: { projectId: string }) {
         <ul className="plain">
           {rules.data.map((r) => (
             <li key={r.id}>
-              <strong>{r.title}</strong> <span className="muted">· {r.requiredItems.length} required item{r.requiredItems.length === 1 ? '' : 's'} · {EVENTS.find((e) => e[0] === r.expectedEvent)?.[1]} · {r.reviewState} · version {r.version ?? 1}{r.expectationSource === 'observed_hypothesis' ? ' · provisional' : ''}</span>{' '}
+              <strong>{r.title}</strong> <span className="muted">· {r.requiredItems.length} required item{r.requiredItems.length === 1 ? '' : 's'} · {EVENTS.find((e) => e[0] === r.expectedEvent)?.[1]} · {r.reviewState} · version {r.version ?? 1}{isRuleConfirmed(r) || r.reviewState === 'retired' ? '' : ' · provisional'}</span>{' '}
               <button type="button" className="btn btn-small" onClick={() => setEditing(r)}>
                 Edit<span className="sr-only"> {r.title}</span>
               </button>
@@ -134,6 +136,15 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
   const [state, setState] = useState<'idle' | 'saving' | 'error'>('idle');
   const [error, setError] = useState<string>();
   const [pick, setPick] = useState(false);
+  const quiz = base?.assessment;
+  const [isQuiz, setIsQuiz] = useState(Boolean(quiz));
+  const [key, setKey] = useState(keyToLines(quiz));
+  const [submitLabel, setSubmitLabel] = useState(quiz?.submit ?? 'Submit');
+  const [selection, setSelection] = useState<AssessmentSpec['selection']>(quiz?.selection ?? 'single');
+  const [mustAnswer, setMustAnswer] = useState(Boolean(quiz?.unanswered));
+  const [blankMessage, setBlankMessage] = useState(quiz?.unanswered?.message ?? '');
+  const [retryLabel, setRetryLabel] = useState(quiz?.retry?.control ?? '');
+  const [maxAttempts, setMaxAttempts] = useState(quiz?.retry?.maxAttempts ? String(quiz.retry.maxAttempts) : '');
   const discovered = useLoader(() => (pick ? qaApi.discovered(projectId) : Promise.resolve(undefined)), [projectId, pick]);
 
   const save = async () => {
@@ -141,9 +152,14 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
     setState('saving');
     setError(undefined);
     try {
+      if (isQuiz && !linesToKey(key).length) throw new Error('Add at least one line to the answer key, or untick "This screen is a quiz question".');
+      const assessment: AssessmentSpec | undefined = isQuiz
+        ? { submit: submitLabel, selection, cases: linesToKey(key), ...(mustAnswer ? { unanswered: blankMessage ? { message: blankMessage } : {} } : {}), ...(retryLabel ? { retry: { control: retryLabel, ...(maxAttempts ? { maxAttempts: Number(maxAttempts) } : {}) } } : {}) }
+        : undefined;
       await qaApi.saveRule(
         projectId,
-        { title, unitMatch, requiredItems: fromLines(required), optionalItems: fromLines(optional), prerequisites: rule?.prerequisites ?? [], expectedEvent: event, eventTarget: target, timingWindowMs: Math.round(Number(windowSec) * 1000), orderPolicy: order, repeatPolicy: repeat, resetPolicy: reset, destination: destination || undefined, continueAfter, expectationSource: source, reviewState: review },
+        // A quiz needs no separate click list: its required items are the answer key's correct answers, then Submit.
+        { assessment, title, unitMatch, requiredItems: required.trim() || !assessment ? fromLines(required) : [...(assessment.cases.find((c) => c.correct)?.answers ?? assessment.cases[0]!.answers).map((label) => ({ label })), { label: assessment.submit }], optionalItems: fromLines(optional), prerequisites: rule?.prerequisites ?? [], expectedEvent: event, eventTarget: target, timingWindowMs: Math.round(Number(windowSec) * 1000), orderPolicy: order, repeatPolicy: repeat, resetPolicy: reset, destination: destination || undefined, continueAfter, expectationSource: source, reviewState: review },
         rule?.id,
       );
       onDone();
@@ -181,7 +197,7 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
       <div className="form-grid">
         <div className="field">
           <label htmlFor="r-req">Items the learner must use (one per line)</label>
-          <textarea id="r-req" required rows={5} value={required} onChange={(e) => setRequired(e.target.value)} placeholder={'Alpha\nBravo\nCharlie\nDelta'} aria-describedby="r-req-h" />
+          <textarea id="r-req" required={!isQuiz} rows={5} value={required} onChange={(e) => setRequired(e.target.value)} placeholder={'Alpha\nBravo\nCharlie\nDelta'} aria-describedby="r-req-h" />
           <p id="r-req-h" className="help">Type each item’s visible name. If two items share a name, add a selector after a bar: Name | #id. If audio or video must play to its end, name its play button after media: like this: media: Play narration.</p>
         </div>
         <div className="field">
@@ -298,6 +314,47 @@ function RuleForm({ projectId, rule, initial, onDone }: { projectId: string; rul
           </select>
         </div>
       </div>
+      <div className="field">
+        <label>
+          <input type="checkbox" checked={isQuiz} onChange={(e) => setIsQuiz(e.target.checked)} /> This screen is a quiz question, and I have its answer key
+        </label>
+        <p className="help">Correct answers are never guessed. With an answer key, the scan tries each answer from a fresh start and checks the feedback, score and retries. Without one, these checks go to a person.</p>
+      </div>
+      {isQuiz && (
+        <div className="form-grid">
+          <div className="field" style={{ gridColumn: '1 / -1' }}>
+            <label htmlFor="r-key">Answer key (one case per line)</label>
+            <textarea id="r-key" rows={4} value={key} onChange={(e) => setKey(e.target.value)} placeholder={'Right answer | correct | Paris | Well done. | Score: 100\nWrong answer | incorrect | London | Not quite. | Score: 0'} aria-describedby="r-key-h" />
+            <p id="r-key-h" className="help">Name | correct or incorrect | the answers, separated by ; | the feedback shown | the score shown (optional). If your text contains | or ; put a backslash before it.</p>
+          </div>
+          <div className="field">
+            <label htmlFor="r-submit">Submit button</label>
+            <input id="r-submit" value={submitLabel} onChange={(e) => setSubmitLabel(e.target.value)} maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="r-sel">Answers allowed</label>
+            <select id="r-sel" value={selection} onChange={(e) => setSelection(e.target.value as AssessmentSpec['selection'])}>
+              <option value="single">One answer</option>
+              <option value="multiple">Several answers</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>
+              <input type="checkbox" checked={mustAnswer} onChange={(e) => setMustAnswer(e.target.checked)} /> An answer is required before submitting
+            </label>
+            <input aria-label="Message shown when no answer is chosen" value={blankMessage} onChange={(e) => setBlankMessage(e.target.value)} maxLength={300} placeholder="Message shown when no answer is chosen (optional)" disabled={!mustAnswer} />
+          </div>
+          <div className="field">
+            <label htmlFor="r-retry">Retry button (optional)</label>
+            <input id="r-retry" value={retryLabel} onChange={(e) => setRetryLabel(e.target.value)} maxLength={200} />
+          </div>
+          <div className="field">
+            <label htmlFor="r-max">Attempts allowed (optional)</label>
+            <input id="r-max" type="number" min={1} max={10} value={maxAttempts} onChange={(e) => setMaxAttempts(e.target.value)} />
+          </div>
+        </div>
+      )}
+      {review !== 'reviewed' && review !== 'approved' && review !== 'retired' && <Alert tone="note">While this rule is a draft, its tests show as inconclusive and never count as a pass or a defect. Set Approval to Reviewed or Approved when it is ready.</Alert>}
       {source === 'observed_hypothesis' && <Alert tone="warn">An observed behavior is a guess until someone confirms it. Its tests show as inconclusive and never count as a pass or a defect. Change the source above once it is confirmed.</Alert>}
       {state === 'error' && <p role="alert" className="alert alert-error">{error}</p>}
       <div className="actions">

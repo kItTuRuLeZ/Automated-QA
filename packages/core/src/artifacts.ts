@@ -5,7 +5,7 @@ import type { ArtifactId, ScanRunId } from '@cqa/shared';
 import type { ArtifactRecord, Store } from './db/store.js';
 import { newId, nowIso } from './fingerprint.js';
 
-const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/json': 'json', 'text/plain': 'txt' };
+const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'application/json': 'json', 'text/plain': 'txt', 'application/zip': 'zip' };
 const SAFE_ID = /^[0-9a-f-]{36}$/;
 
 /**

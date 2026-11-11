@@ -1,5 +1,12 @@
+import { createHash } from 'node:crypto';
 import type { CheckOutcome, EngineResult, EvidenceId, Finding, FindingLocation, ReasonCode, RuleId, Severity, StateId } from '@cqa/shared';
 import { fingerprint, getRule, nowIso } from '@cqa/core';
+
+/** Identifies one exact assertion across runs. Hashed so a link's address or a control's text is not stored a second time. */
+export const assertionKey = (...parts: unknown[]): string => createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 32);
+
+/** Matches text as a whole phrase, with its case: "Correct" must not match "Incorrect", nor "Score: 10" match "Score: 100". */
+export const wholePhrase = (text: string, flags: 'u' | 'iu' = 'u'): RegExp => new RegExp(`(?<![\\p{L}\\p{N}])${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, flags);
 
 export type NewCheck = EngineResult['checkResults'][number];
 export type NewFinding = EngineResult['findings'][number];
@@ -9,9 +16,10 @@ export function check(
   outcome: CheckOutcome,
   durationMs: number,
   evidenceIds: EvidenceId[],
-  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string; attempt?: number; firstAttemptOutcome?: CheckOutcome },
+  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string; attempt?: number; firstAttemptOutcome?: CheckOutcome; targetKey?: string },
 ): NewCheck {
   const c: NewCheck = { ruleId, outcome, durationMs, evidenceIds, executedAt: nowIso() };
+  if (extra.targetKey) c.targetKey = extra.targetKey;
   if (extra.stateId) c.stateId = extra.stateId;
   if (extra.viewportName) c.viewportName = extra.viewportName;
   if (extra.reason) c.reason = extra.reason;
@@ -45,6 +53,8 @@ export function finding(
     standards?: Finding['standards'];
     /** Extra occurrences beyond the primary one (all affected locations are retained). */
     occurrences?: Finding['occurrences'];
+    /** Set for rules that run once per control or case, with the same value as the check's `targetKey`. */
+    checkKey?: string;
   },
 ): NewFinding {
   const rule = getRule(ruleId);
@@ -63,6 +73,7 @@ export function finding(
     reproductionSteps: f.reproductionSteps,
     remediation: f.remediation,
     standards: f.standards ?? rule.standards,
+    ...(f.checkKey ? { checkKey: f.checkKey } : {}),
     fingerprint: fingerprint({ ruleId, url: location.url, stateKey: f.stateKey ?? 'initial', targetKey: f.targetKey }),
   } satisfies Omit<Finding, 'id' | 'runId' | 'reviewer' | 'createdAt'>;
 }

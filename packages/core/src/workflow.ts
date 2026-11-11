@@ -30,6 +30,8 @@ function stateKeys(store: Store, runId: string): Map<string, string> {
   return out;
 }
 
+const ONE_RULE_MANY_TARGETS = /^(FUN-|NAV-|KBD-00[34]$|LNK-001$)/;
+
 export interface RetestSummary {
   verified: number;
   notReproduced: number;
@@ -41,11 +43,13 @@ export interface RetestSummary {
  * Applies the outcome of a retest run to the issues of the run it was based on.
  *
  * Verified needs all of: a person marked it fixed or retest, it was not found
- * again, and its rule ran and passed on an equivalent screen (same route and
- * screen size). Absence alone proves nothing: if the screen was not reached or
- * the rule did not run, the issue is Not retested. If nobody claimed a fix but
- * the rule passed, it is Not reproduced. A rule that fails to run is never
- * treated as passing.
+ * again, and the same check ran and passed on an equivalent screen (same route
+ * and screen size) in a comparable browser. For rules that run once per control
+ * or case, "the same check" means the same `checkKey`: a pass on another control
+ * proves nothing about this one. Absence alone proves nothing: if the screen was
+ * not reached or the check did not run, the issue is Not retested. If nobody
+ * claimed a fix but the check passed, it is Not reproduced. A check that fails
+ * to run is never treated as passing.
  */
 export function applyRetestOutcome(store: Store, runId: string): RetestSummary {
   const summary: RetestSummary = { verified: 0, notReproduced: 0, notRetested: 0, reopened: 0 };
@@ -61,15 +65,29 @@ export function applyRetestOutcome(store: Store, runId: string): RetestSummary {
   const nowByKey = new Map<string, string[]>();
   for (const [id, key] of nowKeys) nowByKey.set(key, [...(nowByKey.get(key) ?? []), id]);
 
-  const passedAt = (ruleId: string, stateIds: string[]) => results.some((r) => r.ruleId === ruleId && r.outcome === 'passed' && r.stateId && stateIds.includes(r.stateId as string));
+  const priorBrowser = store.getRun(run.retestOfRunId)?.browser;
+  const majorVersion = (v?: string) => v?.split('.')[0];
+  const sameBrowser = priorBrowser?.engine === run.browser?.engine && majorVersion(priorBrowser?.version) === majorVersion(run.browser?.version);
+
+  const samePass = (f: Finding, stateIds?: string[]) =>
+    results.some((r) => {
+      if (r.ruleId !== f.ruleId || r.outcome !== 'passed') return false;
+      if (f.checkKey && r.targetKey !== f.checkKey) return false;
+      // A check of the whole course (a link's address) has no screen of its own; its identity is enough.
+      if (f.checkKey && !r.stateId) return true;
+      return !stateIds || Boolean(r.stateId && stateIds.includes(r.stateId as string));
+    });
+  const comparable = (f: Finding) => !f.checkKey || sameBrowser;
   const tested = (f: Finding): boolean => {
-    if (!finished) return false;
+    if (!finished || !comparable(f)) return false;
+    // These rules run once per control or case, so a finding saved before checks had an identity cannot be matched to one.
+    if (ONE_RULE_MANY_TARGETS.test(f.ruleId) && !f.checkKey) return false;
     const stateIds = [...new Set([f.location.stateId, ...f.occurrences.map((o) => o.location.stateId)].filter((x): x is NonNullable<typeof x> => Boolean(x)))];
-    if (!stateIds.length) return results.some((r) => r.ruleId === f.ruleId && r.outcome === 'passed');
+    if (!stateIds.length) return samePass(f);
     return stateIds.every((id) => {
       const key = priorKeys.get(id as string);
       const same = key ? nowByKey.get(key) : undefined;
-      return Boolean(same?.length && passedAt(f.ruleId, same));
+      return Boolean(same?.length && samePass(f, same));
     });
   };
 
@@ -89,14 +107,14 @@ export function applyRetestOutcome(store: Store, runId: string): RetestSummary {
       }
     } else if (tested(f)) {
       if (claimed) {
-        set(f, 'verified', 'Not found in the retest, and the check passed on the same screen at the same screen size.');
+        set(f, 'verified', 'Not found in the retest, and the same check passed on the same screen at the same screen size.');
         summary.verified++;
       } else if (cur === 'open' || cur === 'assigned') {
         set(f, 'not_reproduced', 'Not found in the retest. Nobody marked it fixed, so it may be intermittent or changed by other edits.');
         summary.notReproduced++;
       }
     } else if (claimed) {
-      set(f, 'not_retested', finished ? 'Not found, but the same screen was not reached again or the check did not run, so this is not confirmed.' : 'The retest did not finish, so this was not confirmed.');
+      set(f, 'not_retested', !finished ? 'The retest did not finish, so this was not confirmed.' : !comparable(f) ? 'The retest used a different browser version from the original scan, so the results are not comparable.' : 'Not found, but the same screen was not reached again or this exact check did not run, so this is not confirmed.');
       summary.notRetested++;
     }
   }

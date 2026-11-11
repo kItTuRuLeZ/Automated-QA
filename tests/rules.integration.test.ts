@@ -51,10 +51,17 @@ describe('repeating an item must not stand in for a missing one', () => {
   });
 
   it('a course that counts a repeat as progress is caught', async () => {
-    const { by } = await scan('logic-repeat-bug', {});
+    const { by, run } = await scan('logic-repeat-bug', {});
     const dup = by('LOG-03')[0]!;
     expect(dup.status, dup.reason).toBe('failed');
     expect(dup.actual).toMatch(/repeat/i);
+    // A retest has to be able to tell this exact check from the rule's other checks.
+    const found = h.store.listFindings(run.id).find((f) => f.ruleId === 'FUN-002')!;
+    expect(found.checkKey).toBeTruthy();
+    const results = h.store.listCheckResults(run.id).filter((c) => c.ruleId === 'FUN-002');
+    expect(results.find((c) => c.outcome === 'failed')?.targetKey).toBe(found.checkKey);
+    expect(results.filter((c) => c.outcome === 'passed').length).toBeGreaterThan(0);
+    expect(results.filter((c) => c.outcome === 'passed').every((c) => c.targetKey && c.targetKey !== found.checkKey)).toBe(true);
   });
 });
 
@@ -92,6 +99,14 @@ describe('an inferred rule stays provisional', () => {
     expect(e.status).toBe('inconclusive');
     expect(e.reason).toMatch(/provisional/i);
     expect(e.reason).toMatch(/fired before the last/i);
+    expect(h.store.listFindings(run.id).filter((f) => f.ruleId === 'FUN-002')).toEqual([]);
+  });
+
+  it('a draft rule gives no verdict until it is approved, even with a confirmed source', async () => {
+    const { run, by } = await scan('logic-allclick-early', { requiredItems: [{ label: 'Alpha' }, { label: 'Bravo' }, { label: 'Charlie' }, { label: 'Delta' }], reviewState: 'draft', expectationSource: 'specification' });
+    const e = by('LOG-01')[0]!;
+    expect(e.status).toBe('inconclusive');
+    expect(e.reason).toMatch(/draft/i);
     expect(h.store.listFindings(run.id).filter((f) => f.ruleId === 'FUN-002')).toEqual([]);
   });
 

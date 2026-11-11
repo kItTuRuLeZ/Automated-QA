@@ -59,7 +59,7 @@ export function CoveragePanel({ c, noun }: { c: CoverageSummary; noun: { singula
         </div>
       </dl>
       <p className="help">
-        Not run: {c.gaps.blocked} blocked, {c.gaps.errored} runner error{c.gaps.errored === 1 ? '' : 's'}, {c.gaps.skipped} skipped, {c.gaps.pending} waiting. Blocked and errored checks are about the scan, not confirmed course defects.
+        Not run: {c.gaps.blocked} blocked, {c.gaps.errored} runner error{c.gaps.errored === 1 ? '' : 's'}, {c.gaps.skipped} skipped, {c.gaps.pending} waiting, {c.gaps.unsupported ?? 0} not supported, {(c.gaps.inconclusive ?? 0) + (c.gaps.unknown ?? 0)} inconclusive. Blocked and errored checks are about the scan, not confirmed course defects.
       </p>
       {c.gaps.unitsNotReached.length > 0 && (
         <details>

@@ -16,6 +16,8 @@ export interface JourneyDraft {
   result: string;
   scoreMin: string;
   scoreMax: string;
+  /** Text the learner should see at the end, compared with what the course reports. */
+  screenShows?: string;
 }
 
 export const emptyStep = (): StepDraft => ({ action: 'click', target: '', value: '' });
@@ -72,6 +74,7 @@ export function journeysToApi(drafts: JourneyDraft[], version: '1.2' | '2004'): 
     const expect: Record<string, unknown> = { ...(RESULTS[version].find((r) => r.id === d.result)?.expect ?? {}) };
     if (d.scoreMin) expect.scoreMin = Number(d.scoreMin);
     if (d.scoreMax) expect.scoreMax = Number(d.scoreMax);
+    if (d.screenShows?.trim()) expect.screenShows = d.screenShows.trim();
     return { name: label, steps, ...(Object.keys(expect).length ? { expect } : {}) };
   });
   return { journeys, problems };
@@ -150,6 +153,10 @@ export function ScormJourneys({ version, value, onChange }: { version: '1.2' | '
                 <div className="field">
                   <label htmlFor={`j-max-${i}`}>Score at most</label>
                   <input id={`j-max-${i}`} type="number" value={d.scoreMax} onChange={(e) => set(i, { scoreMax: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label htmlFor={`j-screen-${i}`}>The screen should say (optional)</label>
+                  <input id={`j-screen-${i}`} value={d.screenShows ?? ''} maxLength={300} onChange={(e) => set(i, { screenShows: e.target.value })} placeholder="Course complete" />
                 </div>
               </div>
             )}
