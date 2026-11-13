@@ -21,13 +21,14 @@ import {
   nowIso,
   parseCsv,
   previewImport,
+  screenSearchIndex,
   screenStatus,
   seedStarterLibrary,
   stepsText,
   suggestMapping,
   summarizeCoverage,
 } from '@cqa/core';
-import { buildQaTables, qaWorkbook, tableCsv } from './export/qa-tables.js';
+import { buildQaTables, qaWorkbook, tableCsv, STATUS_WORDS } from './export/qa-tables.js';
 import { safeCell } from './export/xlsx.js';
 
 /**
@@ -75,6 +76,8 @@ const RuleInput = z.object({
   expectationSource: z.enum(EXPECTATION_SOURCES).default('approved_case'),
   reviewState: z.enum(REVIEW_STATES).default('draft'),
 });
+
+const withStatus = (entry: { own: string; nested: string } | undefined, status: string) => (entry ? { ...entry, own: `${entry.own} \u2022 ${(STATUS_WORDS[status] ?? status.replace(/_/g, ' ')).toLowerCase()}` } : undefined);
 
 const RULES_FORMAT = 'cqa-behavior-rules';
 const ImportedItem = z.object({ label: z.string().trim().min(1).max(200), locator: z.string().trim().max(300).optional() }).strict();
@@ -127,18 +130,20 @@ export function registerQaRoutes(app: FastifyInstance, opts: QaRouteOptions): Qa
     return { units, defs, coverage };
   };
 
-  app.get<{ Params: { id: string } }>('/api/runs/:id/inventory', async (req, reply) => {
+  app.get<{ Params: { id: string }; Querystring: { search?: string } }>('/api/runs/:id/inventory', async (req, reply) => {
     const run = runOf(req.params.id);
     if (!run) return notFound(reply, 'Scan not found.');
     if (!qa.getProgress(run.id)) return { recorded: false, note: 'Coverage was not recorded in this older scan.' };
-    const { units, coverage } = coverageFor(run.id);
+    const { units, coverage, defs } = coverageFor(run.id);
     const executions = qa.currentExecutions(run.id);
     const dispositions = qa.listDispositions(run.id);
     const interactions = qa.listInteractions(run.id);
+    // Only the index screen asks for search text; the live progress panel polls this route and does not need it.
+    const search = req.query.search === '1' ? screenSearchIndex(units, interactions, executions, defs, new Set(units.filter((u) => isPrimaryUnit(u, units)).map((u) => u.id))) : undefined;
     const screens = units.map((u) => {
       const primary = isPrimaryUnit(u, units);
       const result = screenStatus(u, executions, dispositions, interactions);
-      return { unit: u, primary, result: primary || executions.some((e) => e.unitId === u.id) ? result : undefined, interactions: interactions.filter((i) => i.unitId === u.id).length };
+      return { unit: u, primary, result: primary || executions.some((e) => e.unitId === u.id) ? result : undefined, interactions: interactions.filter((i) => i.unitId === u.id).length, ...(search && primary ? { search: withStatus(search.get(u.id), result.status) } : {}) };
     });
     return { recorded: true, revision: qa.inventoryRevision(run.id), units: screens, coverage, unitNoun: nounFor(units) };
   });

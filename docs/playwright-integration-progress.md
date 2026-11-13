@@ -14,7 +14,10 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | Audit of 9 Nov | Five priority findings fixed; A6, A7 open | `docs/audit-2026-11-09-status.md` |
 | 8. Assessments and SCORM | Done (11 Nov 2026), not committed | See "Phase 8" below |
 | 9. Evidence and diagnostics | Done (11 Nov 2026), not committed | See "Phase 9" below |
-| 10–15 | Not started | |
+| 10. Live progress and course index | Done (11 Nov 2026), not committed | See "Phase 10" below |
+| 11. Reports | Done (13 Nov 2026), not committed | See "Phase 11" below |
+| 12. Failure handling and isolation | Done (13 Nov 2026), not committed | See "Phase 12" below |
+| 13–15 | Not started | |
 
 ## Phase 1 test run
 
@@ -404,6 +407,105 @@ Builds on the evidence that already existed (screenshots, console and page error
 - **Redaction:** traces are not redacted, and the setting tells people so.
 - **Access control:** evidence is served only by the local tool, which has no login.
 - **Background requests:** these are handled as before (the excluded resource types and RUN rules). This phase did not revisit them.
+
+## Phase 10
+
+Most of this phase already existed. Live progress comes from stored records through polling: there are numbered events, a snapshot of stages and counters, indeterminate bars when the total is unknown, a "found so far" label on a changing total, a cancel button and no pause button. The screen index already had status filters and the "Passed configured checks" label. What was missing was safe handling of repeated, late or missing updates, and a way to search the index.
+
+### What changed
+
+- **Updates** (`apps/web/src/components/qa/live-events.ts`, used by `ProgressPanel.tsx`): events are merged by number. A repeat is dropped and cannot change what is shown; a late one goes back in order. When numbers are missing, the page asks once more from just before the gap; if the gap remains, it carries on rather than stall. The outline refreshes only when something new arrives.
+- **Search** (`screenSearchIndex` in `aggregation.ts`, `ScreensTab.tsx`): the screen index can be searched by title, control, check ID or title, status or reason. The search reaches the blocks inside a Rise lesson, and the row then says the match was found in a block, because the lesson's own view does not list block results. Search text is sent only to the index screen, not to the live progress poll.
+- **Separate code review** raised 10 points, and all were fixed: the refetch was off by one and could loop; a block match was not labelled; spot-check ignored the search; the index cost was quadratic; the search text was in every progress poll; the text was cut at 8,000 characters; a stale result selection carried over; a memo never cached; and definitions were loaded twice.
+
+### Tests (11 Nov 2026)
+
+- `tests/live-events.test.ts`, 8 tests: repeats, late events, missing numbers, a refresh rebuilding the same view, the keep limit, and asking again only once.
+- `tests/screen-search.test.ts`, 4 tests: what can be searched, block content kept apart, no leaks between screens, no length cut-off.
+- On a real scan (Leadership Expectations), searching "flip" found the two lessons with flip cards, and there were no console errors.
+- Removing each of 6 Phase 10 behaviors: all 6 made a test fail, and every file was confirmed restored.
+- Whole suite: 456 passed, 0 failed, 1 file skipped (`real-exports`).
+
+### Not done in Phase 10
+
+- **Search within a screen's results:** a screen's own list of checks is not filtered by the search.
+- **Push updates:** progress still polls every 1.5 s, as the pack allows. There are no WebSockets.
+
+## Phase 11
+
+The QA spreadsheet (`qa-tables.ts`) already had coverage with denominators, every unit, every test attempt, and reviewer decisions beside the automated result. HTML escaping and spreadsheet formula protection already existed. The HTML and PDF report, which people actually read, had none of the QA results.
+
+### What changed
+
+- **HTML and PDF report** (`export/html.ts`, routes in `app.ts`): a new "Screens and checks" section. It shows the coverage summary with each number's denominator, every screen including those that passed (labelled "Passed configured checks"), and reviewer decisions with who, why and when beside the unchanged automated result. Scans that recorded no step-by-step results get no section, rather than a table of zeros.
+- **Banner**: partial, cancelled, failed or unfinished scans say so at the top of the report, before any number.
+- **Summary rows** (`qa-tables.ts`): every status now has a row, including not supported, inconclusive, not applicable without a reason (a gap), waiting, and unrecognised. Checks that passed only on a later attempt are counted separately for functional checks and for the walk. Run Details explains how evidence IDs match the evidence archive's manifest.
+- **Separate code review** raised 10 points, and all were fixed:
+  - the report's screen table ignored untested controls, so it could call a screen passed while the Screens tab did not;
+  - the retry count looked at the wrong records;
+  - older scans got a table of zeros;
+  - only the first missing-update gap was ever asked for again;
+  - "not applicable without a reason" had no row;
+  - team IDs and screen status words could not be searched;
+  - a title match could be labelled as found in a block;
+  - the search index did quadratic work;
+  - a second QA store was created for each export.
+
+### Tests (11 Nov 2026)
+
+- `tests/report-reconcile.integration.test.ts`, 6 tests on a real fixture scan with a failure, an inconclusive draft rule and a reviewer override:
+  - the HTML counts match the stored statuses;
+  - the decision is shown beside the unchanged failure;
+  - a hostile rule title is escaped in HTML and kept as text in the spreadsheet and CSV;
+  - the screen table, summary, Screens tab and search all agree on each screen's status;
+  - every stored status appears in the export;
+  - partial and cancelled scans get the banner, with no empty results section.
+- Removing each of 9 Phase 11 behaviors (13 Nov): 8 made a test fail. The ninth, the screen table judging screens like the Screens tab, could not be caught because the fixture's only screen also had a failure. The test now adds a passed screen with an untested control, and removing the fix makes it fail. Every file was confirmed restored.
+- Whole suite (13 Nov): 462 passed, 1 failed, 1 file skipped (`real-exports`). The failure was the cancellation test in `tests/scan.integration.test.ts`, which passed when rerun alone and with its whole file. It is recorded as a second intermittent test, cause not known, beside the one in `tests/rules.integration.test.ts`.
+
+### Not done in Phase 11
+
+- **Severity rationale:** each issue shows its priority, confidence and type, but no written reason for its priority.
+- **Traces in the HTML report:** the report embeds screenshots only. Browser traces are in the evidence archive and on the result page.
+- **Real courses:** reports were checked against fixture scans, plus the existing real-course run for search.
+
+## Phase 12
+
+Most of the hardening already existed and was checked rather than rebuilt:
+- **Failure reasons:** each failure is classified (browser unavailable or crashed, timeout, cancelled, worker lost, blocked by policy, not reached).
+- **Retries:** one retry for a recognised control, which restores the screen first and keeps the first attempt's outcome and evidence (Phase 9).
+- **Limits:** scan concurrency (at most 4), screens, depth and total time.
+- **Stalls:** heartbeats and a stall warning, and the A2 worker lock with recovery after a restart.
+- **Isolation:** Chromium runs with its sandbox on, and `--no-sandbox` is not used. All browser traffic goes through the per-scan egress proxy and network policy.
+- **Link checks:** each redirect is checked against the policy and connected to the address that was checked. The tool has no other server-side fetch.
+- **Packages:** they are served from a separate origin (port 4318), so course scripts never share the app's origin.
+
+### What changed
+
+- **Frame allow-list** (`content-root.ts`): domain names are now compared at label boundaries, so `evilcloudfront.net` is not `cloudfront.net`. Two-label public suffixes (`co.uk`) and country domains with a generic second level (`com.vn`) are not mistaken for one organisation. Shared hosting names (`github.io`, `amazonaws.com`, `workers.dev`, and so on) are never one organisation. The same host on another port is allowed.
+- **Browser check** (`capabilities.ts`): it now starts the browser the way scans do (headless, sandbox on), instead of only looking for the full browser's file. A success is cached for 10 minutes and a failure for 30 seconds; requests that arrive together share one start, and nothing is started when the browser is not installed. The New Scan page shows the actual reason.
+- **Retry count in reports:** it now counts only current passes that followed an earlier failed attempt of the same check.
+- **Separate code review** raised 10 points and 9 were acted on (the probe cache, shared probes, the retry count, more suffixes and shared hosts, same-host ports, the New Scan message, a test that started a real browser, shared status words, and a stale comment). The tenth, that HTML exports build every QA table and use three, was left as a small cost.
+
+### Tests (13 Nov 2026)
+
+- `tests/hardening.test.ts`: frame allow-list cases and the browser check.
+- `tests/isolation.integration.test.ts`: two scans running at once keep their own screens, findings and files, and a scan whose evidence cannot be written still finishes with its findings and links no missing file. Both passed before any change, which is evidence that this already worked.
+- On this PC the real check reported the browser available: 1.6 s the first time, 12 ms cached.
+- Removing each of 6 Phase 12 behaviors: 5 made a test fail. The two-label suffix list went undetected because the country-domain rule also covered the tested suffixes. A test using `nhs.uk` was added, and removing the list now makes it fail. Every file was confirmed restored.
+- Whole suite: 472 passed, 0 failed, 1 file skipped (`real-exports`).
+
+### Deployment prerequisites (still needed for hostile packages or a shared server)
+
+- **Browser isolation:** a browser context is not a complete security boundary for hostile packages. Run the worker in a container or VM with no credentials, a read-only file system outside its data folder, and no access to the internal network beyond the policy.
+- **No login:** the tool has no accounts, so artifacts and jobs are not scoped to a person. It must stay bound to 127.0.0.1, or sit behind authentication provided by the deployment.
+- **Frame allow-list:** it is a hand-kept list, not the full Public Suffix List. The network policy, not this list, is what blocks traffic.
+
+### Not done in Phase 12
+
+- **Per-run memory caps:** none; only counts and time are capped.
+- **Retry-count test:** the corrected count has no test of its own (it is checked by reading the code).
+- **Real courses:** nothing in this phase was run against a real course.
 
 ## Architecture decisions
 

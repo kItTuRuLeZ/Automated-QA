@@ -546,7 +546,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
             </p>
             {browserBlocked && (
               <Alert tone="error" title="Scanning is not available on this computer yet." live>
-                The scanning browser is not installed. See <a href="#/help">Help → System status</a> for the one-time install step.
+                {caps.data?.find((c) => c.id === 'browser')?.detail ?? 'The scanning browser is not available.'} See <a href="#/help">Help → System status</a>.
               </Alert>
             )}
           </div>

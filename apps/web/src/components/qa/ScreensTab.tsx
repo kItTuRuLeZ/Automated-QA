@@ -23,18 +23,28 @@ const COURSE_WIDE = '__course_wide__';
  * result. Defaults to what needs attention, with passed screens one click away.
  */
 export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: string }) {
-  const inv = useLoader(() => qaApi.inventory(runId), [runId, runStatus]);
+  const inv = useLoader(() => qaApi.inventory(runId, true), [runId, runStatus]);
   const [filter, setFilter] = useState<Filter>('attention');
   const [selected, setSelected] = useState<string>();
   const [execId, setExecId] = useState<string>();
   const courseWide = useLoader(() => qaApi.courseWide(runId), [runId, runStatus]);
 
   const rows = useMemo<ScreenRow[]>(() => (inv.data && inv.data.recorded ? inv.data.units.filter((u) => u.primary && u.result) : []), [inv.data]);
-  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.id, rows.filter((r) => f.match(r.result!.status)).length])) as Record<Filter, number>, [rows]);
-  const shown = rows.filter((r) => FILTERS.find((f) => f.id === filter)!.match(r.result!.status));
+  const [query, setQuery] = useState('');
+  // Every word typed must appear somewhere in the screen's title, controls, checks, statuses or reasons, or in its blocks.
+  const words = useMemo(() => query.toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const textOf = (r: ScreenRow) => `${r.search?.own ?? r.unit.title.toLowerCase()} ${r.search?.nested ?? ''}`;
+  const searched = useMemo(() => rows.filter((r) => words.every((w) => textOf(r).includes(w))), [rows, words]);
+  /** True when what was searched for is only inside the screen's blocks, which its own view does not list. */
+  const onlyInBlocks = (r: ScreenRow) => words.length > 0 && !words.every((w) => (r.search?.own ?? r.unit.title.toLowerCase()).includes(w));
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f.id, searched.filter((r) => f.match(r.result!.status)).length])) as Record<Filter, number>, [searched]);
+  const shown = searched.filter((r) => FILTERS.find((f) => f.id === filter)!.match(r.result!.status));
 
   useEffect(() => {
-    if (!selected || (selected !== COURSE_WIDE && !shown.some((r) => r.unit.id === selected))) setSelected(shown[0]?.unit.id);
+    if (!selected || (selected !== COURSE_WIDE && !shown.some((r) => r.unit.id === selected))) {
+      setSelected(shown[0]?.unit.id);
+      setExecId(undefined);
+    }
   }, [shown, selected]);
 
   if (inv.error) return <ErrorBox error={inv.error} onRetry={inv.reload} />;
@@ -42,11 +52,16 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
   if (!inv.data.recorded) return <Alert tone="note" title="Coverage was not recorded in this older scan.">Step-by-step results are only kept for scans made after this feature was added. The other tabs still show what this scan found.</Alert>;
   const noun = inv.data.unitNoun;
   const hidden = inv.data.units.filter((u) => !u.primary).length;
-  const passedRows = rows.filter((r) => r.result!.status === 'passed_automated');
+  const passedRows = searched.filter((r) => r.result!.status === 'passed_automated');
 
   return (
     <div className="review">
       <aside className="review-outline" aria-label="Course outline">
+        <div className="field">
+          <label htmlFor="screen-search">Search {noun.plural}</label>
+          <input id="screen-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Title, control, check (e.g. TAB-01), status or reason" aria-describedby="screen-search-h" />
+          <p id="screen-search-h" className="help">Matches every word you type. The counts below follow the search.</p>
+        </div>
         <fieldset className="chips">
           <legend>Show</legend>
           {FILTERS.map((f) => (
@@ -56,8 +71,8 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
           ))}
         </fieldset>
         {shown.length === 0 ? (
-          <Empty title={rows.length === 0 ? `No ${noun.plural} were recorded` : `No ${noun.plural} match this filter`}>
-            <p>{rows.length === 0 ? 'The scan did not reach any screen, so there is nothing to review here. See the status above.' : `Choose “All screens” to see all ${rows.length}.`}</p>
+          <Empty title={rows.length === 0 ? `No ${noun.plural} were recorded` : `No ${noun.plural} match ${words.length ? 'this search and filter' : 'this filter'}`}>
+            <p>{rows.length === 0 ? 'The scan did not reach any screen, so there is nothing to review here. See the status above.' : words.length ? 'Clear the search or choose “All screens”.' : `Choose “All screens” to see all ${rows.length}.`}</p>
           </Empty>
         ) : (
           <ul className="outline" role="list">
@@ -68,6 +83,7 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
                 <li key={r.unit.id} className={r.unit.parentId ? 'child' : ''}>
                   <button type="button" className={`outline-item${selected === r.unit.id ? ' selected' : ''}`} aria-current={selected === r.unit.id ? 'true' : undefined} onClick={() => (setSelected(r.unit.id), setExecId(undefined))}>
                     <span className="outline-title">{r.unit.title}</span>
+                    {onlyInBlocks(r) && <span className="muted"> · found in a block inside this {noun.singular}</span>}
                     <span className="outline-meta">
                       <ScreenStatusBadge status={r.result!.status} />
                       {attention > 0 && <span className="attention" title="Checks that failed, were blocked, errored or need a person">{attention} to look at</span>}

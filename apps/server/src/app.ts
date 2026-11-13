@@ -5,10 +5,11 @@ import type { ProfileId, ProjectId } from '@cqa/shared';
 import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, ProfileInput, newId, profileScanOptions, toClientProfile, validateWorkflowChange, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
-import { type CapabilityOptions, buildCapabilities } from './capabilities.js';
+import { type CapabilityOptions, buildCapabilities, probeBrowserStart } from './capabilities.js';
 import { registerPackageRoutes } from './packages.js';
 import { registerQaRoutes } from './qa-routes.js';
 import { buildHtmlReport } from './export/html.js';
+import { buildQaTables } from './export/qa-tables.js';
 import { renderPdf } from './export/pdf.js';
 import { ACCESSIBILITY_DISCLAIMER, MANUAL_REVIEW_CHECKLIST, type ArtifactStore, CreateProjectInput, UpdateProjectInput, CreateScanInput, type NetworkPolicy, type Store, buildScanConfig, defaultScopeFor, isOpaqueId, allRules } from '@cqa/core';
 
@@ -73,7 +74,7 @@ export function buildApp(opts: AppOptions): FastifyInstance {
   app.get('/api/health', async () => ({ ok: true }));
 
   app.get('/api/rules', async () => allRules());
-  app.get('/api/capabilities', async () => buildCapabilities(opts.capabilities));
+  app.get('/api/capabilities', async () => buildCapabilities({ ...opts.capabilities, browserStart: opts.capabilities?.browserStart ?? (opts.capabilities?.browserExecutable || opts.capabilities?.probeBrowser === false ? undefined : await probeBrowserStart()) }));
   app.get('/api/manual-checklist', async () => ({ disclaimer: ACCESSIBILITY_DISCLAIMER, items: MANUAL_REVIEW_CHECKLIST }));
 
   // ---- projects ----
@@ -149,7 +150,8 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     return reply.code(204).send();
   });
 
-  registerQaRoutes(app, { store, artifacts });
+  const qaStore = registerQaRoutes(app, { store, artifacts });
+  const qaFor = (runId: string) => (qaStore.getProgress(runId) ? buildQaTables(store, qaStore, runId) : undefined);
   if (opts.packages) registerPackageRoutes(app, { store, policy, packagesDir: opts.packages.dir, packagePort: opts.packages.port });
 
   // ---- scans ----
@@ -279,13 +281,13 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     reply.header('Content-Type', 'text/html; charset=utf-8');
     reply.header('Content-Disposition', `attachment; filename="${reportName(run, 'html')}"`);
     reply.header('Cache-Control', 'no-store');
-    return reply.send(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString() }));
+    return reply.send(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString(), qa: qaFor(run.id) }));
   });
 
   app.get<{ Params: { id: string } }>('/api/runs/:id/export.pdf', async (req, reply) => {
     const run = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
     if (!run) return notFound(reply, 'Scan not found.');
-    const pdf = await renderPdf(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString() }));
+    const pdf = await renderPdf(buildHtmlReport(buildRunReport(store, run.id), { loadImage, generatedAt: new Date().toISOString(), qa: qaFor(run.id) }));
     reply.header('Content-Type', 'application/pdf');
     reply.header('Content-Disposition', `attachment; filename="${reportName(run, 'pdf')}"`);
     reply.header('Cache-Control', 'no-store');

@@ -28,8 +28,8 @@ Regression tests are in `tests/audit-fixes.test.ts`, `tests/qa-aggregation.test.
 | Rise LMS bypass applied without being shown | Still open, due in Phase 8 | `runner.ts:212` and `:429` |
 | No Playwright trace capture | Still open, due in Phase 9 | No `context.tracing` in `apps` or `packages` |
 | `prerequisites` and `resetPolicy` accepted but unused | Still open | No use of either in `apps/worker/src` |
-| Frame eligibility too broad | Still open, due in Phase 12 | `content-root.ts` compares the last two hostname labels |
-| Browser check looks at the full Chromium path while scans are headless | Still open | `capabilities.ts:23` |
+| Frame eligibility too broad | **Fixed (Phase 12)** | Label-boundary matching, two-label and country suffixes, shared hosting names; `tests/hardening.test.ts` |
+| Browser check looks at the full Chromium path while scans are headless | **Fixed (Phase 12)** | The check starts the browser headless with the sandbox on, as scans do; `tests/hardening.test.ts` |
 | Team hosting and login | Still open | Server binds to loopback with no login |
 | Real-course evidence is limited | Still open | One Rise course; several recipes fixture-only |
 

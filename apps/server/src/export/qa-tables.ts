@@ -23,7 +23,7 @@ export interface QaTables {
 }
 
 const yes = (b: boolean) => (b ? 'Yes' : 'No');
-const STATUS_WORDS: Record<string, string> = {
+export const STATUS_WORDS: Record<string, string> = {
   not_tested: 'Not tested',
   in_progress: 'In progress',
   issues_found: 'Issues found',
@@ -88,6 +88,14 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
       ['Checks blocked', coverage.counts.blocked],
       ['Runner errors (not course defects)', coverage.counts.error],
       ['Checks skipped', coverage.counts.skipped],
+      ['Checks not supported here', coverage.counts.unsupported],
+      ['Checks inconclusive', coverage.counts.inconclusive],
+      ['Checks not applicable (with a reason)', coverage.counts.notApplicable],
+      ['Checks marked not applicable without a reason (a gap)', coverage.counts.notApplicableWithoutReason],
+      ['Checks waiting or not run', coverage.counts.pending + coverage.counts.running],
+      ['Checks with a status this version does not know', coverage.counts.unknown],
+      ['Functional checks that passed only on a later attempt', execs.filter((e) => e.status === 'passed' && e.attempt > 1 && allExecs.some((x) => x.id !== e.id && x.attempt < e.attempt && x.status === 'failed' && x.definitionId === e.definitionId && x.unitId === e.unitId && x.instanceId === e.instanceId && x.statePath === e.statePath)).length],
+      ['Walk checks that passed only on the retry', store.listCheckResults(runId).filter((c) => c.outcome === 'passed' && (c.attempt ?? 1) > 1).length],
       ['Manual checks outstanding', coverage.manual.outstanding],
       ...[...statusCounts].map(([k, v]) => [`${noun.plural} — ${STATUS_WORDS[k] ?? k}`, v] as Array<Cell>),
       ['Listed but not tracked one by one', `${coverage.listedNotTracked} (blocks, layers, scenes and package items)`],
@@ -101,7 +109,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
     description: `One row per ${noun.singular} or listed unit, including passed ones, ones with issues, partly checked ones and ones never tested.`,
     columns: ['Unit', 'Kind', 'Parent', 'Counted for visits', 'Source', 'Confidence', 'Visited by a browser', 'Visit time', 'Not reached because', 'Automated status', 'Notes', 'Passed', 'Failed', 'Blocked', 'Error', 'Skipped', 'Manual review', 'Reviewer decision'],
     rows: units.map((u) => {
-      const r = screenStatus(u, execs, dispositions);
+      const r = screenStatus(u, execs, dispositions, interactions);
       const counted = isPrimaryUnit(u, units);
       return [u.title, u.kind, u.parentId ? unitTitle.get(u.parentId) ?? '' : '', yes(counted), u.source, u.confidence, yes(Boolean(u.visitedAt)), u.visitedAt ?? '', u.visitedAt ? '' : u.notReachedReason ?? (counted ? 'No browser visit was recorded.' : 'Listed only; not tracked one by one.'), counted || execs.some((e) => e.unitId === u.id) ? STATUS_WORDS[r.status] : 'Not tracked', [...r.badges.map((b) => BADGE_WORDS[b] ?? b), ...r.reasons].join(' | '), r.counts.passed, r.counts.failed, r.counts.blocked, r.counts.error, r.counts.skipped, r.counts.manual, r.reviewerDecision ? `${r.reviewerDecision.decision} by ${r.reviewerDecision.actor}: ${r.reviewerDecision.reason}` : ''] as Cell[];
     }),
@@ -173,6 +181,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
       ['Test library version', libraryDigest],
       ['Inventory revision', progress?.inventoryRevision ?? 0],
       ['Last event', progress?.lastSeq ?? 0],
+      ['Evidence', 'Download the evidence archive (evidence-archive.zip). Every evidence ID in these tables is listed in its manifest.json with a path relative to the archive.'],
     ],
   };
 

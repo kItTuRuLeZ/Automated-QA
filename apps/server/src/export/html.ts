@@ -1,3 +1,4 @@
+import type { QaTables } from './qa-tables.js';
 import { ACCESSIBILITY_DISCLAIMER, ACTION_LABEL, MANUAL_REVIEW_CHECKLIST, type ReportIssue, type RunReport } from '@cqa/core';
 import type { Severity } from '@cqa/shared';
 import { REASON_PLAIN } from './xlsx.js';
@@ -13,6 +14,8 @@ export function esc(value: unknown): string {
 }
 
 export interface HtmlReportOptions {
+  /** The QA tables (coverage, screens, check results, decisions), when the scan recorded them. */
+  qa?: QaTables;
   /** PNG bytes for an artifact id, or undefined when the file is missing. */
   loadImage?: (artifactId: string) => Buffer | undefined;
   generatedAt?: string;
@@ -39,6 +42,7 @@ main { max-width: 960px; margin: 0 auto; padding: 24px 20px 48px; }
 h1 { font-size: 1.7rem; margin: 0 0 4px; } h2 { font-size: 1.25rem; margin: 2rem 0 .6rem; border-bottom: 2px solid var(--border); padding-bottom: .25rem; } h3 { font-size: 1.05rem; margin: 0 0 .3rem; }
 .meta, .muted { color: var(--muted); } .small { font-size: .85rem; }
 .note { background: #eef3ff; border: 1px solid #b8c9f2; border-radius: 6px; padding: .6rem .9rem; margin: .8rem 0; }
+.banner { border: 2px solid #b54708; background: #fffaeb; border-radius: 6px; padding: .6rem .9rem; margin: .8rem 0; }
 .counts { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1rem 0; }
 .count { flex: 1 1 150px; border: 1px solid var(--border); border-radius: 8px; padding: .6rem .9rem; background: #fff; }
 .count b { display: block; font-size: 2rem; line-height: 1.1; } .count.fix { background: #fdecea; border-color: #f2b8b5; } .count.check { background: #fff4dc; border-color: #ecd59c; } .count.not { background: #eef0f3; }
@@ -128,6 +132,7 @@ export function buildHtmlReport(r: RunReport, opts: HtmlReportOptions = {}): str
   const body = `
 <header>
   <h1>Course QA report</h1>
+  ${banner(r.run.status)}
   <p class="meta">${esc(r.run.targetUrl)}<br>Scanned ${esc(when(r.scan.startedAt ?? r.run.queuedAt))} · ${esc(r.run.statusPlain)}${r.run.statusDetail ? ` (${esc(r.run.statusDetail)})` : ''}</p>
 </header>
 <section id="summary" aria-labelledby="h-summary">
@@ -140,6 +145,7 @@ export function buildHtmlReport(r: RunReport, opts: HtmlReportOptions = {}): str
   <p>${r.coverage.screensScanned} screen${r.coverage.screensScanned === 1 ? '' : 's'} scanned${r.coverage.budgetsReached.length ? ', and the scan stopped at a limit so other screens were not looked at' : ''}. Fix by priority: ${(['critical', 'high', 'medium', 'low', 'informational'] as Severity[]).filter((s) => r.counts.bySeverity[s] > 0).map((s) => `${r.counts.bySeverity[s]} ${PRIORITY[s].toLowerCase()}`).join(', ') || 'none'}.</p>
   <p class="note">${esc(ACCESSIBILITY_DISCLAIMER)} A scan only covers the screens it reached; anything it did not reach is unverified, not passed.</p>
 </section>
+${opts.qa ? qaHtml(opts.qa) : ''}
 <section id="issues" aria-labelledby="h-issues">
   <h2 id="h-issues">Issues</h2>
   ${r.issues.length === 0 ? '<p><b>No issues were recorded.</b> That does not mean the course passed QA: see Coverage and the manual review checklist.</p>' : ''}
@@ -194,6 +200,39 @@ ${css}</style>
 </head>
 <body><main>${body}</main></body>
 </html>`;
+}
+
+/** Said at the top, before any number, so a partial or cancelled scan is never read as a complete one. */
+function banner(status: string): string {
+  const text: Record<string, string> = {
+    partial: 'Partial results: the scan finished without checking everything. Anything not listed as checked is unverified, not passed.',
+    cancelled: 'Cancelled: the scan was stopped before it finished. Only the results recorded before that are shown.',
+    failed: 'Could not finish: the scan did not complete. Only the results recorded before that are shown.',
+    running: 'In progress: this report was made while the scan was still running.',
+    queued: 'Not started: the scan has not run yet.',
+  };
+  return text[status] ? `<p class="banner" role="note"><b>${esc(text[status]!.split(':')[0])}:</b>${esc(text[status]!.slice(text[status]!.indexOf(':') + 1))}</p>` : '';
+}
+
+/** Coverage numbers with their denominators, every screen (passed ones too), and reviewer decisions beside the machine result. */
+function qaHtml(t: QaTables): string {
+  const table = (name: string) => t.tables.find((x) => x.name === name);
+  const summary = table('Summary');
+  const coverage = table('Course Coverage');
+  const manual = table('Manual Review');
+  const col = (tb: { columns: string[] } | undefined, name: string) => (tb ? tb.columns.indexOf(name) : -1);
+  const cell = (v: unknown) => `<td>${esc(v ?? '')}</td>`;
+  const counted = coverage ? coverage.rows.filter((r) => r[col(coverage, 'Counted for visits')] === 'Yes') : [];
+  const screenCols = ['Unit', 'Visited by a browser', 'Automated status', 'Passed', 'Failed', 'Blocked', 'Manual review', 'Reviewer decision'];
+  const decided = manual ? manual.rows.filter((r) => r[col(manual, 'Decision')]) : [];
+  const decisionCols: Array<[string, string]> = [['Case', 'Case'], ['Unit', 'Unit'], ['Status', 'Automated result (unchanged)'], ['Decision', 'Decision'], ['Decided by', 'Decided by'], ['Decision reason', 'Reason'], ['Decided at', 'When']];
+  return `<section id="qa" aria-labelledby="h-qa">
+  <h2 id="h-qa">Screens and checks</h2>
+  <p class="muted small">Every percentage is shown with what it counts and out of how many. Where the course's size is not known, there is no percentage.</p>
+  ${summary ? `<table><caption class="muted small" style="text-align:left">Coverage and results</caption><tbody>${summary.rows.map((r) => `<tr><th scope="row">${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join('')}</tbody></table>` : ''}
+  ${counted.length ? `<h3>Every screen, including those with no issues (${counted.length})</h3><table><thead><tr>${screenCols.map((c) => `<th>${esc(c)}</th>`).join('')}</tr></thead><tbody>${counted.map((r) => `<tr>${screenCols.map((c) => cell(r[col(coverage, c)])).join('')}</tr>`).join('')}</tbody></table><p class="muted small">"Passed configured checks" means every check that applied passed; it is not a full QA pass.</p>` : ''}
+  ${decided.length ? `<h3>Reviewer decisions (${decided.length})</h3><p class="muted small">A decision is recorded beside the automated result; it never replaces it.</p><table><thead><tr>${decisionCols.map(([, h]) => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${decided.map((r) => `<tr>${decisionCols.map(([c]) => cell(r[col(manual, c)])).join('')}</tr>`).join('')}</tbody></table>` : ''}
+</section>`;
 }
 
 const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);

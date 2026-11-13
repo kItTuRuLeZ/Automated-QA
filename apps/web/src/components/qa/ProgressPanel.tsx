@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { RunEvent, RunStage } from '@cqa/shared';
 import { type InventoryResponse, type ProgressResponse, qaApi } from '../../api-qa';
 import { Alert } from '../ui';
+import { mergeRunEvents, nextCursor } from './live-events';
 
 const STAGE_LABEL: Record<RunStage, string> = {
   queued: 'Waiting to start',
@@ -27,12 +28,14 @@ export interface LiveRun {
 
 /**
  * Follows a run from stored records only. Every tick asks the server for the progress snapshot and any events after the
- * last one applied; an event at or below the last sequence is ignored, so a repeated or late delivery cannot change a
- * number. After a refresh the same calls rebuild the same view.
+ * cursor. Events are merged by number: a repeat is dropped, a late one goes back in place. The cursor can move back once
+ * to fill a gap, so it is not always increasing. After a refresh the same calls rebuild the same view.
  */
 export function useLiveRun(runId: string, active: boolean): LiveRun {
   const [state, setState] = useState<LiveRun>({ events: [], connectionLost: false });
   const lastSeq = useRef(0);
+  const held = useRef<RunEvent[]>([]);
+  const triedHoles = useRef(new Set<number>());
   const tick = useRef(0);
   const activeRef = useRef(active);
   activeRef.current = active;
@@ -41,6 +44,8 @@ export function useLiveRun(runId: string, active: boolean): LiveRun {
     let cancelled = false;
     let timer: number | undefined;
     lastSeq.current = 0;
+    held.current = [];
+    triedHoles.current = new Set();
     tick.current = 0;
     setState({ events: [], connectionLost: false });
     const run = async () => {
@@ -54,14 +59,21 @@ export function useLiveRun(runId: string, active: boolean): LiveRun {
         let fresh: RunEvent[] = [];
         if (p.progress.lastSeq > lastSeq.current) {
           const ev = await qaApi.events(runId, lastSeq.current);
-          fresh = ev.events.filter((e) => e.seq > lastSeq.current);
-          if (fresh.length) lastSeq.current = fresh[fresh.length - 1]!.seq;
+          fresh = ev.events;
         }
-        // The outline changes slowly; refresh it when something happened, and at least every few ticks.
-        const inv = fresh.length || tick.current % 4 === 0 ? await qaApi.inventory(runId) : undefined;
+        const known = new Set(held.current.map((e) => e.seq));
+        const merged = mergeRunEvents(held.current, fresh);
+        const added = merged.events.some((e) => !known.has(e.seq));
+        held.current = merged.events;
+        // With numbers missing, ask once more from just before the hole rather than trust an incomplete feed.
+        const cursor = nextCursor(merged, triedHoles.current);
+        if (cursor.holeAt !== undefined) triedHoles.current.add(cursor.holeAt);
+        lastSeq.current = cursor.after;
+        // The outline changes slowly; refresh it when something new happened, and at least every few ticks.
+        const inv = added || tick.current % 4 === 0 ? await qaApi.inventory(runId) : undefined;
         tick.current++;
         if (cancelled) return;
-        setState((s) => ({ progress: p, recorded: true, inventory: inv && inv.recorded ? inv : s.inventory, events: [...s.events, ...fresh].slice(-200), connectionLost: false }));
+        setState((s) => ({ progress: p, recorded: true, inventory: inv && inv.recorded ? inv : s.inventory, events: merged.events, connectionLost: false }));
         if (ACTIVE.has(p.progress.stage) || (activeRef.current && p.run.status !== 'completed' && p.run.status !== 'partial' && p.run.status !== 'failed' && p.run.status !== 'cancelled')) timer = window.setTimeout(run, 1500);
       } catch {
         if (cancelled) return;

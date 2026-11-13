@@ -322,3 +322,45 @@ export function finalStage(args: { runStatus: 'completed' | 'partial' | 'failed'
   const gaps = c.gaps.blocked + c.gaps.errored + c.gaps.skipped + c.gaps.pending + c.gaps.unsupported + c.gaps.inconclusive + c.gaps.unknown + c.gaps.unitsNotVisited + c.manual.outstanding + unexercisedInteractions;
   return args.runStatus === 'partial' || gaps > 0 || c.discovery.completeness !== 'complete' ? 'completed_with_gaps' : 'completed';
 }
+
+/**
+ * What a reviewer may search screens by: each screen's title, its controls, and each check's case, title, status and
+ * reason. `own` is what the screen itself shows; `nested` is what sits in the blocks or layers inside it (a Rise
+ * lesson's controls belong to its blocks), which the screen's own view does not list. Lower case, built once per request.
+ */
+export function screenSearchIndex(units: ReadonlyArray<Pick<ContentUnit, 'id' | 'title' | 'parentId'>>, interactions: readonly InteractionInstance[], executions: readonly TestExecution[], definitions: ReadonlyMap<string, Pick<TestDefinition, 'title'>>, only?: ReadonlySet<string>): Map<string, { own: string; nested: string }> {
+  const text = new Map<string, string[]>();
+  const add = (unitId: string | undefined, ...parts: string[]) => {
+    if (!unitId) return;
+    const list = text.get(unitId) ?? [];
+    list.push(...parts.filter(Boolean));
+    text.set(unitId, list);
+  };
+  for (const u of units) add(u.id, u.title);
+  for (const i of interactions) add(i.unitId, i.label, i.type.replace(/_/g, ' '));
+  for (const e of executions) add(e.unitId, e.definitionId, e.externalId ?? '', definitions.get(e.definitionId)?.title ?? '', e.status.replace(/_/g, ' '), e.reason ?? '', e.evidenceIds.length ? 'evidence' : '');
+  const children = new Map<string, string[]>();
+  for (const u of units) {
+    if (!u.parentId) continue;
+    const list = children.get(u.parentId);
+    if (list) list.push(u.id);
+    else children.set(u.parentId, [u.id]);
+  }
+  const join = (parts: string[]) => parts.join(' \u2022 ').toLowerCase();
+  const index = new Map<string, { own: string; nested: string }>();
+  for (const u of units) {
+    if (only && !only.has(u.id)) continue;
+    const nested: string[] = [];
+    const seen = new Set([u.id]);
+    const queue = [...(children.get(u.id) ?? [])];
+    for (let k = 0; k < queue.length; k++) {
+      const id = queue[k]!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      nested.push(...(text.get(id) ?? []));
+      queue.push(...(children.get(id) ?? []));
+    }
+    index.set(u.id, { own: join(text.get(u.id) ?? []), nested: join(nested) });
+  }
+  return index;
+}

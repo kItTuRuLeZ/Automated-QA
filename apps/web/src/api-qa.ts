@@ -49,6 +49,8 @@ export interface ScreenRow {
   primary: boolean;
   result?: ScreenResult;
   interactions: number;
+  /** Lower-case search text: the screen's own content, and what sits in the blocks inside it. Sent only to the index. */
+  search?: { own: string; nested: string };
 }
 export type InventoryResponse = { recorded: false; note: string } | { recorded: true; revision: number; units: ScreenRow[]; coverage: CoverageSummary; unitNoun: { singular: string; plural: string } };
 
@@ -77,7 +79,7 @@ export interface ImportPreview {
 export const qaApi = {
   progress: (runId: string) => request<ProgressResponse>('GET', `/api/runs/${encodeURIComponent(runId)}/progress`),
   events: (runId: string, after: number) => request<{ events: RunEvent[]; lastSeq: number }>('GET', `/api/runs/${encodeURIComponent(runId)}/events?after=${after}`),
-  inventory: (runId: string) => request<InventoryResponse>('GET', `/api/runs/${encodeURIComponent(runId)}/inventory`),
+  inventory: (runId: string, withSearch = false) => request<InventoryResponse>('GET', `/api/runs/${encodeURIComponent(runId)}/inventory${withSearch ? '?search=1' : ''}`),
   unit: (runId: string, unitId: string) => request<UnitDetail>('GET', `/api/runs/${encodeURIComponent(runId)}/units/${encodeURIComponent(unitId)}`),
   evidence: (runId: string, ids: string[]) => request<Array<{ id: string; kind: string; caption: string; artifactId?: string; capturedAt: string }>>('GET', `/api/runs/${encodeURIComponent(runId)}/evidence?ids=${ids.join(',')}`),
   courseWide: (runId: string) => request<ExecutionRow[]>('GET', `/api/runs/${encodeURIComponent(runId)}/course-wide`),

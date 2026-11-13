@@ -68,7 +68,7 @@ describe('capabilities', () => {
   });
 
   it('has no place to enter an AI key anywhere in the API or the interface', async () => {
-    const app = buildApp({ store: h.store, artifacts: h.artifacts, policy: h.policy, allowedHosts: [HOST], allowedOrigins: [`http://${HOST}`] });
+    const app = buildApp({ store: h.store, artifacts: h.artifacts, policy: h.policy, allowedHosts: [HOST], allowedOrigins: [`http://${HOST}`], capabilities: { probeBrowser: false } });
     try {
       const res = await app.inject({ method: 'GET', url: '/api/capabilities', headers: { host: HOST } });
       expect(res.statusCode).toBe(200);

@@ -13,6 +13,10 @@ export interface Capability {
 export interface CapabilityOptions {
   /** Where the browser should be; undefined when Playwright cannot say. Injectable for tests. */
   browserExecutable?: () => string | undefined;
+  /** Whether the browser actually started the way scans start it (headless, sandbox on). Undefined when not tried. */
+  browserStart?: { ok: boolean; detail?: string };
+  /** false: never start a browser to check (for tests). */
+  probeBrowser?: boolean;
   localTargets?: Array<{ ip: string; port: number }>;
   allowPrivateAddresses?: boolean;
   retentionDays?: number;
@@ -32,12 +36,16 @@ function defaultBrowserExecutable(): string | undefined {
  */
 export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
   const exe = (opts.browserExecutable ?? defaultBrowserExecutable)();
-  const browserOk = Boolean(exe && existsSync(exe));
+  // Installed is not enough: scans start a headless build that can be missing while the full browser is there.
+  const installed = Boolean(exe && existsSync(exe));
+  const browserOk = installed && opts.browserStart?.ok !== false;
   const local = opts.localTargets ?? [];
   return [
     browserOk
       ? { id: 'browser', name: 'Scanning browser (Chromium)', status: 'available', detail: 'Installed. Scans, screenshots, and PDF reports can run.' }
-      : { id: 'browser', name: 'Scanning browser (Chromium)', status: 'blocked', detail: 'Not installed, so scans and PDF reports cannot run. Run "npm run browsers:install" once while online, then restart the app.' },
+      : installed && opts.browserStart?.ok === false
+        ? { id: 'browser', name: 'Scanning browser (Chromium)', status: 'blocked', detail: `Installed, but it could not start the way scans start it: ${opts.browserStart.detail ?? 'no reason given'}. Run "npm run browsers:install" to install the headless browser scans use.` }
+        : { id: 'browser', name: 'Scanning browser (Chromium)', status: 'blocked', detail: 'Not installed, so scans and PDF reports cannot run. Run "npm run browsers:install" once while online, then restart the app.' },
     browserOk
       ? { id: 'pdf', name: 'PDF reports', status: 'available', detail: 'Made offline from the same report as the HTML and Excel files.' }
       : { id: 'pdf', name: 'PDF reports', status: 'blocked', detail: 'Needs the scanning browser. JSON, HTML, and Excel reports still work.' },
@@ -56,4 +64,34 @@ export function buildCapabilities(opts: CapabilityOptions = {}): Capability[] {
     { id: 'ai', name: 'AI recommendations', status: 'not_included', detail: 'Not included. No AI service is used for any result, and there is nowhere to enter an AI key.' },
     { id: 'scorm', name: 'SCORM test harness (not an LMS)', status: 'available', detail: 'A built-in stand-in for the LMS side of SCORM 1.2 and SCORM 2004 checks what a course sends: start, saving, errors, status, bookmark, and your own pass/fail journeys. It is not an LMS, does not evaluate sequencing, and tests one lesson per scan. Nothing it shows says how a particular LMS will behave.' },
   ];
+}
+
+let lastProbe: { at: number; result: { ok: boolean; detail?: string } } | undefined;
+let probing: Promise<{ ok: boolean; detail?: string }> | undefined;
+const KEEP_SUCCESS_MS = 10 * 60_000;
+/** Short, so a slow first start or a fresh install is not shown as broken for long. */
+const KEEP_FAILURE_MS = 30_000;
+
+/**
+ * Starts the browser once, headless with the sandbox on as scans do, and closes it. Requests that arrive together share
+ * one start. Nothing is started when the browser is not installed: that is already known.
+ */
+export async function probeBrowserStart(): Promise<{ ok: boolean; detail?: string } | undefined> {
+  const exe = defaultBrowserExecutable();
+  if (!exe || !existsSync(exe)) return undefined;
+  if (lastProbe && Date.now() - lastProbe.at < (lastProbe.result.ok ? KEEP_SUCCESS_MS : KEEP_FAILURE_MS)) return lastProbe.result;
+  probing ??= (async () => {
+    let result: { ok: boolean; detail?: string };
+    try {
+      const browser = await chromium.launch({ headless: true, chromiumSandbox: true, timeout: 20_000 });
+      await browser.close();
+      result = { ok: true };
+    } catch (err) {
+      result = { ok: false, detail: String((err as Error).message ?? err).split('\n')[0]!.slice(0, 300) };
+    }
+    lastProbe = { at: Date.now(), result };
+    probing = undefined;
+    return result;
+  })();
+  return probing;
 }
