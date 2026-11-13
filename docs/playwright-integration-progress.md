@@ -17,7 +17,9 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 10. Live progress and course index | Done (11 Nov 2026), not committed | See "Phase 10" below |
 | 11. Reports | Done (13 Nov 2026), not committed | See "Phase 11" below |
 | 12. Failure handling and isolation | Done (13 Nov 2026), not committed | See "Phase 12" below |
-| 13–15 | Not started | |
+| 13. Tests for the tool itself | Done (13 Nov 2026), not committed | See "Phase 13" below |
+| 14. Comparing course versions | Done (13 Nov 2026), not committed | See "Phase 14" below |
+| 15 | Not started | |
 
 ## Phase 1 test run
 
@@ -506,6 +508,72 @@ Most of the hardening already existed and was checked rather than rebuilt:
 - **Per-run memory caps:** none; only counts and time are capped.
 - **Retry-count test:** the corrected count has no test of its own (it is checked by reading the code).
 - **Real courses:** nothing in this phase was run against a real course.
+
+## Phase 13
+
+Most behavior boundaries already had tests from earlier phases, one file per area: upload and launch, interactions, rules, quizzes and SCORM, crashes and cancellation, evidence, live updates, reports, malformed archives and hostile text. This phase added a way to measure detection as a whole, and a separate Playwright Test runner for the tool's own screens.
+
+### What changed
+
+- **Detection scorecard** (`tests/detection-scorecard.integration.test.ts`, `npm run test:scorecard`, opt-in because it runs about 30 scans). For each fixture with seeded faults, it checks that each fault is caught for the stated reason; a failure because an item could not be found does not count. It checks that content the tool cannot judge is classified as unsupported. On every known-good fixture, it checks that no execution, check or finding fails. It rescans two fixtures and compares the statuses. A scan that throws is recorded as a failed row, so the rest of the scorecard still prints.
+- **Playwright Test** (`playwright.config.ts`, `tests-ui/`, `npm run test:ui`): the real app runs on its own ports (4417 and 4418) with an empty data folder, so it never touches real projects and can run beside an open copy of the tool. The tests cover writing an answer key in the rules form (stored exactly, including escaped `|`), refusing an empty key, and the Help page's browser status matching a real start. Production code still uses only the `playwright` library.
+- **Test strategy** (`docs/TEST_STRATEGY.md`) now names both runners.
+- **Separate code review** raised 9 points and 7 were acted on: unfinished scans no longer count as clean; failed checks on good fixtures are counted; the reason is checked; a throw no longer hides the report; `CQA_SCORECARD=0` no longer enables it; UI data folders are cleaned up; the UI test is robust when the browser is blocked. Left as is: running the scorecard's scans in parallel, which could make timing-based checks less stable.
+
+### Results (13 Nov 2026)
+
+- First scorecard run: 27 of 27 seeded defects caught; 3 of 3 unsupported items classified as unsupported; 0 of 158 checks with a result on known-good courses wrongly failed; 0 of 2 repeat scans differed. 979 s.
+- After the review fixes, which check the reason, unfinished scans and failed checks: 27 of 27 caught for the right reason, 3 of 3 unsupported, 0 of 158 wrongly failed, 0 of 2 differed. 918 s.
+- Playwright Test: 3 of 3 passed.
+- Whole suite: 471 passed, 1 failed, 2 files skipped (`real-exports` and the opt-in scorecard). The failure was the cancellation test again. Its cause was found: the run is marked cancelled a moment before the browser closes and its temp folder is removed, and the test checked the folder in between. The test now waits for the worker to finish. The runner also retries the removal, and logs instead of crashing if Windows still holds the files. The test then passed 3 of 3 times.
+
+### Exclusions and limits
+
+- **Chromium only.** No other browsers are configured as test projects.
+- **Fixtures only.** No real exported course is in the scorecard; that is Phase 15's separate compatibility run.
+- **Intermittent tests:** one remains with no known cause, a 240 s timeout in `tests/rules.integration.test.ts`. The cancellation one is fixed (see above).
+- **CI:** no CI is configured in this repository, so the suites run locally.
+
+## Phase 14
+
+Visual comparison against an explicitly accepted baseline, with identical settings, already existed; it is not changed here. What was missing was comparing the findings of two scans.
+
+### What changed
+
+- **`compareRuns`** (`packages/core/src/compare.ts`) compares an earlier and a later scan of the same course. It sorts every finding into one of five groups:
+  - **New:** found later, on a screen the earlier scan also checked.
+  - **Still there:** found in both scans.
+  - **Resolved:** the same check (same `checkKey`) passed again on an equivalent screen under comparable conditions.
+  - **Not retested:** the screen was not reached, or the check did not run.
+  - **Not comparable:** a different course, a different screen size, a different browser major version (for interaction checks), or a changed check (same case and control, different version or expectation, recognised by a new `checkFamily`).
+
+  A screen reached by a different route is never assumed to be the same, even with the same title. An unfinished scan confirms nothing. Scans are always read earlier to later.
+- **Retest** (`workflow.ts`) now uses the same judgement, so the Compare tab and the issue statuses can never disagree.
+- **Route and screen**: `GET /api/runs/:id/compare?with=<earlier scan>` (same project only), and a "Compare" tab on the scan page that lists only earlier scans.
+- **Separate code review** raised 10 points, and all were fixed:
+  - comparisons could run backwards;
+  - screen-size changes did not stop layout findings resolving;
+  - "new" ignored screens the earlier scan never reached;
+  - a stuck temp folder could stop the worker starting;
+  - a changed check with no screen was misjudged;
+  - retest and compare duplicated the logic;
+  - the UI test cleanup could remove a live folder on Linux or macOS;
+  - the Compare tab kept a stale selection;
+  - a comment was misplaced;
+  - states were read twice.
+
+### Tests (13 Nov 2026)
+
+- `tests/compare.test.ts`, 12 tests on controlled runs: every group with its reason, a missing check, a changed check versus a different check sharing the rule ID, browser and screen-size changes, a renamed route, an unfinished scan, a different course, the query string ignored, "new" only where the earlier scan looked, and the order of the scans.
+- `tests/compare.integration.test.ts`, 4 real before-and-after scans of the quiz fixture: a real fix is resolved, a new fault is new, a skipped check is not retested, and changed conditions are not comparable.
+- On two real Leadership Expectations scans, all 26 findings were "still there", and the tab showed no console errors.
+- Removing each of 7 Phase 14 behaviors: all 7 made a test fail, and every file was confirmed restored.
+- Whole suite: 486 passed, 1 failed, 2 files skipped (`real-exports` and the opt-in scorecard). The failure was a UI test that listed the scan page's tabs and did not know the new Compare tab. It was updated, and that file then passed 15 of 15.
+
+### Not done in Phase 14
+
+- **Package versions:** a re-uploaded package is the same course only if its file name matches. There is no content-based identity.
+- **Comparison in reports:** the comparison appears in the app only, not in exported reports.
 
 ## Architecture decisions
 

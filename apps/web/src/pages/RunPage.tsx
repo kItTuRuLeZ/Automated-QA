@@ -10,12 +10,13 @@ import { TechnicalTab } from '../components/run/TechnicalTab';
 import { isOpenWork } from '../components/IssueStatus';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TabNav, courseTitle, formatDate, hostPath, useLoader } from '../components/ui';
 import { CoveragePanel } from '../components/qa/CoveragePanel';
+import { CompareTab } from '../components/qa/CompareTab';
 import { ProgressPanel, useLiveRun } from '../components/qa/ProgressPanel';
 import { ScreensTab } from '../components/qa/ScreensTab';
 import { WorkflowSteps } from '../components/qa/WorkflowSteps';
 
 const active = (s: RunStatus) => s === 'queued' || s === 'running';
-const TABS = ['summary', 'screens', 'issues', 'coverage', 'manual', 'technical'] as const;
+const TABS = ['summary', 'screens', 'issues', 'coverage', 'manual', 'compare', 'technical'] as const;
 type Tab = (typeof TABS)[number];
 
 function Elapsed({ since }: { since?: string }) {
@@ -141,6 +142,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
               { to: `${base}/issues`, label: 'Issues', current: current === 'issues', count: openCount },
               { to: `${base}/coverage`, label: 'Coverage', current: current === 'coverage' },
               { to: `${base}/manual`, label: 'Manual review', current: current === 'manual' },
+              { to: `${base}/compare`, label: 'Compare', current: current === 'compare' },
               { to: `${base}/technical`, label: 'Technical details', current: current === 'technical' },
             ]}
           />
@@ -169,6 +171,7 @@ function TabBody({ tab, run, report, query, isActive, onChanged, live }: { tab: 
       </>
     );
   if (tab === 'manual') return <ManualReview run={run} />;
+  if (tab === 'compare') return <CompareTab key={run.id} runId={run.id} projectId={run.projectId} />;
   if (tab === 'technical') return <TechnicalTab run={run} />;
   return <SummaryTab runId={run.id} report={report} isRetest={Boolean(run.retestOfRunId)} />;
 }

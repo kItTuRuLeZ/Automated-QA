@@ -552,7 +552,12 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     clearTimeout(runtimeTimer);
     await browser?.close().catch(() => undefined);
     await proxy?.stop().catch(() => undefined);
-    rmSync(tmpDir, { recursive: true, force: true });
+    // Windows can hold a just-closed browser's files for a moment; retry, and never let cleanup turn a finished scan into a crash.
+    try {
+      rmSync(tmpDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (err) {
+      deps.log.warn({ err, runId: run.id }, 'could not remove the scan temp folder; it is cleared at the next start');
+    }
   }
 }
 

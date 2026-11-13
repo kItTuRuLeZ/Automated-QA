@@ -409,8 +409,9 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
   const ruleId = p.rule ? 'FUN-002' : 'FUN-001';
   // A changed case, rule version or expectation makes a different key, so an old finding cannot be confirmed by a new meaning.
   const checkKey = assertionKey(p.def.id, p.def.version, p.instance?.id ?? null, p.rule?.id ?? null, p.rule?.version ?? null, p.rule?.expectationSource ?? p.def.body.expectationSource, p.def.body.expectedResult);
+  const checkFamily = assertionKey(p.def.id, p.instance?.id ?? null, p.rule?.id ?? null);
   if (done.status === 'passed' || done.status === 'failed') {
-    checks.push(check(ruleId, done.status === 'passed' ? 'passed' : 'failed', 0, evidenceIds, { stateId: state?.id, viewportName: run.config.viewports[0]?.name, targetKey: checkKey }));
+    checks.push(check(ruleId, done.status === 'passed' ? 'passed' : 'failed', 0, evidenceIds, { stateId: state?.id, viewportName: run.config.viewports[0]?.name, targetKey: checkKey, targetFamily: checkFamily }));
   }
   if (done.status === 'failed' && state) {
     const subject = p.rule ? `Rule "${p.rule.title}"` : p.instance?.label ?? p.unit.title;
@@ -427,6 +428,7 @@ async function runOne(input: FunctionalInput, p: Planned, navTimeout: number, pa
           remediation: p.rule ? `Check the trigger logic for "${subject}". The ordered action trace shows the click sequence and when the event appeared.` : `Check how "${subject}" is built or authored. The trace in the test result shows what was done and what was observed.`,
           targetKey: `${p.def.id}|${p.instance?.id ?? p.rule?.id ?? ''}`,
           checkKey,
+          checkFamily,
           stateKey: '',
           type: p.def.body.expectationSource === 'starter_baseline' && !p.rule ? 'heuristic_warning' : 'automated_defect',
         },

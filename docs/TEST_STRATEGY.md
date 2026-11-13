@@ -10,7 +10,9 @@ Tests prove behavior, false-positive resistance, failure paths, and security bou
 | Unit | `vitest` | Pure logic: URL/IP policy, redaction, fingerprints, severity mapping, state signatures, link classification, heuristics math. |
 | Integration (worker) | `vitest` + real Playwright Chromium + local fixture server | Engines against fixtures produce expected check results/findings/coverage. |
 | Integration (server) | `vitest` + Fastify `inject` + temp SQLite | API validation, job lifecycle, cancellation, restart recovery, artifact access control. |
-| End-to-end | Playwright driving the web UI | Create project → scan fixture → view finding/evidence → export. |
+| End-to-end | Playwright library inside `vitest` (`tests/ui-flows.e2e.test.ts`) | Create project → scan fixture → view finding/evidence → export. |
+| Tool UI (Playwright Test) | `@playwright/test`, `playwright.config.ts`, `tests-ui/` | The app's own screens against a real server on its own ports and an empty data folder. Never imported by production code. |
+| Detection scorecard | `vitest`, opt-in (`tests/detection-scorecard.integration.test.ts`) | Every seeded defect caught, no false failures on known-good fixtures, unsupported content classified, repeat scans identical. |
 | Security | Unit + integration | SSRF, rebinding, encodings, path traversal, CSRF/Origin, uploads, sandbox flags. |
 | Manual verification | Checklist in this file | Things automation cannot judge (UI accessibility with a screen reader, real Rise/Storyline exports). |
 
@@ -81,4 +83,5 @@ Fixtures contain no real client content or sensitive data.
 
 - `npm run typecheck` — all workspaces.
 - `npm test` — unit + integration.
-- `npm run test:e2e` — UI end-to-end.
+- `npm run test:ui` — Playwright Test on the tool's own screens (`tests-ui/`).
+- `npm run test:scorecard` — the detection scorecard (about 30 scans; not part of `npm test`).

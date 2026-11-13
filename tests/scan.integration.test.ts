@@ -146,6 +146,8 @@ describe('URL scan pipeline against local fixtures', () => {
     const checks = h.store.listCheckResults(run.id);
     expect(checks.length).toBeGreaterThan(0);
     expect(checks.every((c) => c.outcome === 'not_tested' && c.reason === 'cancelled')).toBe(true);
+    // The run is marked cancelled first; closing the browser and removing its temp folder finish just after.
+    await h.worker!.idle();
     expect(existsSync(`${h.tmpRoot}/${run.id}`)).toBe(false);
   });
 

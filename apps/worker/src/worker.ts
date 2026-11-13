@@ -33,7 +33,14 @@ export function startWorker(deps: Omit<WorkerDeps, 'workerId'> & { pollMs?: numb
   const releaseLock = acquireWorkerLock(deps.tmpRoot);
   const recovered = deps.store.recoverOrphanedRuns({ all: deps.recoverAllOnStart ?? true });
   if (recovered.length) deps.log.warn({ runs: recovered }, 'marked orphaned runs after restart');
-  for (const entry of safeReaddir(deps.tmpRoot)) rmSync(path.join(deps.tmpRoot, entry), { recursive: true, force: true });
+  for (const entry of safeReaddir(deps.tmpRoot)) {
+    try {
+      rmSync(path.join(deps.tmpRoot, entry), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch (err) {
+      // A folder Windows still holds is not worth refusing to start over; it is tried again next time.
+      deps.log.warn({ err, entry }, 'could not remove an old scan temp folder');
+    }
+  }
 
   let stopped = false;
   const active = new Set<Promise<unknown>>();

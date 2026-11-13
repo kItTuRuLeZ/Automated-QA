@@ -1,6 +1,7 @@
 import type { Finding, ReviewerStatus } from '@cqa/shared';
 import { REVIEWER_STATUSES_REQUIRING_REASON } from '@cqa/shared';
 import type { Store } from './db/store.js';
+import { compareRuns } from './compare.js';
 
 /** Statuses a person may set. The rest are only ever the result of a retest. */
 export const MANUAL_STATUSES = ['open', 'assigned', 'fixed', 'retest', 'accepted_risk', 'false_positive'] as const satisfies readonly ReviewerStatus[];
@@ -23,14 +24,14 @@ export function validateWorkflowChange(current: { status: ReviewerStatus; assign
 }
 
 /** How a screen was reached, plus the screen size. Two runs reached "the same screen" when these match. */
-function stateKeys(store: Store, runId: string): Map<string, string> {
+export function stateKeys(store: Store, runId: string): Map<string, string> {
   const actions = new Map(store.listActions(runId).map((a) => [a.id as string, a.targetDescription]));
   const out = new Map<string, string>();
   for (const s of store.listStates(runId)) out.set(s.id, `${s.pathFromRoot.map((id) => actions.get(id as string) ?? '?').join(' > ')}@${s.viewportName}`);
   return out;
 }
 
-const ONE_RULE_MANY_TARGETS = /^(FUN-|NAV-|KBD-00[34]$|LNK-001$)/;
+export const ONE_RULE_MANY_TARGETS = /^(FUN-|NAV-|KBD-00[34]$|LNK-001$)/;
 
 export interface RetestSummary {
   verified: number;
@@ -56,65 +57,35 @@ export function applyRetestOutcome(store: Store, runId: string): RetestSummary {
   const run = store.getRun(runId);
   if (!run?.retestOfRunId) return summary;
   const projectId = run.projectId as string;
-  const prior = store.listFindings(run.retestOfRunId).filter((f) => f.type !== 'ai_recommendation');
-  const finished = run.status === 'completed' || run.status === 'partial';
-  const now = new Set(store.listFindings(runId).map((f) => f.fingerprint));
-  const results = finished ? store.listCheckResults(runId) : [];
-  const priorKeys = stateKeys(store, run.retestOfRunId);
-  const nowKeys = stateKeys(store, runId);
-  const nowByKey = new Map<string, string[]>();
-  for (const [id, key] of nowKeys) nowByKey.set(key, [...(nowByKey.get(key) ?? []), id]);
-
-  const priorBrowser = store.getRun(run.retestOfRunId)?.browser;
-  const majorVersion = (v?: string) => v?.split('.')[0];
-  const sameBrowser = priorBrowser?.engine === run.browser?.engine && majorVersion(priorBrowser?.version) === majorVersion(run.browser?.version);
-
-  const samePass = (f: Finding, stateIds?: string[]) =>
-    results.some((r) => {
-      if (r.ruleId !== f.ruleId || r.outcome !== 'passed') return false;
-      if (f.checkKey && r.targetKey !== f.checkKey) return false;
-      // A check of the whole course (a link's address) has no screen of its own; its identity is enough.
-      if (f.checkKey && !r.stateId) return true;
-      return !stateIds || Boolean(r.stateId && stateIds.includes(r.stateId as string));
-    });
-  const comparable = (f: Finding) => !f.checkKey || sameBrowser;
-  const tested = (f: Finding): boolean => {
-    if (!finished || !comparable(f)) return false;
-    // These rules run once per control or case, so a finding saved before checks had an identity cannot be matched to one.
-    if (ONE_RULE_MANY_TARGETS.test(f.ruleId) && !f.checkKey) return false;
-    const stateIds = [...new Set([f.location.stateId, ...f.occurrences.map((o) => o.location.stateId)].filter((x): x is NonNullable<typeof x> => Boolean(x)))];
-    if (!stateIds.length) return samePass(f);
-    return stateIds.every((id) => {
-      const key = priorKeys.get(id as string);
-      const same = key ? nowByKey.get(key) : undefined;
-      return Boolean(same?.length && samePass(f, same));
-    });
+  // One judgement for retests and the Compare tab: what is resolved there is verified here, and nothing else is.
+  const comparison = compareRuns(store, run.retestOfRunId, runId);
+  if (!comparison) return summary;
+  const verdict = new Map(comparison.findings.map((f) => [f.fingerprint, f]));
+  const set = (fp: string, status: ReviewerStatus, reason: string) => {
+    const cur = store.getWorkflow(projectId, fp);
+    store.setWorkflow(projectId, fp, { status, assignee: cur?.assignee, reason }, { actor: 'retest', runId });
   };
-
-  const set = (f: Finding, status: ReviewerStatus, reason: string) => {
-    const cur = store.getWorkflow(projectId, f.fingerprint);
-    store.setWorkflow(projectId, f.fingerprint, { status, assignee: cur?.assignee, reason }, { actor: 'retest', runId });
-  };
-
-  for (const f of prior) {
+  for (const f of store.listFindings(run.retestOfRunId).filter((x) => x.type !== 'ai_recommendation')) {
+    const v = verdict.get(f.fingerprint);
+    if (!v) continue;
     const cur = store.getWorkflow(projectId, f.fingerprint)?.status ?? 'open';
     if (cur === 'accepted_risk' || cur === 'false_positive') continue; // a person's decision stands
     const claimed = cur === 'fixed' || cur === 'retest';
-    if (now.has(f.fingerprint)) {
+    if (v.status === 'persistent') {
       if (cur !== 'open' && cur !== 'assigned') {
-        set(f, 'open', 'Found again in the retest.');
+        set(f.fingerprint, 'open', 'Found again in the retest.');
         summary.reopened++;
       }
-    } else if (tested(f)) {
+    } else if (v.status === 'resolved') {
       if (claimed) {
-        set(f, 'verified', 'Not found in the retest, and the same check passed on the same screen at the same screen size.');
+        set(f.fingerprint, 'verified', 'Not found in the retest, and the same check passed on the same screen at the same screen size.');
         summary.verified++;
       } else if (cur === 'open' || cur === 'assigned') {
-        set(f, 'not_reproduced', 'Not found in the retest. Nobody marked it fixed, so it may be intermittent or changed by other edits.');
+        set(f.fingerprint, 'not_reproduced', 'Not found in the retest. Nobody marked it fixed, so it may be intermittent or changed by other edits.');
         summary.notReproduced++;
       }
     } else if (claimed) {
-      set(f, 'not_retested', !finished ? 'The retest did not finish, so this was not confirmed.' : !comparable(f) ? 'The retest used a different browser version from the original scan, so the results are not comparable.' : 'Not found, but the same screen was not reached again or this exact check did not run, so this is not confirmed.');
+      set(f.fingerprint, 'not_retested', v.status === 'incomparable' ? `Not comparable: ${v.reason}` : v.reason);
       summary.notRetested++;
     }
   }

@@ -16,10 +16,11 @@ export function check(
   outcome: CheckOutcome,
   durationMs: number,
   evidenceIds: EvidenceId[],
-  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string; attempt?: number; firstAttemptOutcome?: CheckOutcome; targetKey?: string },
+  extra: { stateId?: StateId; viewportName?: string; reason?: ReasonCode; reasonDetail?: string; itemsEvaluated?: number; engineVersion?: string; attempt?: number; firstAttemptOutcome?: CheckOutcome; targetKey?: string; targetFamily?: string },
 ): NewCheck {
   const c: NewCheck = { ruleId, outcome, durationMs, evidenceIds, executedAt: nowIso() };
   if (extra.targetKey) c.targetKey = extra.targetKey;
+  if (extra.targetFamily) c.targetFamily = extra.targetFamily;
   if (extra.stateId) c.stateId = extra.stateId;
   if (extra.viewportName) c.viewportName = extra.viewportName;
   if (extra.reason) c.reason = extra.reason;
@@ -55,6 +56,7 @@ export function finding(
     occurrences?: Finding['occurrences'];
     /** Set for rules that run once per control or case, with the same value as the check's `targetKey`. */
     checkKey?: string;
+    checkFamily?: string;
   },
 ): NewFinding {
   const rule = getRule(ruleId);
@@ -74,6 +76,7 @@ export function finding(
     remediation: f.remediation,
     standards: f.standards ?? rule.standards,
     ...(f.checkKey ? { checkKey: f.checkKey } : {}),
+    ...(f.checkFamily ? { checkFamily: f.checkFamily } : {}),
     fingerprint: fingerprint({ ruleId, url: location.url, stateKey: f.stateKey ?? 'initial', targetKey: f.targetKey }),
   } satisfies Omit<Finding, 'id' | 'runId' | 'reviewer' | 'createdAt'>;
 }

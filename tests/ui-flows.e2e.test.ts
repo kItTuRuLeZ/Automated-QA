@@ -215,8 +215,8 @@ describe('results', () => {
     await page.goto(`${origin}/#/runs/${seeded.runId}`);
     await visible(page.getByText('Scan finished — review the results'));
     expect(await page.getByText(/QA passed/i).count()).toBe(0);
-    await hasText(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link'), ['Summary', 'Issues 3', 'Coverage', 'Manual review', 'Technical details']);
-    for (const tab of ['issues', 'coverage', 'manual', 'technical']) {
+    await hasText(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link'), ['Summary', 'Issues 3', 'Coverage', 'Manual review', 'Compare', 'Technical details']);
+    for (const tab of ['issues', 'coverage', 'manual', 'compare', 'technical']) {
       await page.goto(`${origin}/#/runs/${seeded.runId}/${tab}`);
       await count(page.getByRole('navigation', { name: 'Result sections' }).locator('[aria-current="page"]'), 1);
     }

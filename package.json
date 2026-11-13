@@ -21,7 +21,9 @@
     "backup": "tsx scripts/cli.ts backup",
     "restore": "tsx scripts/cli.ts restore",
     "retention": "tsx scripts/cli.ts retention",
-    "fixtures:serve": "tsx scripts/serve-fixtures.ts"
+    "fixtures:serve": "tsx scripts/serve-fixtures.ts",
+    "test:ui": "playwright test",
+    "test:scorecard": "node scripts/scorecard.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.64.1",

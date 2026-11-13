@@ -86,6 +86,8 @@ export interface CheckResult {
   durationMs: number;
   /** Which exact assertion this was, for rules that run once per control or case. A retest matches it against `Finding.checkKey`. */
   targetKey?: string;
+  /** The same check across versions (case and control or rule, without version numbers), so a changed check can be recognised. */
+  targetFamily?: string;
   /** Number of elements/items evaluated, when meaningful. */
   itemsEvaluated?: number;
   evidenceIds: EvidenceId[];
@@ -166,6 +168,8 @@ export interface Finding {
   fingerprint: string;
   /** The exact assertion that failed, when its rule covers many controls or cases. Only a pass of this same key can confirm a fix. */
   checkKey?: string;
+  /** The same check across versions; see `CheckResult.targetFamily`. */
+  checkFamily?: string;
   /** For `ai_recommendation` only: provider/model/prompt version and scope (Phase 8). */
   advisory?: {
     provider: string;

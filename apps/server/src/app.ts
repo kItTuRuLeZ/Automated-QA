@@ -2,7 +2,7 @@ import { createReadStream, existsSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 import type { ProfileId, ProjectId } from '@cqa/shared';
-import { buildProjectReport, buildRunReport, recordBaselineFromRun, reportForCourse, runReportAsProject, ProfileInput, newId, profileScanOptions, toClientProfile, validateWorkflowChange, viewportsByName } from '@cqa/core';
+import { buildProjectReport, buildRunReport, compareRuns, recordBaselineFromRun, reportForCourse, runReportAsProject, ProfileInput, newId, profileScanOptions, toClientProfile, validateWorkflowChange, viewportsByName } from '@cqa/core';
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { type CapabilityOptions, buildCapabilities, probeBrowserStart } from './capabilities.js';
@@ -368,6 +368,15 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const run = finding ? store.getRun(finding.runId) : undefined;
     if (!finding || !run) return notFound(reply);
     return store.listHistory(run.projectId, finding.fingerprint);
+  });
+
+  // Compares this scan with an earlier scan of the same project: new, still there, resolved, not retested, or not comparable.
+  app.get<{ Params: { id: string }; Querystring: { with?: string } }>('/api/runs/:id/compare', async (req, reply) => {
+    const after = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
+    const before = req.query.with && isOpaqueId(req.query.with) ? store.getRun(req.query.with) : undefined;
+    if (!after || !before) return notFound(reply, 'Scan not found.');
+    if (before.projectId !== after.projectId) return reply.code(400).send({ error: 'Choose an earlier scan from the same project.' });
+    return compareRuns(store, before.id, after.id);
   });
 
   // A retest is a new, separate scan of the same course with the same settings; the earlier scan is never changed.
