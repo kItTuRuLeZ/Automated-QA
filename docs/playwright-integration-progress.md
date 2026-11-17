@@ -19,7 +19,7 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 12. Failure handling and isolation | Done (13 Nov 2026), not committed | See "Phase 12" below |
 | 13. Tests for the tool itself | Done (13 Nov 2026), not committed | See "Phase 13" below |
 | 14. Comparing course versions | Done (13 Nov 2026), not committed | See "Phase 14" below |
-| 15 | Not started | |
+| 15. Compatibility and pilot readiness | Done 17 Nov 2026 (fixture evidence, plus one real Rise course; no real seeded-fault course yet), not committed | See "Phase 15" below |
 
 ## Phase 1 test run
 
@@ -574,6 +574,35 @@ Visual comparison against an explicitly accepted baseline, with identical settin
 
 - **Package versions:** a re-uploaded package is the same course only if its file name matches. There is no content-based identity.
 - **Comparison in reports:** the comparison appears in the app only, not in exported reports.
+
+## Phase 15: compatibility and pilot readiness
+
+### What changed
+
+- **New documents:** `docs/compatibility-matrix.md` (real exports kept apart from synthetic fixtures, and verified environments apart from unverified ones), `docs/pilot-checklist.md` (12 checks), `docs/rollback.md` (backup, rollback and switching features off), and `docs/requirements-status.md` (implemented, partial, not supported).
+- **`docs/SETUP.md`:** commands verified on Windows, the writable folders, ports, concurrency and retention settings, where each part runs, running one copy only, and the new error messages with their remedies.
+- **`docs/qa-reviewer-guide.md`:** quiz answer keys, search, browser traces and Compare.
+- **`docs/interaction-support-matrix.md`:** the Storyline row now matches audit A6 (rules do not look inside a course frame).
+- No code changed in this phase.
+
+### Real-course run (17 Nov 2026)
+
+A fresh scan of the Leadership Expectations package (Rise 360 SCORM; run `4e4de181-8b3c-423d-892e-f7402bbed5cb` in the CoBank project) with interactions, accessibility and layout on:
+- Completed. 12 of 14 lessons visited, 2 not reached. 89 of 114 automated checks ran: 88 passed, 1 failed (MED-02, no caption track on the video). 30 of 106 detected interactions exercised; 58 manual checks remain; inventory discovery partial.
+- Compare with the 7 Nov scan `5a368b5e`: 26 findings still there, none new, resolved, not retested or incomparable.
+- HTML report (6.1 MB) shows the same counts and lists all 14 screens. Evidence archive: 57 files, 56 in the manifest plus the manifest itself.
+- An earlier attempt (`aa0663bd`) ended partial because the computer was switched off during the scan; the tool marked it "worker stopped" at the next start, as designed.
+
+### Review
+
+A separate review of the documents found 10 problems, all fixed: the hosting claim (the server accepts only localhost requests, so the web app cannot be hosted elsewhere), the "second copy" pilot check (a second `npm start` rebuilds the web app before the worker refuses it), `test:ui` rebuilding the web app, what Ctrl+C does to a running scan, where backups go, the partial-run check (no time-limit setting; Max screens is used), the Storyline row, what the Quick profile turns off, the retention command's arguments, and the real-run result.
+
+### Limitations
+
+- **No real course with known, seeded faults has been scanned.** Real-course evidence is one Rise course that the tool walks well and one Storyline course it walks only partly. Pilot check 3 needs Karthik's courses.
+- Only Windows 11 and Chromium are verified. Linux, macOS, other browsers and a real LMS are untested.
+- The pilot checklist has not been run by a person.
+- Running a second copy is not prevented for the server or the web build, only for the worker.
 
 ## Architecture decisions
 

@@ -51,6 +51,27 @@ The `fixtures/` folder is a small pack of local sample courses with known proble
 
 The setting accepts only loopback address and port pairs. Anything else, including other private addresses and cloud metadata addresses, is ignored with a warning in the server log. It is read once at start-up and cannot be changed from the app. Leave it unset for normal use.
 
+## Verified commands and where each part runs
+
+Verified on Windows 11 with Node 24 and Playwright 1.64.1 on 13 November 2026. **Not verified on Linux or macOS**; the same commands are expected to work there, but nothing in this section has been run on them.
+
+| Purpose | Command | Notes |
+| --- | --- | --- |
+| Install once | `npm install`, then `npm run browsers:install` | Downloads the headless Chromium build scans use (about 1 GB of disk) |
+| Start | `npm start` | Builds the web app, then runs the server (127.0.0.1:4317, packages on 4318) and the worker |
+| Stop | Ctrl+C in the window running it | A scan that was running stays shown as running until the next start, which marks it partial or failed ("the worker stopped before this scan finished") and clears temp folders |
+| Type-check | `npm run typecheck` | |
+| Tests | `npm test` | About 45 to 60 minutes; unit and browser integration tests |
+| Tool UI tests | `npm run test:ui` | Uses ports 4417 and 4418 and an empty data folder. It rebuilds the web app first, so reload any open copy of the tool afterwards |
+| Detection scorecard | `npm run test:scorecard` | About 15 minutes |
+
+- **Writable folders:** `data/` (database, evidence) and `data/tmp` (scan temp files); set `CQA_DATA_DIR` to move them. Backups go to `backups/` in the folder you run the command from, unless you name a path: `npm run backup -- <file.zip>`.
+- **Ports:** `CQA_PORT` and `CQA_PACKAGE_PORT`.
+- **Concurrency:** `CQA_WORKER_CONCURRENCY`, 1 to 4, default 1. Each scan runs a full Chromium.
+- **Evidence retention:** `npm run retention -- --days 90` (add `--dry-run` to see what would go).
+- **Where each part runs:** all three parts run on one computer. The web app (`apps/web/dist`) is static files, but the server accepts requests only for 127.0.0.1 or localhost on its own port and from its own pages, so it is served by the tool's server, not hosted separately. Hosting it elsewhere would need that allow-list changed in code. The worker needs Chromium and runs beside the database. The tool has no login: do not expose it on a network. A shared pilot needs the organisation's existing access controls in front of it. A container is not required.
+- **Run one copy only.** A second `npm start` is refused by the worker, but before that it rebuilds the web app, which breaks an open copy's pages until reloaded, and its server then stops because the port is taken.
+
 ## Settings
 
 | Setting | Default | What it does |
@@ -96,3 +117,8 @@ Restore checks every checksum and the database's own integrity check before chan
 | `npm run restore` says the app is running | Stop `npm start` first |
 | A scan fails with "The scan browser (Chromium) was not found at …" | The browser is not where Playwright looks. Run `npm run browsers:install`. If the `PLAYWRIGHT_BROWSERS_PATH` environment variable is set, it must point at the folder that holds the browsers (by default `%LOCALAPPDATA%\ms-playwright` on Windows), or be removed |
 | A scan fails with "The scan browser closed or crashed during the scan" | Chromium stopped part-way (out of memory, killed process). Results up to that point are kept; run the scan again, with fewer scans at once if `CQA_WORKER_CONCURRENCY` is above 1 |
+| "Another copy of the tool is already running (process …). This copy was not started" | A second `npm start` was run. Use the copy already open, or close it first. A copy that crashed releases its lock when its process is gone, or after 5 minutes |
+| Help → System status: "Installed, but it could not start the way scans start it: …" | The headless browser scans use is missing or blocked (for example by antivirus). Run `npm run browsers:install`; the status is rechecked after 30 seconds |
+| "Unexpected Host header." (HTTP 421) | The app was opened by a name it does not expect (for example a tunnel or `localhost` on another port). Open http://127.0.0.1:4317 |
+| "Cross-origin requests are not allowed." or "Missing X-QA-Request header." (HTTP 403) | Something other than the app's own page sent a request. Use the app in the browser; scripts must send `X-QA-Request: 1` |
+| Log: "could not remove the scan temp folder; it is cleared at the next start" | Windows still held a file from the closed browser. Harmless; it is retried at the next start |

@@ -64,9 +64,28 @@ Use this for “after the learner opens all four items, Next should unlock”.
 4. List optional items, if any, so the scan can check they do not count.
 5. Choose what should happen (for example *A button becomes enabled*), what to watch (*Next*), and how long to wait.
 6. Choose *Any order* or *Must be in the order listed*.
-7. Save. The next Functional or Full scan tests it.
+7. Set **Approval** to *Reviewed* or *Approved*. A draft rule is still tested, but its results stay inconclusive and never count as a pass or a defect.
+8. Save. The next Functional or Full scan tests it.
 
 A scan reports whether the event fires after the last item, whether it fires too early (and after which click), whether repeated clicks on one item wrongly complete it, whether optional items wrongly count, and whether other orders behave as the rule says. The result shows the ordered list of clicks and what was seen after each. If the scan cannot find an item, or it matches several controls, the result is **Blocked** and says why.
+
+## Testing a quiz question
+
+Correct answers are never guessed. To test a question, give the tool its answer key.
+
+1. **Behavior rules → New rule**, and name the screen.
+2. Tick **This screen is a quiz question, and I have its answer key**.
+3. Write one line per case: `name | correct or incorrect | answers separated by ; | feedback shown | score shown` (the score is optional).
+4. Name the Submit button, and the Retry button and attempt limit if there is one. Tick "An answer is required" if blank answers must be refused.
+5. Set Approval to Reviewed, then save and rescan.
+
+The scan tries each answer from a fresh start and checks the feedback, score, selection, blank submission and retry.
+
+## Finding things in the results
+
+- **Search** at the top of the Screens tab: type a lesson title, a control's name, a check (for example TAB-01), a status or a reason. A match inside a lesson's blocks is labelled as such.
+- **Browser trace:** a failed check offers "Download the browser trace", a step-by-step recording. Open it with `npx playwright show-trace <file>`. It can contain page content, so it can be turned off on the scan page.
+- **Compare:** after a course is fixed, rescan it and open the **Compare** tab. Pick the earlier scan. Each issue shows as New, Still there, Resolved, Not retested or Not comparable, with a reason. Resolved means the same check ran again and passed in the same conditions; nothing else counts as a fix.
 
 ## Adding your team’s test cases
 
@@ -74,4 +93,4 @@ A scan reports whether the event fires after the last item, whether it fires too
 
 ## What this tool does not tell you
 
-A finished scan, with no issues, is not a QA sign-off. It does not test a real LMS, real devices, spelling and grammar, quiz scoring, drag and drop, or video and audio playback. It does not try every click order. The coverage numbers always show what they are out of. Anything the tool could not do is listed as **manual** or **blocked**, never as passed.
+A finished scan, with no issues, is not a QA sign-off. It does not test a real LMS, real devices, spelling and grammar, drag and drop, or quiz scoring without an answer key. Video and audio are checked for playing and pausing only, not watched. It does not try every click order. The coverage numbers always show what they are out of. Anything the tool could not do is listed as **manual** or **blocked**, never as passed.

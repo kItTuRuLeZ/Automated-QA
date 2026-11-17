@@ -26,7 +26,7 @@ These stay as manual cases in the library, listed for a person and never marked 
 | --- | --- |
 | Rise labeled graphics, process, sorting and scenario blocks | No real sample of their markup has been tested |
 | Rise knowledge checks without an answer key | Correct answers are never guessed. Add an answer key to a rule to test them |
-| Storyline hotspots and layers | Handled only as a walk step (a temporary workaround until Phase 7) |
+| Storyline hotspots and layers | Handled only as a walk step. Behavior rules do not yet look inside a course frame (audit A6), so on framed Storyline output a rule naming them is blocked |
 | Drag and drop | Needs known targets and expected placements |
 | Canvas content, and frames the scanner cannot open | Recorded as Not supported |
 
