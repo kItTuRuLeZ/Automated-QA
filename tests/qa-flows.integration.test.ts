@@ -98,7 +98,7 @@ describe('Quick check on a package', () => {
     const execs = qa.currentExecutions(run.id);
     expect(execs.length).toBeGreaterThan(0);
     expect(execs.every((e) => e.scope === 'static' && e.definitionId.startsWith('STAT-'))).toBe(true);
-    expect(execs.map((e) => e.definitionId).sort()).toEqual(['STAT-01', 'STAT-02', 'STAT-03']);
+    expect(execs.map((e) => e.definitionId).sort()).toEqual(['STAT-01', 'STAT-02', 'STAT-03', 'STAT-04', 'STAT-05', 'STAT-06']);
     expect(execs.find((e) => e.definitionId === 'STAT-01')!.status).toBe('passed');
     // No interaction case and no manual-review queue appear: this profile does not claim to have looked at behavior.
     expect(execs.some((e) => e.status === 'manual_review_required' && !e.definitionId.startsWith('STAT-'))).toBe(false);

@@ -37,6 +37,8 @@ export interface AuthoringToolInfo {
   adapterVersion: string;
   /** Decoded course text the inspector searches for outside links; dropped before the inspection is stored. */
   contentText?: { text: string; from: string };
+  /** The decoded course data, kept only during inspection (for linking captions to videos); removed before saving. */
+  courseData?: unknown;
   /** What the export itself says the course contains: Rise lessons and blocks, Storyline scenes, slides and layers. */
   outline?: OutlineEntry[];
 }
@@ -104,6 +106,7 @@ function rise(root: string, has: (rel: string) => boolean): AuthoringToolInfo | 
       const course = data.course ?? {};
       info.outline = riseOutline(course.lessons as RiseLesson[] | undefined);
       info.contentText = { text: JSON.stringify(course.lessons ?? []), from: 'scormcontent/runtime-data.js (lesson content)' };
+      info.courseData = course;
       const lessons = (course.lessons ?? []).filter((l) => l.type !== 'section');
       const blocks = lessons.reduce((n, l) => n + (l.items?.length ?? 0), 0);
       const checks = lessons.reduce((n, l) => n + (l.items ?? []).filter((i) => i.type === 'knowledgeCheck').length, 0);

@@ -2,6 +2,8 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { type AuthoringToolInfo, detectAuthoringTool } from './authoring.js';
+import { checkMediaAndNames } from './media.js';
+import { checkPackageText } from './text.js';
 
 /**
  * Static inspection of an extracted package. Nothing here runs course code.
@@ -38,8 +40,10 @@ export interface ManifestResource {
 }
 
 export interface PackageIssue {
-  ruleId: 'PKG-001' | 'PKG-002' | 'PKG-003' | 'PKG-004' | 'PKG-005' | 'PKG-006' | 'PKG-007';
+  ruleId: 'PKG-001' | 'PKG-002' | 'PKG-003' | 'PKG-004' | 'PKG-005' | 'PKG-006' | 'PKG-007' | 'PKG-008' | 'PKG-009' | 'PKG-010' | 'PKG-011' | 'PKG-012' | 'PKG-013';
   outcome: 'passed' | 'failed' | 'needs_review' | 'not_applicable' | 'not_tested';
+  /** Why a check was not tested (defaults to the state being unreachable). */
+  reason?: 'engine_error' | 'not_implemented' | 'state_unreachable';
   /** Plain description of what was found (or why nothing could be checked). */
   title?: string;
   detail: string;
@@ -221,7 +225,21 @@ export function inspectPackage(root: string): PackageInspection {
 
   result.issues.push(...missingRefs);
   scanTextFiles(root, files, result, lookup);
-  if (result.authoringTool) delete result.authoringTool.contentText;
+  const courseData = result.authoringTool?.courseData !== undefined ? { data: result.authoringTool.courseData, product: result.authoringTool.product } : undefined;
+  // Advisory checks never block an upload: if one breaks, its rules say so and are not passed.
+  const advisory = (rules: PackageIssue['ruleId'][], run: () => PackageIssue[]) => {
+    try {
+      result.issues.push(...run());
+    } catch (err) {
+      for (const ruleId of rules) result.issues.push({ ruleId, outcome: 'not_tested', reason: 'engine_error', detail: `This check could not run: ${String((err as Error)?.message ?? err).slice(0, 200)}` });
+    }
+  };
+  advisory(['PKG-008', 'PKG-009', 'PKG-010', 'PKG-011'], () => checkMediaAndNames(root, files, courseData));
+  advisory(['PKG-012', 'PKG-013'], () => checkPackageText(root, files, result.authoringTool));
+  if (result.authoringTool) {
+    delete result.authoringTool.contentText;
+    delete result.authoringTool.courseData;
+  }
   if (!result.issues.some((i) => i.ruleId === 'PKG-005')) result.issues.push({ ruleId: 'PKG-005', outcome: 'passed', detail: 'Every local file the manifest and launch pages refer to was found with matching letter case.' });
   const tool = result.authoringTool;
   const runtimeNote =

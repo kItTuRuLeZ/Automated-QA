@@ -235,6 +235,8 @@ export interface CoverageSummary {
   blockedRequests: number;
   /** Authoring platform recognized on the first page, when known. */
   platform?: 'storyline' | 'rise' | 'unknown';
+  /** Things the walk did to get past a screen that a reader should know about (for example, answering knowledge checks). */
+  walkAids?: string[];
 }
 
 export interface ScanRun {

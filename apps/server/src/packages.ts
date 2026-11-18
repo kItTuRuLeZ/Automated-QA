@@ -120,7 +120,7 @@ function recordStaticResults(deps: PackageRouteDeps, run: ScanRun, pkg: CoursePa
       runId: run.id,
       ruleId: ruleId as RuleId,
       outcome: worst.outcome,
-      reason: worst.outcome === 'not_tested' ? 'state_unreachable' : undefined,
+      reason: worst.outcome === 'not_tested' ? (worst.reason ?? 'state_unreachable') : undefined,
       reasonDetail: worst.outcome === 'not_tested' || worst.outcome === 'not_applicable' ? worst.detail : undefined,
       durationMs: 0,
       itemsEvaluated: list.length,
@@ -167,6 +167,12 @@ const REMEDIATION: Record<string, string> = {
   'PKG-005': 'Fix the file name or letter case so the reference and the file match exactly, or add the missing file, then re-publish.',
   'PKG-006': 'Host the file inside the package, or confirm the outside site is meant to be used and allow it when scanning.',
   'PKG-007': 'Scan the remaining lessons too, or note that they were not covered.',
+  'PKG-008': 'Export images at the size they are shown and compress them (JPEG quality about 80, or WebP); re-encode large video or stream it from a video service.',
+  'PKG-009': 'Compress the largest media files, or host large video outside the package, then re-publish.',
+  'PKG-010': 'Add a caption track to the video in the authoring tool, or confirm it has no speech.',
+  'PKG-011': 'Rename the files using letters, digits, hyphens and underscores only, then re-publish.',
+  'PKG-012': 'Correct the word in the authoring tool, or mark it "Not a real issue" if it is spelled as intended.',
+  'PKG-013': 'Make the wording consistent in the authoring tool, then re-publish.',
 };
 
 export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDeps): void {

@@ -161,6 +161,75 @@ describe('launching packages', () => {
     expect(h.store.listFindings(run.id).filter((f) => f.ruleId === 'NAV-001')).toEqual([]);
   });
 
+  it('answers Rise knowledge checks with the answers stored in the course, so a Continue that waits for correct answers unlocks', async () => {
+    // Synthetic: real Rise knowledge-check markup (quiz-card-option, quiz-submit-button, one Submit per question) with a
+    // Continue button that stays hidden until every question is answered correctly, as "Requires a correct answer" does.
+    const kc = (id: string, q: string, options: string[], input = 'radio') =>
+      `<div data-block-family="knowledgeCheck" data-block-id="${id}"><div data-testid="quiz-card"><p>${q}</p><div role="radiogroup">${options.map((o) => `<div data-testid="quiz-card-option"><label><input type="${input}" name="${id}"><div data-testid="quiz-mc-option-text"><p>${o}</p></div></label></div>`).join('')}</div><button data-testid="quiz-submit-button" type="button">SUBMIT</button><div class="fb"></div></div></div>`;
+    const html = (t: string) => `<div><p><span>${t}</span></p></div>`;
+    const course = {
+      lessons: [
+        {
+          id: 'kcl',
+          type: 'blocks',
+          title: 'Knowledge check',
+          items: [
+            { id: 'kc1', type: 'knowledgeCheck', settings: { requireCorrectAnswer: true }, items: [{ type: 'MULTIPLE_CHOICE', answers: [{ title: html('Internal Audit'), correct: false }, { title: html('The Business &amp; Leaders'), correct: true }] }] },
+            { id: 'kc2', type: 'knowledgeCheck', settings: { requireCorrectAnswer: true }, items: [{ type: 'MULTIPLE_RESPONSE', answers: [{ title: html('Alpha'), correct: true }, { title: html('Beta'), correct: false }, { title: html('Gamma'), correct: true }] }] },
+            { id: 'kc3', type: 'knowledgeCheck', items: [{ type: 'MATCHING', answers: [] }] },
+            { id: 'cont', type: 'divider', family: 'continue' },
+            { id: 'after', type: 'text' },
+          ],
+        },
+      ],
+    };
+    const runtimeData = `__jsonp("runtime-data.js","${Buffer.from(JSON.stringify({ course })).toString('base64')}");`;
+    const body = `<div data-lesson-id="kcl">
+      ${kc('kc1', 'Who owns controls?', ['Internal Audit', 'The Business &amp; Leaders'])}
+      ${kc('kc2', 'Pick two', ['Alpha', 'Beta', 'Gamma'], 'checkbox')}
+      <div data-block-family="knowledgeCheck" data-block-id="kc3"><p>Match the pairs</p></div>
+      <div data-block-id="cont"><button data-continue-btn data-testid="continue-btn" type="button" id="go" hidden>CONTINUE</button></div>
+      <div data-block-id="after" hidden><p>After the knowledge check</p></div>
+    </div>
+    <script>
+      const want = { kc1: ['The Business & Leaders'], kc2: ['Alpha', 'Gamma'] }, done = {};
+      for (const [id, right] of Object.entries(want)) {
+        const b = document.querySelector('[data-block-id="' + id + '"]');
+        b.querySelector('[data-testid="quiz-submit-button"]').addEventListener('click', (e) => {
+          const picked = [...b.querySelectorAll('input:checked')].map((i) => i.closest('label').textContent.trim());
+          done[id] = picked.length === right.length && right.every((r) => picked.includes(r));
+          b.querySelector('.fb').textContent = done[id] ? 'Correct' : 'Incorrect';
+          if (done[id]) e.currentTarget.hidden = true;
+          document.getElementById('go').hidden = !(done.kc1 && done.kc2);
+        });
+      }
+      document.getElementById('go').addEventListener('click', (e) => { e.target.hidden = true; document.querySelector('[data-block-id="after"]').hidden = false; });
+    </script>`;
+    const files = {
+      'imsmanifest.xml': manifest12({ launch: 'scormcontent/index.html' }),
+      'scormcontent/index.html': page('Knowledge check', body, '<script src="lib/rise/app.js"></script>'),
+      'scormcontent/lib/rise/app.js': 'window.__riseLike = true;',
+      'scormcontent/runtime-data.js': runtimeData,
+    };
+    const settings = { explore: true, functional: true, qaProfile: 'functional', accessibility: false, layout: false };
+    const reached = (run: ScanRun) => (h.store.db.prepare("SELECT source_id FROM inventory_units WHERE run_id = ? AND kind = 'block' AND visited_at IS NOT NULL").all(run.id) as Array<{ source_id: string }>).map((b) => b.source_id);
+
+    const run = await scanPackage(files, { ...settings, autoAnswer: true });
+    expect(run.coverage?.platform).toBe('rise');
+    expect(reached(run)).toContain('after');
+    // The answering is disclosed with the run (and so in the report), and a question type it cannot answer is reported.
+    expect(run.coverage?.walkAids).toEqual([expect.stringMatching(/^Answered 2 Rise knowledge check\(s\) with the answers stored in the course.*not judged/)]);
+    const notes = JSON.stringify([h.store.listCheckResults(run.id), h.store.listFindings(run.id)]);
+    expect(notes).toMatch(/A matching knowledge check on .* was not answered automatically/);
+    // Answering only helped the walk: no quiz verdict comes from it.
+    expect(h.store.listFindings(run.id).filter((f) => /knowledge|quiz|answer/i.test(f.title))).toEqual([]);
+
+    // Without automatic answers the walk stops at the knowledge check, as before.
+    const off = await scanPackage(files, { ...settings, autoAnswer: false });
+    expect(reached(off)).not.toContain('after');
+    expect(off.coverage?.walkAids).toBeUndefined();
+  });
+
   it('reaching an end screen does not mean everything was covered: an unexplored branch stays a gap', async () => {
     // Next leads straight to the end; a second path is behind a button the scanner has no rule for, so it never opens.
     const run = await scanPackage(

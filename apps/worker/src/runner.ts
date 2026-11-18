@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
-import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RunStatus, ScanRun } from '@cqa/shared';
+import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RuleId, RunStatus, ScanRun } from '@cqa/shared';
 import { DEFAULT_LAYOUT_SETTINGS, MAPPINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, deriveMappedExecutions, newId, nowIso, rulesForEngines, seedStarterLibrary, unitsFromPackage } from '@cqa/core';
 import { createHash } from 'node:crypto';
 import { ENGINE_VERSION, recordRunLevelCases, runFunctionalTests } from './engines/functional.js';
@@ -345,6 +345,12 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
           traversal = await engine.explore({ ...ctx, state: out.state }, (state) => store.insertState(state));
           store.insertActions(traversal.actions);
           for (const c of traversal.checkResults) store.insertCheckResult({ ...c, id: newId<CheckResultId>(), runId: run.id });
+          // What stopped the walk getting past a screen (a rule item not found, a question it could not answer, a screen
+          // it could not reach again) is a gap the reader must see. Budget limits are already reported by COV-004.
+          for (const n of traversal.coverage) {
+            if (String(n.reason).startsWith('budget_')) continue;
+            store.insertCheckResult({ id: newId<CheckResultId>(), runId: run.id, ruleId: 'COV-005' as RuleId, stateId: n.stateId, viewportName: run.config.viewports[0]?.name, outcome: 'not_tested', reason: n.reason, reasonDetail: n.detail, durationMs: 0, evidenceIds: [], executedAt: nowIso() });
+          }
           for (const f of traversal.findings) store.upsertFinding({ ...f, id: newId<FindingId>(), runId: run.id, reviewer: { status: 'open', updatedAt: nowIso() }, createdAt: nowIso() });
         } catch (err) {
           if (controller.signal.aborted) throw err;
@@ -487,6 +493,7 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       budgetsReached,
       blockedRequests: new Set(blocked.filter((b) => b.host).map((b) => b.url)).size,
       platform: out.platform,
+      ...(traversal?.walkAids?.length ? { walkAids: traversal.walkAids } : {}),
     };
 
     // Screens that could not be reached again at another viewport leave that viewport only partly checked.

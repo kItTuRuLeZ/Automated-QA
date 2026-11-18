@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "dictionary-en": "^4.0.0",
     "fast-xml-parser": "^5.11.2",
     "fflate": "^0.8.3",
     "ipaddr.js": "^2.5.0",
+    "nspell": "^2.1.5",
     "pino": "^10.4.0",
     "zod": "^4.6.5"
   }

@@ -22,6 +22,7 @@ import { type CandidateAction, GenericHtmlAdapter } from '../adapters/generic-ht
 import { type StateSnapshot, snapshotState, surfaceScan } from '../adapters/dom-scripts.js';
 import type { BlockedConnection } from '../net/egress-proxy.js';
 import { blocksScrolledIntoView, controlsSettled } from '../adapters/rise.js';
+import { type RiseQuestion, answerRiseKnowledgeChecks, loadRiseQuestions } from '../adapters/rise-answers.js';
 import { isAbort } from './capture.js';
 import type { KeyboardPassInput } from './keyboard.js';
 import { type NewCheck, type NewFinding, assertionKey, check, dedupe, finding, hostOf, truncate } from './helpers.js';
@@ -48,6 +49,8 @@ export interface TraversalOutput extends EngineResult {
   inaccessibleFrames: number;
   unsupportedSurfaces: number;
   budgetsReached: ReasonCode[];
+  /** Plain notes on what the walk did to get past screens (for the report). */
+  walkAids?: string[];
 }
 
 const POST_TIMEOUT_MS = 1_500;
@@ -103,6 +106,11 @@ export class Traversal {
   private readonly adapter = new GenericHtmlAdapter();
   private readonly gated = new WeakSet<object>();
   private readonly unanswered = new WeakSet<object>();
+  private readonly riseAnswered = new WeakSet<object>();
+  private riseQuestions?: Promise<RiseQuestion[] | undefined>;
+  private readonly riseAnsweredBlocks = new Set<string>();
+  private readonly riseNotedBlocks = new Set<string>();
+  private riseLoadFailures = 0;
   private readonly revealedAfterNext = new WeakSet<object>();
   /** How many slides each unrecognized control was found on. */
   private readonly frameControls = new Map<string, number>();
@@ -336,6 +344,7 @@ export class Traversal {
         await cur.waitForSelector('[data-block-id]', { timeout: 5_000 }).catch(() => undefined);
         await blocksScrolledIntoView(cur).catch(() => undefined);
         await controlsSettled(cur);
+        if (this.deps.autoAnswer) await this.answerRiseChecks(node, page, cur, settle, snap, execute, coverage, describePath);
       }
 
       // ---- discover actions ----
@@ -733,6 +742,7 @@ export class Traversal {
       errors,
       durationMs: Date.now() - started,
       states,
+      walkAids: this.riseAnsweredBlocks.size ? [`Answered ${this.riseAnsweredBlocks.size} Rise knowledge check(s) with the answers stored in the course, so the walk could pass a Continue button that waits for correct answers. Those answers were not judged; whether the course marks them correctly needs an answer key.`] : undefined,
       replay: states.map((st) => {
         const n = [...nodes.values()].find((x) => x.state.id === st.id);
         return { stateId: st.id, steps: (n?.path ?? []).map((c) => ({ kind: c.kind, locator: c.locator, rawHref: c.rawHref, description: c.targetDescription, dragTo: (c as Candidate & { dragTo?: string }).dragTo, force: c.adapter === 'gate-rule' || (c as Candidate & { force?: boolean }).force || undefined })) };
@@ -872,6 +882,47 @@ export class Traversal {
     return true;
   }
 
+  /**
+   * Rise: answers the screen's knowledge checks with the answers stored in the course, so a Continue button that waits
+   * for correct answers unlocks. Once per screen; a reviewer's rule for the screen takes precedence. No verdict is made.
+   */
+  private async answerRiseChecks(
+    node: Node,
+    page: Page,
+    cur: Page,
+    settle: () => Promise<void>,
+    snap: () => Promise<StateSnapshot>,
+    execute: (a: Candidate) => Promise<void>,
+    coverage: EngineResult['coverage'],
+    describe: (p: Candidate[]) => string[],
+  ): Promise<void> {
+    if (this.riseAnswered.has(node) || this.gated.has(node)) return;
+    this.riseAnswered.add(node);
+    // A failed read (the frame was still loading, say) is tried again on later screens, a few times, then reported once.
+    if (!this.riseQuestions || (this.riseLoadFailures > 0 && this.riseLoadFailures < 3 && (await this.riseQuestions) === undefined)) this.riseQuestions = loadRiseQuestions(cur);
+    const questions = await this.riseQuestions;
+    if (questions === undefined && ++this.riseLoadFailures === 3) {
+      coverage.push({ reason: 'engine_error', detail: "The course's own data (runtime-data.js) could not be read, so Rise knowledge checks were answered only where a single question and a single Submit button were on screen.", stateId: node.state.id });
+    }
+    const { steps, skipped } = questions?.length ? await answerRiseKnowledgeChecks(cur, questions, settle, this.riseAnsweredBlocks) : { steps: [], skipped: [] };
+    const where = node.state.lessonTitle ?? node.state.title ?? node.state.url;
+    // One note per question block for the whole walk, not one per screen it stays visible on.
+    for (const s of skipped) {
+      if (this.riseNotedBlocks.has(s.blockId)) continue;
+      this.riseNotedBlocks.add(s.blockId);
+      coverage.push({ reason: 'ambiguous_action', detail: `${capitalizeFirst(s.why)} on "${where}" was not answered automatically, so the walk may stop there.`, stateId: node.state.id });
+    }
+    if (!steps.length) {
+      // Nothing in the course data for this screen (a quiz lesson, or the data could not be read): fall back to the
+      // general answerer, which answers one question with one Submit button.
+      await this.passGate(node, page, cur, settle, snap, execute, coverage, describe, { riseFallback: true });
+      return;
+    }
+    for (const s of steps) if (s.blockId) this.riseAnsweredBlocks.add(s.blockId);
+    node.path = [...node.path, ...steps.map((s) => ({ fromStateId: node.state.id, kind: 'click', locator: s.locator, adapter: 'course-answers', targetDescription: s.description }) as Candidate)];
+    node.snap = await snap();
+  }
+
   /** Performs a matching rule's items in order. The clicks become part of the node's path, so replays repeat them. */
   private async passGate(
     node: Node,
@@ -882,6 +933,7 @@ export class Traversal {
     _execute: (a: Candidate) => Promise<void>,
     coverage: EngineResult['coverage'],
     _describe: (p: Candidate[]) => string[],
+    opts: { riseFallback?: boolean } = {},
   ): Promise<void> {
     const gate = (this.deps.gates ?? []).find((g) => {
       const needle = g.unitMatch.trim().toLowerCase();
@@ -892,7 +944,8 @@ export class Traversal {
     // Once per screen. (A rule that matches several screens, such as every quiz question, must run again on each.)
     if (this.gated.has(node)) return;
     let use = gate;
-    if (!use && this.deps.autoAnswer) {
+    // On Rise the course-data answerer goes first (after the lesson's blocks are drawn) and calls back here if it had nothing to answer.
+    if (!use && this.deps.autoAnswer && (!this.deps.walkOnly || opts.riseFallback)) {
       // No rule for this screen: if it asks a question (answer choices and a Submit button), answer it so the walk can go on.
       const found = await cur.evaluate(() => {
         const v = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
@@ -902,7 +955,8 @@ export class Traversal {
       const submit = found.all ? await resolveItem(cur, { label: 'Submit' }) : undefined;
       if (found.shown && submit) use = { title: 'Automatic answer', unitMatch: '', items: [{ label: '[first option]' }, { label: 'Submit' }], ordered: true };
       // Only once the choices are on screen: earlier they may simply not have appeared yet.
-      else if (found.shown && !this.unanswered.has(node)) {
+      // (On Rise, several knowledge checks on one screen each have a Submit; the course-data answerer reports those itself.)
+      else if (found.shown && !this.unanswered.has(node) && !opts.riseFallback) {
         this.unanswered.add(node);
         coverage.push({ reason: 'ambiguous_action', detail: `"${node.state.lessonTitle ?? node.state.title ?? node.state.url}" has ${found.shown} answer choice(s) on screen but no single Submit button was found, so it was not answered automatically.`, stateId: node.state.id });
       }

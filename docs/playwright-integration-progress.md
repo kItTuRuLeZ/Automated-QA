@@ -19,7 +19,8 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 12. Failure handling and isolation | Done (13 Nov 2026), not committed | See "Phase 12" below |
 | 13. Tests for the tool itself | Done (13 Nov 2026), not committed | See "Phase 13" below |
 | 14. Comparing course versions | Done (13 Nov 2026), not committed | See "Phase 14" below |
-| 15. Compatibility and pilot readiness | Done 17 Nov 2026 (fixture evidence, plus one real Rise course; no real seeded-fault course yet), not committed | See "Phase 15" below |
+| 15. Compatibility and pilot readiness | Done 17 Nov 2026 (fixture evidence, plus one real Rise course; no real seeded-fault course yet), committed and merged | See "Phase 15" below |
+| Follow-up: gaps found by comparing with FULLPASS | Done 18 Nov 2026, not committed | See "Follow-up: comparison with FULLPASS" below |
 
 ## Phase 1 test run
 
@@ -603,6 +604,40 @@ A separate review of the documents found 10 problems, all fixed: the hosting cla
 - Only Windows 11 and Chromium are verified. Linux, macOS, other browsers and a real LMS are untested.
 - The pilot checklist has not been run by a person.
 - Running a second copy is not prevented for the server or the web build, only for the worker.
+
+## Follow-up: comparison with FULLPASS
+
+Karthik ran the Leadership Expectations package through FULLPASS (a hosted course QA product) on 17 Nov 2026 and supplied its report. Neither tool found a broken interaction. FULLPASS reported 26 issues; each was checked against the package:
+- **Correct and missed by us:** typos ("planse"; "lunderstanding", which is a struck-through letter left in the cover text), "CoBank" written "co-bank" in a caption file, mixed quote styles, an 11.3 MB / 10,639 px image, a 137 MB video, a 203 MB package, file names with spaces. It also played all 12 lessons; we reached 10.
+- **Wrong:** two of its three "video has no caption file" findings (Rise links those captions by asset ID, not file name) and both "missing space after a full stop" findings (the text has a line break there). Our runtime caption check had flagged only the one real case.
+
+### What changed
+
+- **Package checks PKG-008 to PKG-011** (`packages/core/src/package/media.ts`, cases STAT-04 and STAT-05): images over 1 MB or wider than 2560 px, video over 50 MB, audio over 20 MB; unzipped package over 100 MB; a video with no caption file (same name in any folder, a language suffix, or linked in Rise course data); file names with spaces or special characters. All are "needs review".
+- **Spelling and wording PKG-012 and PKG-013** (`packages/core/src/package/text.ts`, case STAT-06): reads Rise course data (every lesson, reached or not), plain HTML pages and caption files; checks words against the offline English (US) Hunspell dictionary (`nspell`, `dictionary-en`), missing spaces after full stops, a term written two ways, and mixed quote styles. Words with capitals are not checked. Storyline text is not read and is reported as not tested.
+- **Rise knowledge checks** (`apps/worker/src/adapters/rise-answers.ts`): with "Answer quiz questions automatically" on, the walk answers multiple-choice and multiple-response knowledge checks with the answers stored in the course, so a Continue that waits for correct answers unlocks. Other question types are reported. When the course data has nothing for a screen, the general answerer is used as before. The run's coverage and the HTML report say this was done; no verdict comes from it.
+- **Walk gaps are now saved** (new rule COV-005): notes such as a gate-rule item not found, a question not answered or a screen that could not be reached again were collected by the walk but never stored. Each is now a not-tested result.
+- Advisory package checks that throw no longer block an upload; their rules are recorded as not tested.
+
+### Real-course run
+
+Rescan `539540f0-518f-4dc6-8ed1-e577dac856c9` (re-uploaded package `6cb76bee`): all 12 lessons visited (before: 10), 5 knowledge checks answered from course data, 100 automated checks passed and 1 failed (MED-02, as before). The run is marked partial because one replay into Module 4 failed once ("the parent state could not be restored"); Module 4 was still reached another way. The new package checks match FULLPASS's correct findings and none of its wrong ones; "imbedded" and "lifecycle" are also flagged for review.
+
+### Review
+
+A separate review found 10 problems in the new code, all fixed: the general answerer was switched off for every Rise screen; an advisory check could fail the whole upload; slow spelling suggestions during upload; knowledge checks answered again on later screens; the same note repeated per screen; a failed course-data read was never retried or reported; a third copy of the HTML-to-text code; Storyline's "not read" given an "unreachable screen" reason; walk gaps filed under an unrelated rule; caption files with a language suffix not matched.
+
+### Tests
+
+- New: `tests/package-media.test.ts`, `tests/package-text.test.ts`, and a Rise knowledge-check scan in `tests/package-launch.integration.test.ts` (answers, the disclosure, the unanswerable type reported, and the walk stopping when automatic answers are off).
+- Fault removal: each of 17 new behaviours was removed in turn; a test failed every time.
+- 18 Nov, whole suite: 509 passed, 1 skipped, 46 files passed and 2 skipped (52 min).
+
+### Limitations
+
+- Spelling uses one English (US) dictionary, with no per-project word list yet; "Not a real issue" is the way to dismiss a word.
+- Storyline slide text and quiz answers are not read.
+- The replay failure that made the rescan partial has not been investigated.
 
 ## Architecture decisions
 

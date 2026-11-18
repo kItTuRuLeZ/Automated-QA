@@ -121,6 +121,8 @@ export interface RunReport {
     screenSizes: string[];
     toolVersions: Array<{ name: string; version: string }>;
     platform?: string;
+    /** Things the walk did to get past screens, which a reader should know about. */
+    walkAids: string[];
     aiUsed: false;
     /** Client profile used for this scan, if any (a person's settings, not built-in rules). */
     profile?: { name: string; brandSource?: string; rulesSwitchedOff: Array<{ ruleId: string; reason: string }>; severityChanges: Array<{ ruleId: string; severity: string; reason: string }> };
@@ -288,6 +290,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       screenSizes: run.config.viewports.map((v) => `${v.name} ${v.width}×${v.height}`),
       toolVersions,
       platform: run.coverage?.platform,
+      walkAids: run.coverage?.walkAids ?? [],
       aiUsed: false,
       profile: run.config.profile
         ? { name: run.config.profile.name, brandSource: run.config.profile.brand.provenance?.note, rulesSwitchedOff: run.config.profile.ruleExclusions, severityChanges: run.config.profile.severityOverrides.map((o) => ({ ruleId: o.ruleId, severity: o.severity, reason: o.reason })) }

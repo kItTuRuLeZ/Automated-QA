@@ -70,6 +70,8 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 | COV-002 | Inaccessible frame (cross-origin/sandboxed/blocked) | Frame URL (sanitized), reason | Every state | manual_review | Informational/high | 2 | implemented | Content inside is unverified. |
 | COV-003 | Canvas/unsupported rendering surface detected | Canvas size, location, screenshot | Every state | manual_review | Informational/high | 2 | implemented | DOM checks cannot inspect canvas content (e.g. parts of Storyline). |
 | COV-004 | Scan budget reached (pages, states, depth, time) | Budget, counts | Run | manual_review | Informational/high | 2 | implemented | Remaining states unverified. |
+| COV-005 | Walk could not get past or return to a screen (gate rule item not found, question not answered, replay failed) | Screen, what was tried | State | manual_review | Informational/high | 2 | implemented | Later screens may not have been reached. |
+| COV-005 | Walk could not get past or return to a screen (gate rule item not found, question not answered, replay failed) | Screen, what was tried | State | manual_review | Informational/high | 2 | implemented | Later screens may not have been reached. |
 
 ### Links (LNK)
 
@@ -142,6 +144,12 @@ Columns: **Type** = default finding type; **Sev/Conf** = default severity / conf
 | PKG-005 | Missing local reference / case mismatch | 6 | planned |
 | PKG-006 | External dependency declared or requested | 6 | planned |
 | PKG-007 | Multiple organizations/SCOs — scan selection disclosed | 6 | planned |
+| PKG-008 | Oversized media: image over 1 MB or wider than 2560 px, video over 50 MB, audio over 20 MB (needs review) | 6 | implemented |
+| PKG-009 | Unzipped package over 100 MB (needs review) | 6 | implemented |
+| PKG-010 | Video with no caption file, matched by name or through Rise course data (needs review) | 6 | implemented |
+| PKG-011 | File names with spaces or special characters (needs review) | 6 | implemented |
+| PKG-012 | Words not in the English (US) dictionary, from Rise course data, HTML pages and captions (needs review) | 6 | implemented |
+| PKG-013 | Missing space after a full stop, a term written two ways, mixed quote styles (needs review) | 6 | implemented |
 | SCO12-001..008 | SCORM 1.2 harness: API found and initialized; lifecycle order; Finish before leaving; values saved; API errors; lesson status reported; bookmark and resume; recorded tracking matches the expected settings (per journey) | 7 | heuristic (harness results, not LMS results) |
 | SCO04-001..008 | SCORM 2004 harness: same eight checks with the 2004 API (`API_1484_11`, Initialize/Terminate), error codes, vocabularies, and separate completion and success status | 7 | heuristic (harness results, not LMS results) |
 | FID-001..n | Storyboard text match / omission / alteration / unverified | 9 | planned |

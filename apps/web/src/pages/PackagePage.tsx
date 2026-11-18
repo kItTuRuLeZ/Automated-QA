@@ -165,7 +165,7 @@ export function PackagePage({ id }: { id: string }) {
                 <span>
                   <strong>Answer quiz questions automatically</strong>
                   <span className="help" style={{ display: 'block' }}>
-                    When a question blocks the way forward, the scan picks an answer and presses Submit (and tries other answers if the course wants the right one), so it can reach the screens after the quiz. Answers are not marked right or wrong in the results.{!interactions && ' Turn on “Test interactions” to use this.'}
+                    When a question blocks the way forward, the scan picks an answer and presses Submit (and tries other answers if the course wants the right one), so it can reach the screens after the quiz. Rise knowledge checks are answered with the answers stored in the course, and the report says so. Answers are not marked right or wrong in the results.{!interactions && ' Turn on “Test interactions” to use this.'}
                   </span>
                 </span>
               </label>

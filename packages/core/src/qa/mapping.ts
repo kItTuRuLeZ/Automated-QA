@@ -36,6 +36,9 @@ export const MAPPINGS: Mapping[] = [
   { caseId: 'STAT-01', rules: ['PKG-001', 'PKG-002', 'PKG-003', 'PKG-004', 'PKG-005'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
   { caseId: 'STAT-02', rules: ['PKG-006'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
   { caseId: 'STAT-03', rules: ['PKG-007'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
+  { caseId: 'STAT-04', rules: ['PKG-008', 'PKG-009', 'PKG-011'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
+  { caseId: 'STAT-05', rules: ['PKG-010'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
+  { caseId: 'STAT-06', rules: ['PKG-012', 'PKG-013'], engine: 'always', engineLabel: 'package file checks', scope: 'static' },
 ];
 
 const matches = (ruleId: string, patterns: string[]): boolean => patterns.some((p) => (p.endsWith('*') ? ruleId.startsWith(p.slice(0, -1)) : ruleId === p));

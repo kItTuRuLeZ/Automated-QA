@@ -376,7 +376,7 @@ export function NewScanPage({ projectId, presetUrl }: { projectId: string; prese
                 </label>
                 <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                   <input type="checkbox" checked={autoAnswer} disabled={!functional} onChange={(e) => setAutoAnswer(e.target.checked)} style={{ marginTop: '0.2rem' }} />
-                  <span><strong>Answer quiz questions automatically</strong><span className="help">Selects answers and submits to proceed past blocking quiz gates.</span></span>
+                  <span><strong>Answer quiz questions automatically</strong><span className="help">Selects answers and submits to proceed past blocking quiz gates. Rise knowledge checks are answered with the answers stored in the course, and the report says so. Answers are not marked right or wrong.</span></span>
                 </label>
                 <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                   <input type="checkbox" checked={traces} disabled={!functional} onChange={(e) => setTraces(e.target.checked)} style={{ marginTop: '0.2rem' }} />
