@@ -20,7 +20,8 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 13. Tests for the tool itself | Done (13 Nov 2026), not committed | See "Phase 13" below |
 | 14. Comparing course versions | Done (13 Nov 2026), not committed | See "Phase 14" below |
 | 15. Compatibility and pilot readiness | Done 17 Nov 2026 (fixture evidence, plus one real Rise course; no real seeded-fault course yet), committed and merged | See "Phase 15" below |
-| Follow-up: gaps found by comparing with FULLPASS | Done 18 Nov 2026, not committed | See "Follow-up: comparison with FULLPASS" below |
+| Follow-up: gaps found by comparing with FULLPASS | Done 18 Nov 2026, committed and merged | See "Follow-up: comparison with FULLPASS" below |
+| Follow-up: simpler scan page | Done 18 Nov 2026, not committed | See "Follow-up: simpler scan page" below |
 
 ## Phase 1 test run
 
@@ -638,6 +639,38 @@ A separate review found 10 problems in the new code, all fixed: the general answ
 - Spelling uses one English (US) dictionary, with no per-project word list yet; "Not a real issue" is the way to dismiss a word.
 - Storyline slide text and quiz answers are not read.
 - The replay failure that made the rescan partial has not been investigated.
+
+## Follow-up: simpler scan page
+
+Karthik found the scan page and reports too technical for a regular user (18 Nov 2026). This change covers the scan page; the shareable short report is not done yet.
+
+### What changed
+
+- **Simple view by default** (`apps/web/src/components/detail-level.ts`, `apps/web/src/components/run/SimpleSummary.tsx`): the scan opens on a plain verdict ("Needs fixes", "Needs your review", "Looks good"; never "Looks good" for a partial, failed or cancelled scan), three numbers (problems to fix, things to check by hand, not checked) and the problems in plain words, each with its screenshot and what to do.
+- **"Show technical details" switch** on the scan page, remembered per browser. Off: three tabs (Summary, Screens, Problems), no rule codes, no web addresses in screen names, plain status words ("Please check", "Not checked"), and scanner notes (frames not opened, controls not clicked) counted as not checked instead of listed as problems. On: the page as before.
+- "Not checked" is never hidden: it has its own number, a plain explanation and a link to the details.
+- The existing UI tests now run with technical details on; a new test covers the simple view.
+
+### Tests
+
+- New: `tests/detail-level.test.ts` and a simple-view test in `tests/ui-flows.e2e.test.ts`.
+- A separate review found 10 problems (switch not working when browser storage is blocked, mixed units in the not-checked number, a partial scan called "Looks good", hidden partial reason, a stale filter, three different rules for scanner notes, real names removed with rule codes, a blank heading, one listener per badge), all fixed.
+- Fault removal: 5 of 5 behaviours removed in turn were caught by a test.
+- 18 Nov, whole suite: 514 passed, 1 skipped (53 min). UI tests rerun after a final wording change: 23 passed.
+
+### One page, like FULLPASS (second pass, 18 Nov)
+
+Karthik asked for it simpler still, closer to FULLPASS's layout. The simple view is now one page with no tabs and no step bar: a verdict banner ("Not ready", "Review needed", "No problems found"), the course at a glance (made with, tracking, lessons played, screens checked, checks passed, not checked), a "Played like a learner" card (finished or where it stopped, a lesson-by-lesson list, and how it got past knowledge checks), then the problems grouped by type (Accessibility, Media, Course files…) as one-line rows with the lesson they are in ("Lesson 2 of 12: Module 1"); each row opens to show what to do and the screenshot. "Not checked" has its own card. The screen-by-screen view and the filtered list open from links, with a way back.
+- The report now lists the course's lessons in order and gives each problem its lesson (`lessons` and `issue.lesson` in `packages/core/src/report.ts`; Rise lessons or Storyline scenes).
+- "Looks good" is never shown when exploration was off, lessons were not reached, or checks could not run.
+- A second separate review found 10 problems (among them: "Looks good" possible with exploration off or lessons missed, the not-checked number counting dismissed items, Storyline scenes missing, a screen-by-screen link on scans without records, dead code), all fixed.
+- 18 Nov, whole suite: 516 passed, 1 skipped (55 min).
+- 20 Nov, finishing touches: the reason a scan stopped is written in plain words (new scans at source, older scans when shown), and a large file found by both the browser and the file check is listed once, from the file check. The affected tests pass (36); the whole suite was not rerun for these two small changes.
+
+### Limitations
+
+- The HTML, PDF and Excel reports are unchanged; a short shareable report is the next step.
+- Screen names in a Rise course are often all the course title, so "Where" can repeat it.
 
 ## Architecture decisions
 

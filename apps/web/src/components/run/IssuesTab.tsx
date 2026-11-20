@@ -4,6 +4,8 @@ import { api, type RunReport } from '../../api';
 import { STATUS_LABEL, isOpenWork } from '../IssueStatus';
 import { Alert, Empty, Pagination, SEVERITY_LABEL } from '../ui';
 import { IssueCard } from './IssueCard';
+import { useDetailLevel } from '../detail-level';
+import { isActionable } from './SimpleSummary';
 
 const PAGE = 25;
 const SEV_ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'informational'];
@@ -38,7 +40,12 @@ export function IssuesTab({
   const [retesting, setRetesting] = useState(false);
   const [retestError, setRetestError] = useState<string>();
 
-  const all = report.issues;
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
+  // The simple view lists problems a person can act on; what the scanner could not look at is counted on the Summary.
+  const all = simple ? report.issues.filter(isActionable) : report.issues;
+  // A link or bookmark to the coverage gaps list shows everything in the simple view, where that type is not offered.
+  const shownAction = simple && action === 'not_checked' ? 'all' : action;
   const openWork = all.filter((i) => isOpenWork(i.status));
   const pool = showAll ? all : openWork;
   const q = search.trim().toLowerCase();
@@ -46,12 +53,12 @@ export function IssuesTab({
     () =>
       pool.filter(
         (i) =>
-          (action === 'all' || i.action === action) &&
+          (shownAction === 'all' || i.action === shownAction) &&
           (priority === 'all' || i.priority === priority) &&
           (status === 'all' || i.status === status) &&
           (!q || `${i.issue} ${i.change} ${i.id} ${i.technical.ruleId} ${i.assignee ?? ''}`.toLowerCase().includes(q)),
       ),
-    [pool, action, priority, status, q],
+    [pool, shownAction, priority, status, q],
   );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const safePage = Math.min(page, pages - 1);
@@ -79,10 +86,16 @@ export function IssuesTab({
     <div>
       <div className="card toolbar">
         <div>
-          <p>
-            <strong>{all.length}</strong> finding{all.length === 1 ? '' : 's'} in this scan · <strong>{openWork.length}</strong> still open work
-          </p>
-          <p className="help">Open work is everything not yet Verified, Accepted risk or False positive. Marked fixed stays open until a retest confirms it. Nothing is removed from this scan’s history.</p>
+          {simple ? (
+            <p>
+              <strong>{openWork.length}</strong> problem{openWork.length === 1 ? '' : 's'} still open. When one is fixed, retest the course to confirm it.
+            </p>
+          ) : (
+            <p>
+              <strong>{all.length}</strong> finding{all.length === 1 ? '' : 's'} in this scan · <strong>{openWork.length}</strong> still open work
+            </p>
+          )}
+          <p className="help" hidden={simple}>Open work is everything not yet Verified, Accepted risk or False positive. Marked fixed stays open until a retest confirms it. Nothing is removed from this scan’s history.</p>
         </div>
         {canRetest && (
           <div className="retest-box">
@@ -107,14 +120,14 @@ export function IssuesTab({
       <div className="filters" role="search" aria-label="Filter issues">
         <div className="field">
           <label htmlFor="f-q">Search</label>
-          <input id="f-q" type="search" value={search} onChange={(e) => onFilter(setSearch)(e.target.value)} placeholder="Words, issue ID or owner" />
+          <input id="f-q" type="search" value={search} onChange={(e) => onFilter(setSearch)(e.target.value)} placeholder={simple ? "Words" : "Words, issue ID or owner"} />
         </div>
         <div className="field">
           <label htmlFor="f-action">Type</label>
-          <select id="f-action" value={action} onChange={(e) => onFilter(setAction)(e.target.value)}>
-            {ACTIONS.map((a) => (
+          <select id="f-action" value={shownAction} onChange={(e) => onFilter(setAction)(e.target.value)}>
+            {ACTIONS.filter((a) => !simple || a.id !== 'not_checked').map((a) => (
               <option key={a.id} value={a.id}>
-                {a.label}
+                {simple ? ({ all: 'All', fix: 'Problems to fix', check: 'Things to check by hand' } as Record<string, string>)[a.id] ?? a.label : a.label}
               </option>
             ))}
           </select>

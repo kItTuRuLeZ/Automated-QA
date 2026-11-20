@@ -669,3 +669,46 @@ textarea.mono { font-family: Consolas, 'Cascadia Mono', monospace; }
   .landing-hero-actions .btn { width: 100%; text-align: center; }
 }
 
+
+/* Simple view (default): one page with a verdict, the course at a glance, how the scan played it, and problems by type. */
+.detail-switch { display: inline-flex; align-items: center; gap: 0.4rem; margin-right: 0.75rem; font-size: 0.9rem; }
+.simple-results { display: grid; gap: 1rem; }
+.simple-results h2 { margin: 0 0 0.5rem; }
+.simple-verdict { display: flex; gap: 1rem; align-items: center; padding: 1.1rem 1.25rem; border-radius: 12px; border: 1px solid; }
+.simple-verdict h2 { font-size: 1.6rem; margin: 0; }
+.simple-verdict p { margin: 0.25rem 0 0; }
+.verdict-tag { flex: none; font-weight: 700; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.35rem 0.7rem; border-radius: 6px; color: #fff; }
+.verdict-bad { background: var(--danger-bg); border-color: var(--danger-border); }
+.verdict-bad .verdict-tag { background: #c62828; }
+.verdict-review { background: var(--warn-bg); border-color: var(--warn-border); }
+.verdict-review .verdict-tag { background: #9a6700; }
+.verdict-good { background: var(--ok-bg); border-color: var(--ok-border); }
+.verdict-good .verdict-tag { background: #2e7d32; }
+.verdict-none { background: #f1f2f5; border-color: #d5d8e0; }
+.verdict-none .verdict-tag { background: #5f6673; }
+.simple-facts dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem 1.5rem; margin: 0; }
+.simple-facts dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted, #6b7280); }
+.simple-facts dd { margin: 0.2rem 0 0; font-size: 1.15rem; font-weight: 600; }
+.played-result { padding: 0.6rem 0.8rem; border-radius: 8px; border-left: 4px solid; }
+.played-done { background: var(--ok-bg); border-color: var(--ok, #2e7d32); }
+.played-short { background: var(--warn-bg); border-color: #c58a00; }
+.lesson-list { margin: 0.5rem 0 0; padding-left: 1.25rem; }
+.lesson-list li { margin: 0.15rem 0; }
+.simple-problems-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.simple-problems-head .chips { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.simple-problems-head .chip { cursor: pointer; }
+.problem-group { margin-bottom: 1rem; }
+.problem-group h3 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #6b7280); margin: 0.75rem 0 0.4rem; }
+.problem-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+.problem-row { background: var(--surface, #fff); border: 1px solid var(--border, #e3e6ee); border-radius: 10px; }
+.problem-row > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; padding: 0.7rem 0.9rem; }
+.problem-row > summary::-webkit-details-marker { display: none; }
+.problem-row[open] > summary { border-bottom: 1px solid var(--border, #e3e6ee); }
+.problem-title { font-weight: 600; }
+.problem-where { flex-basis: 100%; font-size: 0.85rem; color: var(--muted, #6b7280); }
+.problem-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 1rem; padding: 0.9rem; }
+.problem-body p { margin: 0 0 0.5rem; }
+.badge-fix { background: var(--danger-bg); color: #8f1d14; border-color: var(--danger-border); }
+.badge-check { background: var(--warn-bg); color: #5c3b00; border-color: var(--warn-border); }
+.simple-more, .back-link { margin: 0.25rem 0 0; }
+@media (max-width: 720px) { .problem-body { grid-template-columns: 1fr; } .simple-verdict { flex-direction: column; align-items: flex-start; } }

@@ -511,8 +511,8 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
       reason = out.outOfScope ? 'out_of_scope' : budgetsReached[0] ?? (coverage.failedTransitions || viewportGaps ? 'state_unreachable' : 'engine_error');
       const parts = [
         out.outOfScope ? 'The target redirected outside the scan scope.' : '',
-        budgetsReached.length ? `Exploration stopped at a scan budget (${budgetsReached.join(', ')}).` : '',
-        coverage.failedTransitions ? `${coverage.failedTransitions} action(s) or state restorations failed.` : '',
+        budgetsReached.length ? `The scan stopped at its limit for ${[...new Set(budgetsReached.map((b) => BUDGET_PLAIN[b] ?? b))].join(', ')}, so later screens were not checked.` : '',
+        coverage.failedTransitions ? `The scan could not repeat ${coverage.failedTransitions === 1 ? 'one of its steps' : `${coverage.failedTransitions} of its steps`}, so ${coverage.failedTransitions === 1 ? 'a screen' : 'some screens'} may have been checked only in part.` : '',
         traversalError ? `Traversal error: ${traversalError}` : '',
         viewportGaps ? `${viewportGaps} screen(s) could not be reached again at a smaller viewport and were not checked there.` : '',
         contentErrors.length ? `Content checks failed on ${contentErrors.length} state(s): ${contentErrors[0]}` : '',
@@ -618,6 +618,9 @@ function applyLinkPolicy(links: LinkAppearance[], policy: { checkExternalLinks: 
   });
   return { kept, skipped: links.length - kept.length };
 }
+
+/** Scan limits in plain words, for the reason a scan stopped. */
+const BUDGET_PLAIN: Record<string, string> = { budget_states: 'the number of screens', budget_depth: 'how many clicks deep it goes', budget_pages: 'the number of pages', budget_runtime: 'time', budget_bytes: 'the amount of data downloaded' };
 
 /** The loopback origins of an uploaded package: the only traffic that comes from this computer's disk, not the internet. */
 function packageOrigins(origins: readonly string[]): Array<{ host: string; port: number }> {

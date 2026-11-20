@@ -2,13 +2,17 @@ import { api, type RunReport } from '../../api';
 import { IssueStatus } from '../IssueStatus';
 import { ScreenshotViewer } from '../ScreenshotViewer';
 import { SeverityBadge } from '../ui';
+import { plainScreenName, useDetailLevel, withoutRuleCodes } from '../detail-level';
 
 export type ReportIssue = RunReport['issues'][number];
 
 /** One issue, answering: what happened, where, what to do. Technical rule details are one click away. */
 export function IssueCard({ issue: i, screens, onSaved }: { issue: ReportIssue; screens: RunReport['screens']; onSaved?: () => void }) {
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
   const title = (label: string) => {
     const s = screens.find((x) => x.label === label);
+    if (simple) return s?.title ? plainScreenName(s.title) : label;
     return s?.title ? `${s.title} (${label})` : label;
   };
   return (
@@ -16,10 +20,10 @@ export function IssueCard({ issue: i, screens, onSaved }: { issue: ReportIssue; 
       <div className="issue-top">
         <SeverityBadge severity={i.priority} />
         <h3 className="issue-title">
-          <a href={`#/findings/${i.findingId}`}>{i.issue}</a>
+          <a href={`#/findings/${i.findingId}`}>{simple ? withoutRuleCodes(i.issue) : i.issue}</a>
         </h3>
-        <span className="muted mono issue-id">{i.id}</span>
-        {i.source === 'static' && <span className="badge">Static package check</span>}
+        {!simple && <span className="muted mono issue-id">{i.id}</span>}
+        {i.source === 'static' && <span className="badge">{simple ? 'Course files' : 'Static package check'}</span>}
       </div>
       <div className="issue-body">
         {i.screenshotId && (
@@ -34,9 +38,9 @@ export function IssueCard({ issue: i, screens, onSaved }: { issue: ReportIssue; 
           <div>
             <dt>Where</dt>
             <dd>
-              {i.screens.length ? `${i.screens.length > 1 ? 'Screens' : 'Screen'}: ${i.screens.map(title).join(', ')}` : 'This scan'}
+              {i.screens.length ? ((names) => `${names.length > 1 ? 'Screens' : 'Screen'}: ${names.join(', ')}`)([...new Set(i.screens.map(title))]) : 'This scan'}
               {i.viewports.length > 0 && ` · at ${i.viewports.join(', ')} size`}
-              {i.elements.length > 0 && (
+              {i.elements.length > 0 && !simple && (
                 <span className="muted block">
                   {i.elements.join('; ')}
                   {i.moreElements ? ` (+${i.moreElements} more)` : ''}
@@ -46,7 +50,7 @@ export function IssueCard({ issue: i, screens, onSaved }: { issue: ReportIssue; 
           </div>
           <div>
             <dt>What to do</dt>
-            <dd>{i.change}</dd>
+            <dd>{simple ? withoutRuleCodes(i.change) : i.change}</dd>
           </div>
         </dl>
       </div>
@@ -59,7 +63,7 @@ export function IssueCard({ issue: i, screens, onSaved }: { issue: ReportIssue; 
           ))}
         </ol>
         <p className="help">
-          Rule {i.technical.ruleId} · {i.technical.observed} · <a href={`#/findings/${i.findingId}`}>Open the full finding</a>
+          {simple ? '' : `Rule ${i.technical.ruleId} · ${i.technical.observed} · `}<a href={`#/findings/${i.findingId}`}>Open the full finding</a>
         </p>
       </details>
     </li>

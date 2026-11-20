@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ScanRun } from '@cqa/shared';
+import { buildRunReport } from '@cqa/core';
 import { buildApp } from '../apps/server/src/app.js';
 import { createPackageServer } from '../apps/server/src/package-server.js';
 import { type Harness, createHarness } from './support/harness.js';
@@ -218,6 +219,8 @@ describe('launching packages', () => {
     expect(run.coverage?.platform).toBe('rise');
     expect(reached(run)).toContain('after');
     // The answering is disclosed with the run (and so in the report), and a question type it cannot answer is reported.
+    // The report lists the course's lessons in order, with whether each was reached.
+    expect(buildRunReport(h.store, run.id).lessons).toEqual([{ n: 1, title: 'Knowledge check', visited: true }]);
     expect(run.coverage?.walkAids).toEqual([expect.stringMatching(/^Answered 2 Rise knowledge check\(s\) with the answers stored in the course.*not judged/)]);
     const notes = JSON.stringify([h.store.listCheckResults(run.id), h.store.listFindings(run.id)]);
     expect(notes).toMatch(/A matching knowledge check on .* was not answered automatically/);

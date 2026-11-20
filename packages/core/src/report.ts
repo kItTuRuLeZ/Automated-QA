@@ -36,6 +36,8 @@ export interface ReportIssue {
   /** Artifact id of the best screenshot: a crop with the element outlined if there is one, else the whole screen. */
   screenshotId?: string;
   screenshotKind?: 'element' | 'screen';
+  /** The lesson the problem was found in, when the course has lessons ("Lesson 4 of 12"). */
+  lesson?: { n: number; of: number; title: string };
   status: ReviewerStatus;
   technical: { ruleId: string; observed: string; remediation: string; standards: string[]; confidence: string; type: string };
   foundAt: string;
@@ -100,7 +102,17 @@ export interface ReportScorm {
   lmsChecklist: Array<{ id: string; title: string; howToCheck: string }>;
 }
 
+export interface ReportLesson {
+  n: number;
+  title: string;
+  visited: boolean;
+  /** Why a browser never showed it, when it did not. */
+  notReachedReason?: string;
+}
+
 export interface RunReport {
+  /** The course's lessons in order, from its own data, and whether the scan reached each one. Empty when the course has no lessons. */
+  lessons: ReportLesson[];
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   screens: ReportScreen[];
@@ -193,7 +205,17 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     screenshotId: stateShots.get(s.id as string),
   }));
 
-  const issues: ReportIssue[] = findings.map((f) => toIssue(f, screenIndex, run.config.target.url ?? '', store, stateShots));
+  // Lessons as the course itself lists them (Rise lessons, Storyline scenes), in order. A course has one kind or the other.
+  const lessonRows = store.db.prepare("SELECT source_id, title, visited_at, not_reached_reason FROM inventory_units WHERE run_id = ? AND kind IN ('lesson', 'scene') ORDER BY sort_order, discovered_at, id").all(runId) as Array<{ source_id: string | null; title: string; visited_at: string | null; not_reached_reason: string | null }>;
+  const lessons: ReportLesson[] = lessonRows.map((l, i) => ({ n: i + 1, title: l.title, visited: Boolean(l.visited_at), ...(l.visited_at ? {} : { notReachedReason: l.not_reached_reason ?? undefined }) }));
+  const lessonOf = new Map(lessonRows.flatMap((l, i) => (l.source_id ? [[l.source_id, { n: i + 1, of: lessonRows.length, title: l.title }] as const] : [])));
+  const stateLesson = new Map(states.map((st) => [st.id as string, st.lessonId]));
+  const issues: ReportIssue[] = findings.map((f) => {
+    const issue = toIssue(f, screenIndex, run.config.target.url ?? '', store, stateShots);
+    const lessonId = f.location.lessonId ?? (f.location.stateId ? stateLesson.get(f.location.stateId as string) : undefined);
+    const lesson = lessonId ? lessonOf.get(lessonId) : undefined;
+    return lesson ? { ...issue, lesson } : issue;
+  });
   issues.sort((a, b) => ACTION_ORDER[a.action] - ACTION_ORDER[b.action] || SEVERITY_ORDER[a.priority] - SEVERITY_ORDER[b.priority] || a.issue.localeCompare(b.issue));
 
   const bySeverity = Object.fromEntries((Object.keys(SEVERITY_ORDER) as Severity[]).map((s) => [s, 0])) as Record<Severity, number>;
@@ -277,6 +299,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       statusDetail: run.statusDetail,
       browser: run.browser ? `${run.browser.engine} ${run.browser.version}` : undefined,
     },
+    lessons,
     counts: { fix: core.filter((i) => i.action === 'fix').length, check: core.filter((i) => i.action === 'check').length, notChecked: core.filter((i) => i.action === 'not_checked').length, bySeverity },
     screens,
     issues: core,

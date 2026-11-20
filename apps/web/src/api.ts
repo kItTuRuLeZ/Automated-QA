@@ -12,6 +12,8 @@ export interface FindingDetail {
 }
 
 export interface RunReport {
+  /** The course's lessons in order and whether the scan reached each (empty when the course has none). Older servers omit it. */
+  lessons?: Array<{ n: number; title: string; visited: boolean; notReachedReason?: string }>;
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   /** Units: fix/check/notChecked count LISTED ISSUES (areas), not check executions. */
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
@@ -23,7 +25,7 @@ export interface RunReport {
   checkTotals: { uniqueRules: number; executions: number; passed: number; failed: number; needsReview: number; notApplicable: number; notTested: number; errors: number; unsupported?: number; inconclusive?: number };
   skippedActions: Array<{ what: string; reason: string; detail?: string }>;
   errors: Array<{ rule: string; detail: string }>;
-  scan: { startedAt?: string; finishedAt?: string; scope: { origins: string[]; pathPrefixes: string[] }; budgets: { maxStates: number; maxDepth: number; maxRuntimeSeconds: number }; checksEnabled: string[]; screenSizes: string[]; toolVersions: Array<{ name: string; version: string }>; platform?: string; aiUsed: false; profile?: { name: string } };
+  scan: { startedAt?: string; finishedAt?: string; scope: { origins: string[]; pathPrefixes: string[] }; budgets: { maxStates: number; maxDepth: number; maxRuntimeSeconds: number }; checksEnabled: string[]; screenSizes: string[]; toolVersions: Array<{ name: string; version: string }>; platform?: string; walkAids?: string[]; aiUsed: false; profile?: { name: string } };
   viewports?: Array<{ name: string; width: number; height: number; deviceScaleFactor: number; isMobile: boolean; hasTouch: boolean; screensChecked: number; screensNotReached: number; layoutIssues: number; skipped?: string }>;
   performance?: {
     loadMs: number | null;
@@ -54,6 +56,7 @@ export interface RunReport {
     steps: string[];
     screenshotId?: string;
     screenshotKind?: 'element' | 'screen';
+    lesson?: { n: number; of: number; title: string };
     status: string;
     statusReason?: string;
     assignee?: string;

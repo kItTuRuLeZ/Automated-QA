@@ -46,8 +46,10 @@ let seeded: { projectId: ProjectId; emptyProjectId: ProjectId; runId: string; fi
 const api = async <T,>(p: string): Promise<T> => (await fetch(origin + p)).json() as Promise<T>;
 const runsOf = (projectId: string) => h.store.listRuns(projectId as ProjectId);
 
-async function newPage(width = 1366, height = 900): Promise<Page> {
+/** These tests check the full (technical) view; the simple default view has its own test. */
+async function newPage(width = 1366, height = 900, detail: 'technical' | 'simple' = 'technical'): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width, height }, acceptDownloads: true });
+  if (detail === 'technical') await ctx.addInitScript(() => localStorage.setItem('cqa.detailLevel', 'technical'));
   return ctx.newPage();
 }
 
@@ -222,6 +224,43 @@ describe('results', () => {
     }
     await page.goto(`${origin}/#/findings/${seeded.findingId}`);
     await visible(page.getByRole('heading', { name: 'Page has no title' }));
+    await page.context().close();
+  });
+
+  it('opens in a simple one-page view: a plain verdict, the course at a glance, problems by type, no tabs and no rule codes, with technical details one switch away', async () => {
+    const report = await api<{ issues: Array<{ action: string; category?: string; status: string; technical: { ruleId: string } }> }>(`/api/runs/${seeded.runId}/report`);
+    const page = await newPage(1366, 900, 'simple');
+    await page.goto(`${origin}/#/runs/${seeded.runId}`);
+    const verdict = page.locator('.simple-verdict h2');
+    await visible(verdict);
+    expect(await verdict.innerText()).toMatch(/^(Needs fixes|Needs your review|Looks good)$/);
+    for (const fact of ['Made with', 'Tracking', 'Screens checked', 'Not checked']) await visible(page.locator('.simple-facts dt', { hasText: fact }));
+    await visible(page.getByRole('heading', { name: 'Played like a learner' }));
+    const open = (i: { status: string }) => !['verified', 'accepted_risk', 'false_positive'].includes(i.status);
+    const note = (i: { category?: string; technical: { ruleId: string } }) => i.category === 'coverage' || /^COV-|^NET-00[23]$/.test(i.technical.ruleId);
+    const fix = report.issues.filter((i) => i.action === 'fix' && open(i) && !note(i)).length;
+    await visible(page.getByRole('button', { name: `To fix ${fix}` }));
+    // One page: no tab bar and no step bar.
+    expect(await page.getByRole('navigation', { name: 'Result sections' }).count()).toBe(0);
+    // No rule codes or coverage statement in the simple view.
+    const text = await page.locator('main').innerText();
+    expect(text).not.toMatch(/\b[A-Z][A-Z0-9]+-\d{2,3}\b/);
+    expect(text).not.toMatch(/Coverage, in one statement/);
+    expect(text).not.toMatch(/QA passed/i);
+    // A problem row opens to show what to do.
+    const row = page.locator('.problem-row').first();
+    if (await row.count()) {
+      await row.locator('summary').click();
+      await visible(row.getByText('What to do:'));
+    }
+    // The screen-by-screen view opens from a link, with a way back.
+    await page.getByRole('link', { name: 'All problems, with filters' }).click();
+    await visible(page.getByRole('link', { name: '← Back to the results' }));
+    // The switch shows everything, and is remembered.
+    await page.getByLabel('Show technical details').check();
+    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Technical details' }));
+    await page.reload();
+    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Technical details' }));
     await page.context().close();
   });
 

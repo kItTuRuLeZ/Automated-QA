@@ -5,14 +5,15 @@ import { type ExecutionRow, type ScreenRow, type UnitDetail, qaApi } from '../..
 import { ScreenshotViewer } from '../ScreenshotViewer';
 import { Alert, Empty, ErrorBox, Loading, SeverityBadge, TableScroll, useLoader } from '../ui';
 import { BadgeList, ScreenStatusBadge, TestStatusBadge } from './StatusBadges';
+import { isScannerNote, plainScreenName, useDetailLevel, withoutRuleCodes } from '../detail-level';
 
 type Filter = 'attention' | 'issues' | 'manual' | 'passed' | 'untested' | 'all';
-const FILTERS: Array<{ id: Filter; label: string; match: (s: ScreenStatus) => boolean }> = [
+const FILTERS: Array<{ id: Filter; label: string; simpleLabel?: string; match: (s: ScreenStatus) => boolean }> = [
   { id: 'attention', label: 'Needs attention', match: (s) => s !== 'passed_automated' },
   { id: 'issues', label: 'Issues found', match: (s) => s === 'issues_found' },
-  { id: 'manual', label: 'Needs manual review', match: (s) => s === 'needs_manual_review' },
-  { id: 'passed', label: 'Passed configured checks', match: (s) => s === 'passed_automated' },
-  { id: 'untested', label: 'Not tested', match: (s) => s === 'not_tested' },
+  { id: 'manual', label: 'Needs manual review', simpleLabel: 'Please check', match: (s) => s === 'needs_manual_review' },
+  { id: 'passed', label: 'Passed configured checks', simpleLabel: 'Passed', match: (s) => s === 'passed_automated' },
+  { id: 'untested', label: 'Not tested', simpleLabel: 'Not checked', match: (s) => s === 'not_tested' },
   { id: 'all', label: 'All screens', match: () => true },
 ];
 const ORDER: Record<string, number> = { failed: 0, error: 1, blocked: 2, manual_review_required: 3, inconclusive: 3, unsupported: 3, skipped: 4, pending: 5, running: 5, passed: 6, not_applicable: 7 };
@@ -23,6 +24,8 @@ const COURSE_WIDE = '__course_wide__';
  * result. Defaults to what needs attention, with passed screens one click away.
  */
 export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: string }) {
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
   const inv = useLoader(() => qaApi.inventory(runId, true), [runId, runStatus]);
   const [filter, setFilter] = useState<Filter>('attention');
   const [selected, setSelected] = useState<string>();
@@ -66,7 +69,7 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
           <legend>Show</legend>
           {FILTERS.map((f) => (
             <label key={f.id} className={`chip${filter === f.id ? ' on' : ''}`}>
-              <input type="radio" name="screen-filter" checked={filter === f.id} onChange={() => setFilter(f.id)} /> {f.label} <span className="chip-count">{counts[f.id]}</span>
+              <input type="radio" name="screen-filter" checked={filter === f.id} onChange={() => setFilter(f.id)} /> {simple ? (f.simpleLabel ?? f.label) : f.label} <span className="chip-count">{counts[f.id]}</span>
             </label>
           ))}
         </fieldset>
@@ -82,7 +85,7 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
               return (
                 <li key={r.unit.id} className={r.unit.parentId ? 'child' : ''}>
                   <button type="button" className={`outline-item${selected === r.unit.id ? ' selected' : ''}`} aria-current={selected === r.unit.id ? 'true' : undefined} onClick={() => (setSelected(r.unit.id), setExecId(undefined))}>
-                    <span className="outline-title">{r.unit.title}</span>
+                    <span className="outline-title">{simple ? plainScreenName(r.unit.title) : r.unit.title}</span>
                     {onlyInBlocks(r) && <span className="muted"> · found in a block inside this {noun.singular}</span>}
                     <span className="outline-meta">
                       <ScreenStatusBadge status={r.result!.status} />
@@ -124,10 +127,14 @@ export function ScreensTab({ runId, runStatus }: { runId: string; runStatus: str
 
 function UnitView({ runId, unitId, execId, onSelect, onChanged, noun }: { runId: string; unitId: string; execId?: string; onSelect: (id?: string) => void; onChanged: () => void; noun: { singular: string } }) {
   const detail = useLoader(() => qaApi.unit(runId, unitId), [runId, unitId]);
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
   if (detail.error) return <ErrorBox error={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return <Loading />;
   const d = detail.data;
   const reload = () => (detail.reload(), onChanged());
+  // In the simple view, notes about what the scanner itself could not do are counted as not checked, not listed as problems.
+  const findings = simple ? d.findings.filter((f) => !isScannerNote(f)) : d.findings;
   const executed = d.executions.filter((e) => e.status === 'passed' || e.status === 'failed').length;
   const sorted = [...d.executions].sort((a, b) => (ORDER[a.status] ?? 9) - (ORDER[b.status] ?? 9));
   const selected = d.executions.find((e) => e.id === execId) ?? sorted[0];
@@ -135,8 +142,8 @@ function UnitView({ runId, unitId, execId, onSelect, onChanged, noun }: { runId:
   return (
     <>
       <header className="unit-head">
-        <h2>{d.unit.title}</h2>
-        <p className="muted">
+        <h2>{simple ? plainScreenName(d.unit.title) : d.unit.title}</h2>
+        <p className="muted" hidden={simple}>
           {d.unit.kind} · from {d.unit.source.replace(/_/g, ' ')} ({d.unit.confidence} confidence) · {d.unit.visitedAt ? `opened by a browser ${new Date(d.unit.visitedAt).toLocaleTimeString()}` : 'never opened by a browser'}
           {d.unit.titleIsFallback ? ' · no title in the course, so a readable name is shown' : ''}
         </p>
@@ -152,16 +159,17 @@ function UnitView({ runId, unitId, execId, onSelect, onChanged, noun }: { runId:
       </header>
 
       <section aria-labelledby="f-h" className="block-gap">
-        <h3 id="f-h">Findings on this {noun.singular} ({d.findings.length})</h3>
-        {d.findings.length === 0 ? (
+        <h3 id="f-h">{simple ? 'Problems' : 'Findings'} on this {noun.singular} ({findings.length})</h3>
+        {findings.length === 0 ? (
           <p className="muted">
+            {findings.length < d.findings.length ? `${d.findings.length - findings.length} note${d.findings.length - findings.length === 1 ? '' : 's'} about what the scan could not look at here ${d.findings.length - findings.length === 1 ? 'is' : 'are'} counted as not checked. ` : ''}
             {executed > 0 ? `No findings were recorded here by the ${executed} check${executed === 1 ? '' : 's'} that ran. That says nothing about the checks that did not run (below).` : 'No findings were recorded. No check ran on this screen, so this is not the same as a clean result.'}
           </p>
         ) : (
           <ul className="plain">
-            {d.findings.map((f) => (
+            {findings.map((f) => (
               <li key={f.id}>
-                <SeverityBadge severity={f.severity as never} /> <a href={`#/findings/${f.id}`}>{f.title}</a> <span className="muted">· {f.status}</span>
+                <SeverityBadge severity={f.severity as never} /> <a href={`#/findings/${f.id}`}>{simple ? withoutRuleCodes(f.title) : f.title}</a> {!simple && <span className="muted">· {f.status}</span>}
               </li>
             ))}
           </ul>
@@ -195,6 +203,8 @@ function UnitView({ runId, unitId, execId, onSelect, onChanged, noun }: { runId:
 }
 
 function ResultsTable({ rows, selectedId, onSelect }: { rows: ExecutionRow[]; selectedId?: string; onSelect: (id: string) => void }) {
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
   return (
     <TableScroll label="Test results for this screen">
       <table className="table results">
@@ -211,7 +221,7 @@ function ResultsTable({ rows, selectedId, onSelect }: { rows: ExecutionRow[]; se
             <tr key={e.id} className={e.id === selectedId ? 'selected-row' : ''}>
               <th scope="row">
                 <button type="button" className="link-button" onClick={() => onSelect(e.id)} aria-current={e.id === selectedId ? 'true' : undefined}>
-                  {e.definitionId}: {e.definition?.title ?? e.definitionId}
+                  {simple ? (e.definition?.title ?? e.definitionId) : `${e.definitionId}: ${e.definition?.title ?? e.definitionId}`}
                 </button>
                 <span className="help block">
                   {e.definition?.automation === 'manual' ? 'Manual case' : e.scope === 'static' ? 'Static check' : 'Automated'} · attempt {e.attempt}
@@ -221,7 +231,7 @@ function ResultsTable({ rows, selectedId, onSelect }: { rows: ExecutionRow[]; se
                 <TestStatusBadge status={e.status} />
                 {e.decisions && e.decisions.length > 0 && <span className="badge badge-quiet">Reviewer: {e.decisions[e.decisions.length - 1]!.decision.replace(/_/g, ' ')}</span>}
               </td>
-              <td>{e.reason ?? e.actual ?? ''}</td>
+              <td>{simple ? withoutRuleCodes(e.reason ?? e.actual ?? '') : (e.reason ?? e.actual ?? '')}</td>
             </tr>
           ))}
         </tbody>
@@ -250,12 +260,14 @@ function CourseWide({ runId, rows, error, execId, onSelect }: { runId: string; r
 }
 
 function ExecutionDetail({ runId, e, onChanged }: { runId: string; e: ExecutionRow; onChanged: () => void }) {
+  const [level] = useDetailLevel();
+  const simple = level === 'simple';
   const evidence = useLoader(() => (e.evidenceIds.length ? qaApi.evidence(runId, e.evidenceIds) : Promise.resolve([])), [runId, e.id, e.evidenceIds.join(',')]);
   const source = { approved_case: 'a reviewer-approved case', specification: 'a specification', extracted_metadata: 'extracted metadata', starter_baseline: 'the starter baseline (not a client requirement)', observed_hypothesis: 'observed behavior that has not been confirmed' }[e.expectedSource ?? 'starter_baseline'];
   return (
     <div className="exec-detail">
       <h3>
-        {e.definitionId}: {e.definition?.title} <TestStatusBadge status={e.status} />
+        {simple ? (e.definition?.title ?? e.definitionId) : `${e.definitionId}: ${e.definition?.title}`} <TestStatusBadge status={e.status} />
       </h3>
       <dl className="kv">
         <div>

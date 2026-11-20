@@ -6,6 +6,8 @@ import { ExportMenu, type ExportItem } from '../components/ExportMenu';
 import { CoverageTab } from '../components/run/CoverageTab';
 import { IssuesTab } from '../components/run/IssuesTab';
 import { SummaryTab } from '../components/run/SummaryTab';
+import { SimpleSummary } from '../components/run/SimpleSummary';
+import { useDetailLevel } from '../components/detail-level';
 import { TechnicalTab } from '../components/run/TechnicalTab';
 import { isOpenWork } from '../components/IssueStatus';
 import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TabNav, courseTitle, formatDate, hostPath, useLoader } from '../components/ui';
@@ -38,8 +40,10 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
   const [cancelError, setCancelError] = useState<unknown>();
   const live = useLiveRun(id, run.data ? active(run.data.status) : true);
   const recorded = Boolean(live.progress);
-  // Scans made with step-by-step records open on the screen review; older scans have no such records and open on the summary.
-  const current: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : recorded ? 'screens' : 'summary';
+  const [level, setLevel] = useDetailLevel();
+  const simple = level === 'simple';
+  // The simple view opens on the summary. With technical details on, scans with step-by-step records open on the screen review.
+  const current: Tab = (TABS as readonly string[]).includes(tab ?? '') ? (tab as Tab) : recorded && !simple ? 'screens' : 'summary';
 
   if (run.error && !run.data) return <ErrorBox error={run.error} onRetry={run.reload} />;
   if (!run.data) return <Loading />;
@@ -114,11 +118,14 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
                 {cancelRequested ? 'Cancelling…' : 'Cancel scan'}
               </button>
             )}
+            <label className="checkbox detail-switch">
+              <input type="checkbox" checked={!simple} onChange={(e) => setLevel(e.target.checked ? 'technical' : 'simple')} /> Show technical details
+            </label>
             {finished && r.status !== 'cancelled' && <ExportMenu items={exports} technical={technical} />}
           </>
         }
       />
-      {recorded && <WorkflowSteps current={isActive ? 2 : 3} />}
+      {recorded && !(simple && finished) && <WorkflowSteps current={isActive ? 2 : 3} />}
       {cancelError !== undefined && <ErrorBox error={cancelError} />}
       {run.error !== undefined && run.data && (
         <Alert tone="warn" live title="Lost contact with the app.">
@@ -128,12 +135,20 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
 
       {isActive && recorded ? (
         <ProgressPanel live={live} runStatus={r.status} queuedAt={r.queuedAt} onCancel={cancel} cancelRequested={cancelRequested} />
-      ) : (
-        <StatusBlock run={r} report={rep} cancelRequested={cancelRequested} statement={live.inventory?.coverage.statement} stage={live.progress?.progress.stage} />
+      ) : simple && finished && (r.status === 'completed' || r.status === 'partial') && rep ? null : (
+        <StatusBlock run={r} report={rep} cancelRequested={cancelRequested} statement={live.inventory?.coverage.statement} stage={live.progress?.progress.stage} simple={simple} />
       )}
 
       {finished && (r.status === 'completed' || r.status === 'partial' || r.summary.findingCount > 0 || r.states.length > 0) ? (
         <>
+          {simple ? (
+            // One page in the simple view; the screen-by-screen and filtered lists open from links on it.
+            current !== 'summary' && (
+              <p className="back-link">
+                <a href={`#${base}/summary`}>← Back to the results</a>
+              </p>
+            )
+          ) : (
           <TabNav
             label="Result sections"
             tabs={[
@@ -146,12 +161,13 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
               { to: `${base}/technical`, label: 'Technical details', current: current === 'technical' },
             ]}
           />
+          )}
           {report.error && !rep ? (
             <ErrorBox error={report.error} onRetry={report.reload} />
           ) : !rep ? (
             <Loading />
           ) : (
-            <TabBody tab={current} run={r} report={rep} query={query} isActive={isActive} onChanged={report.reload} live={live} />
+            <TabBody tab={current} run={r} report={rep} query={query} isActive={isActive} onChanged={report.reload} live={live} simple={simple} recorded={recorded} onShowTechnical={() => { setLevel('technical'); window.location.hash = `#${base}/coverage`; }} />
           )}
         </>
       ) : null}
@@ -159,7 +175,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
   );
 }
 
-function TabBody({ tab, run, report, query, isActive, onChanged, live }: { tab: Tab; run: RunDetail; report: RunReport; query: URLSearchParams; isActive: boolean; onChanged: () => void; live: ReturnType<typeof useLiveRun> }) {
+function TabBody({ tab, run, report, query, isActive, onChanged, live, simple, recorded, onShowTechnical }: { tab: Tab; run: RunDetail; report: RunReport; query: URLSearchParams; isActive: boolean; onChanged: () => void; live: ReturnType<typeof useLiveRun>; simple: boolean; recorded: boolean; onShowTechnical: () => void }) {
   const canRetest = run.status === 'completed' || run.status === 'partial';
   if (tab === 'issues') return <IssuesTab key={query.toString()} runId={run.id} report={report} query={query} canRetest={canRetest} isRetest={Boolean(run.retestOfRunId)} onChanged={onChanged} />;
   if (tab === 'screens') return <ScreensTab runId={run.id} runStatus={run.status} />;
@@ -173,6 +189,7 @@ function TabBody({ tab, run, report, query, isActive, onChanged, live }: { tab: 
   if (tab === 'manual') return <ManualReview run={run} />;
   if (tab === 'compare') return <CompareTab key={run.id} runId={run.id} projectId={run.projectId} />;
   if (tab === 'technical') return <TechnicalTab run={run} />;
+  if (simple) return <SimpleSummary runId={run.id} status={run.status} statusDetail={run.statusDetail} explored={run.config.engines.traversal} recorded={recorded} report={report} onShowTechnical={onShowTechnical} />;
   return <SummaryTab runId={run.id} report={report} isRetest={Boolean(run.retestOfRunId)} />;
 }
 
@@ -190,7 +207,7 @@ function ManualReview({ run }: { run: RunDetail }) {
 }
 
 /** Honest status for every state, with the reason, the coverage limit, and what to do next. */
-function StatusBlock({ run, report, cancelRequested, statement, stage }: { run: RunDetail; report?: RunReport; cancelRequested: boolean; statement?: string; stage?: string }) {
+function StatusBlock({ run, report, cancelRequested, statement, stage, simple }: { run: RunDetail; report?: RunReport; cancelRequested: boolean; statement?: string; stage?: string; simple?: boolean }) {
   const s = run.status;
   const explored = run.config.engines.traversal;
   const hasResults = run.summary.findingCount > 0 || run.states.length > 0;
@@ -205,6 +222,20 @@ function StatusBlock({ run, report, cancelRequested, statement, stage }: { run: 
   else if (s === 'failed') headline = 'The scan could not be completed';
   else headline = 'Scan cancelled';
 
+  // Simple view: a finished scan's verdict and numbers are on the Summary tab, so only the plain headline is shown here.
+  if (simple && (s === 'completed' || s === 'partial')) {
+    return (
+      <div className={`card status-card status-${s}`} role="status" aria-live="polite">
+        <strong>{s === 'completed' && stage !== 'completed_with_gaps' ? 'Scan finished' : 'Scan finished, but some parts could not be checked'}</strong>
+        <p>A finished scan is not a QA pass. The Summary says what to fix, what to check by hand and what could not be checked.</p>
+        {s === 'partial' && (
+          <p className="help">
+            <a href={`#/runs/${run.id}/coverage`}>See what was not checked, and why</a>
+          </p>
+        )}
+      </div>
+    );
+  }
   return (
     <div className={`card status-card status-${s}`} role="status" aria-live="polite">
       <div className="inline">

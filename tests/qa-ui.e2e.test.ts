@@ -58,9 +58,16 @@ afterAll(async () => {
   await h?.close();
 });
 
+/** The full (technical) view, which these tests check. */
+const technicalPage = async () => {
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => localStorage.setItem('cqa.detailLevel', 'technical'));
+  return ctx.newPage();
+};
+
 describe('functional QA screens', () => {
   it('lists the starter test library with automation classes and a nav link', async () => {
-    const page = await (await browser.newContext()).newPage();
+    const page = await technicalPage();
     await page.goto(`${origin}/#/library`);
     await page.getByRole('heading', { name: /test library/i }).first().waitFor();
     await until(async () => /ACC-01/.test(await page.locator('main').innerText()));
@@ -71,7 +78,7 @@ describe('functional QA screens', () => {
   });
 
   it('shows the Screens tab with the failing screen first, and never lists an unopened screen as passed', async () => {
-    const page = await (await browser.newContext()).newPage();
+    const page = await technicalPage();
     await page.goto(`${origin}/#/runs/${runId}/screens`);
     await until(async () => /Issues found/.test(await page.locator('main').innerText()));
     const text = (await page.locator('main').innerText()).replace(/\s+/g, ' ');
@@ -84,7 +91,7 @@ describe('functional QA screens', () => {
   });
 
   it('shows coverage with its denominators and not a single score', async () => {
-    const page = await (await browser.newContext()).newPage();
+    const page = await technicalPage();
     await page.goto(`${origin}/#/runs/${runId}/coverage`);
     await page.getByRole('heading', { name: /What this scan covered/i }).waitFor({ timeout: 15_000 });
     const t = await page.locator('main').innerText();
