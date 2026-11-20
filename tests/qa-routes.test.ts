@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import ExcelJS from 'exceljs';
 import type { ProjectId, TestExecution } from '@cqa/shared';
-import { QaStore, buildScanConfig, definitionsToCsv, nowIso } from '@cqa/core';
+import { QaStore, buildRunReport, buildScanConfig, definitionsToCsv, nowIso } from '@cqa/core';
 import { buildApp } from '../apps/server/src/app.js';
 import { type Harness, createHarness } from './support/harness.js';
 
@@ -93,6 +93,17 @@ describe('inventory and screen statuses', () => {
     expect(r.coverage.visit).toMatchObject({ available: true, numerator: 2, denominator: 3 });
     expect(r.coverage.statement).toMatch(/2 of 3 discovered slides visited/);
     expect(r.unitNoun).toEqual({ singular: 'slide', plural: 'slides' });
+  });
+
+  it('gives a slide course the same slide coverage in the report (Simple view), the coverage panel and the coverage export, with the unreached slide visible', async () => {
+    const report = buildRunReport(h.store, runId);
+    expect(report.unitNoun?.plural).toBe('slides');
+    expect(report.lessons.map((l) => [l.title, l.visited])).toEqual([['Slide A', true], ['Slide B', true], ['Slide C', false]]);
+    const inv = (await get(`/api/runs/${runId}/inventory`)).json() as { coverage: { visit: { numerator: number; denominator: number }; gaps: { unitsNotReached: Array<{ title: string }> } } };
+    expect([inv.coverage.visit.numerator, inv.coverage.visit.denominator]).toEqual([2, 3]);
+    expect(inv.coverage.gaps.unitsNotReached.map((u) => u.title)).toEqual(['Slide C']);
+    const csv = (await get(`/api/runs/${runId}/qa-export.csv?table=Course%20Coverage`)).body;
+    for (const t of ['Slide A', 'Slide B', 'Slide C']) expect(csv).toContain(t);
   });
 
   it('shows current results by default and every attempt on request, never overwriting an earlier attempt', async () => {

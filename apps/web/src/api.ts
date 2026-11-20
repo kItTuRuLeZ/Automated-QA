@@ -13,7 +13,9 @@ export interface FindingDetail {
 
 export interface RunReport {
   /** The course's lessons in order and whether the scan reached each (empty when the course has none). Older servers omit it. */
-  lessons?: Array<{ n: number; title: string; visited: boolean; notReachedReason?: string }>;
+  lessons?: Array<{ n: number; title: string; group?: string; visited: boolean; notReachedReason?: string }>;
+  /** The word for the counting unit (lesson, slide or screen); absent when no inventory was recorded. */
+  unitNoun?: { singular: string; plural: string };
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   /** Units: fix/check/notChecked count LISTED ISSUES (areas), not check executions. */
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
@@ -37,7 +39,7 @@ export interface RunReport {
     thresholds: { loadMs: number; totalBytes: number; requestCount: number; provenance: string };
   };
   baselinesStored: number;
-  scorm?: { version: '1.2' | '2004'; source: string; sessions: Array<{ name: string; kind: string; stepsTotal: number; stepsRun: number; stepFailure?: string; callCount: number; finalStatus: string }>; limitations: string[]; lmsChecklist: Array<{ id: string; title: string; howToCheck: string }> };
+  scorm?: { version: '1.2' | '2004'; source: string; sessions: Array<{ name: string; kind: string; stepsTotal: number; stepsRun: number; stepFailure?: string; callCount: number; finalStatus: string; outcomes?: Array<{ rule: string; outcome: string }> }>; limitations: string[]; lmsChecklist: Array<{ id: string; title: string; howToCheck: string }> };
   package?: { name: string; launchTitle?: string; launchPoints: number; kind?: string; scormVersionDeclared?: string; inventory?: { files: number; bytes: number }; externalDependencies: Array<{ host: string }>; available: boolean };
   issues: Array<{
     id: string;
@@ -57,6 +59,7 @@ export interface RunReport {
     screenshotId?: string;
     screenshotKind?: 'element' | 'screen';
     lesson?: { n: number; of: number; title: string };
+    assetPath?: string;
     status: string;
     statusReason?: string;
     assignee?: string;
@@ -85,6 +88,14 @@ export interface ProfileView extends Omit<ProfileForm, 'brand' | 'viewports' | '
   presets?: { viewports: string[]; thresholds: ProfileForm['thresholds'] };
 }
 
+export type ComparisonStatus = 'new' | 'persistent' | 'resolved' | 'not_retested' | 'incomparable';
+export interface RunComparisonView {
+  before: { id: string; at: string };
+  comparable: { sameCourse: boolean; differences: string[] };
+  findings: Array<{ status: ComparisonStatus; fingerprint: string; ruleId: string; title: string; reason: string }>;
+  counts: Record<ComparisonStatus, number>;
+}
+
 export interface PackageView {
   id: string;
   projectId: string;
@@ -92,6 +103,10 @@ export interface PackageView {
   originalFilename: string;
   sizeBytes: number;
   createdAt: string;
+  /** The logical course this upload is a version of, its version number, and the upload it revises. */
+  courseKey?: string;
+  version?: number;
+  revisionOf?: string;
   inspection: {
     kind: 'scorm12' | 'scorm2004' | 'scorm_unknown' | 'html5';
     scormVersionDeclared?: string;
@@ -112,6 +127,8 @@ export class ApiError extends Error {
     readonly issues?: Array<{ path: Array<string | number>; message: string }>,
     /** Rule id or reason the server attached (for example NET-001 for a blocked address). */
     readonly code?: string,
+    /** The whole response, for errors that carry data to act on (such as the lessons to choose from). */
+    readonly body?: unknown,
   ) {
     super(message);
   }
@@ -124,7 +141,7 @@ export async function request<T>(method: string, url: string, body?: unknown): P
   const res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   if (res.status === 204) return undefined as T;
   const data = (await res.json().catch(() => ({}))) as { error?: string; issues?: ApiError['issues']; ruleId?: string; reason?: string };
-  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues, data.ruleId ?? data.reason);
+  if (!res.ok) throw new ApiError(data.error ?? `Request failed (${res.status})`, res.status, data.issues, data.ruleId ?? data.reason, data);
   return data as T;
 }
 
@@ -170,13 +187,13 @@ export const api = {
   packageLimits: () => request<{ maxUploadBytes: number; maxEntries: number; maxExpandedBytes: number; maxLessonsPerScan: number; formats: string[] }>('GET', '/api/package-limits'),
   listPackages: (projectId: string) => request<PackageView[]>('GET', `/api/projects/${encodeURIComponent(projectId)}/packages`),
   getPackage: (id: string) => request<PackageView>('GET', `/api/packages/${encodeURIComponent(id)}`),
-  uploadPackage: async (projectId: string, file: File) => {
-    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/packages?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'X-QA-Request': '1', 'Content-Type': 'application/zip' }, body: file });
+  uploadPackage: async (projectId: string, file: File, revisionOf?: string) => {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/packages?filename=${encodeURIComponent(file.name)}${revisionOf ? `&revisionOf=${encodeURIComponent(revisionOf)}` : ''}`, { method: 'POST', headers: { 'X-QA-Request': '1', 'Content-Type': 'application/zip' }, body: file });
     const data = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) throw new ApiError(data.error ?? `Upload failed (${res.status})`, res.status);
     return data as unknown as PackageView;
   },
-  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; allowedExternalOrigins?: string[]; qaProfile?: 'quick' | 'functional' | 'full' | 'custom'; functional?: boolean; autoAnswer?: boolean; traces?: 'off' | 'first_failure'; maxStates?: number; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
+  scanPackage: (id: string, input: { launch?: 'all' | string[]; acknowledgeLocalExecution: boolean; baselineRunId?: string; explore?: boolean; accessibility?: boolean; layout?: boolean; profileId?: string; viewports?: Array<'desktop' | 'laptop' | 'tablet' | 'mobile'>; allowedExternalOrigins?: string[]; qaProfile?: 'quick' | 'functional' | 'full' | 'custom'; functional?: boolean; autoAnswer?: boolean; traces?: 'off' | 'first_failure'; maxStates?: number; scorm?: { enabled?: boolean; journeys?: Array<{ name: string; steps: Array<{ action: string; target?: string; value?: string; ms?: number }>; expect?: Record<string, unknown> }> } }) =>
     request<{ runs: ScanRun[]; scanned: string[]; notScanned: string[] }>('POST', `/api/packages/${encodeURIComponent(id)}/scans`, input),
   listProfiles: () => request<ProfileView[]>('GET', '/api/profiles'),
   getProfile: (id: string) => request<ProfileView>('GET', `/api/profiles/${encodeURIComponent(id)}`),
@@ -186,6 +203,7 @@ export const api = {
   setWorkflow: (findingId: string, input: { status?: string; assignee?: string | null; reason?: string | null }) => request<Finding>('PATCH', `/api/findings/${encodeURIComponent(findingId)}/workflow`, input),
   findingHistory: (findingId: string) => request<Array<{ at: string; actor: string; from: string; to: string; assignee?: string; reason?: string }>>('GET', `/api/findings/${encodeURIComponent(findingId)}/history`),
   retestRun: (runId: string) => request<ScanRun>('POST', `/api/runs/${encodeURIComponent(runId)}/retest`, {}),
+  compareRuns: (runId: string, withId: string) => request<RunComparisonView>('GET', `/api/runs/${encodeURIComponent(runId)}/compare?with=${encodeURIComponent(withId)}`),
   runReport: (runId: string) => request<RunReport>('GET', `/api/runs/${encodeURIComponent(runId)}/report`),
   listActions: (runId: string) => request<TraversalAction[]>('GET', `/api/runs/${encodeURIComponent(runId)}/actions`),
   listChecks: (runId: string) => request<CheckResult[]>('GET', `/api/runs/${encodeURIComponent(runId)}/checks`),

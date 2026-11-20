@@ -90,9 +90,9 @@ describe('reports a reviewer can trust', () => {
     const t = (await get(`/api/runs/${run.id}/qa-export.json`)).json() as { tables: Array<{ name: string; columns: string[]; rows: unknown[][] }> };
     const cov = t.tables.find((x) => x.name === 'Course Coverage')!;
     const counted = cov.rows.filter((r) => r[cov.columns.indexOf('Counted for visits')] === 'Yes');
-    const inv = (await get(`/api/runs/${run.id}/inventory?search=1`)).json() as { units: Array<{ primary: boolean; unit: { title: string }; result?: { status: string }; search?: { own: string } }> };
+    const inv = (await get(`/api/runs/${run.id}/inventory?search=1`)).json() as { units: Array<{ primary: boolean; counted: boolean; unit: { title: string }; result?: { status: string }; search?: { own: string } }> };
     const words: Record<string, string> = { passed_automated: 'passed configured checks', issues_found: 'issues found', needs_manual_review: 'needs manual review', not_tested: 'not tested' };
-    for (const u of inv.units.filter((x) => x.primary && x.result)) {
+    for (const u of inv.units.filter((x) => x.counted && x.result)) {
       const row = counted.find((r) => r[cov.columns.indexOf('Unit')] === u.unit.title)!;
       expect(String(row[cov.columns.indexOf('Automated status')]).toLowerCase()).toBe(words[u.result!.status]);
       // And the index can be searched by that same status.

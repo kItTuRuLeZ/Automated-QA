@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import ExcelJS from 'exceljs';
-import { type QaStore, type Store, csvCell, effectiveAutomation, isPrimaryUnit, screenStatus, summarizeCoverage } from '@cqa/core';
+import { type QaStore, type Store, csvCell, effectiveAutomation, isCountingUnit, screenStatus, summarizeCoverage, unitNounFor } from '@cqa/core';
 import { safeCell } from './xlsx.js';
 
 /**
@@ -52,7 +52,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
   const dispositions = qa.listDispositions(runId);
   const findings = store.listFindings(runId);
   const unitTitle = new Map(units.map((u) => [u.id, u.title]));
-  const noun = units.some((u) => u.kind === 'slide') ? { singular: 'slide', plural: 'slides' } : units.some((u) => u.kind === 'lesson') ? { singular: 'lesson', plural: 'lessons' } : { singular: 'screen', plural: 'screens' };
+  const noun = unitNounFor(units);
   const coverage = summarizeCoverage({ units, executions: execs, interactions, definitions: defs, unitNoun: noun });
   const stateToUnit = new Map<string, string>();
   for (const u of units) for (const s of u.visitedStateIds) stateToUnit.set(s, u.id);
@@ -62,7 +62,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
   const ratioText = (r: ReturnType<typeof summarizeCoverage>['visit']) => (r.available ? `${r.numerator} of ${r.denominator} (${r.percent}%)` : `Not available: ${r.reason}`);
 
   const statusCounts = new Map<string, number>();
-  const primary = units.filter((u) => isPrimaryUnit(u, units));
+  const primary = units.filter((u) => isCountingUnit(u, units));
   for (const u of primary) statusCounts.set(statusOf(u).status, (statusCounts.get(statusOf(u).status) ?? 0) + 1);
 
   const summary: Table = {
@@ -110,7 +110,7 @@ export function buildQaTables(store: Store, qa: QaStore, runId: string): QaTable
     columns: ['Unit', 'Kind', 'Parent', 'Counted for visits', 'Source', 'Confidence', 'Visited by a browser', 'Visit time', 'Not reached because', 'Automated status', 'Notes', 'Passed', 'Failed', 'Blocked', 'Error', 'Skipped', 'Manual review', 'Reviewer decision'],
     rows: units.map((u) => {
       const r = screenStatus(u, execs, dispositions, interactions);
-      const counted = isPrimaryUnit(u, units);
+      const counted = isCountingUnit(u, units);
       return [u.title, u.kind, u.parentId ? unitTitle.get(u.parentId) ?? '' : '', yes(counted), u.source, u.confidence, yes(Boolean(u.visitedAt)), u.visitedAt ?? '', u.visitedAt ? '' : u.notReachedReason ?? (counted ? 'No browser visit was recorded.' : 'Listed only; not tracked one by one.'), counted || execs.some((e) => e.unitId === u.id) ? STATUS_WORDS[r.status] : 'Not tracked', [...r.badges.map((b) => BADGE_WORDS[b] ?? b), ...r.reasons].join(' | '), r.counts.passed, r.counts.failed, r.counts.blocked, r.counts.error, r.counts.skipped, r.counts.manual, r.reviewerDecision ? `${r.reviewerDecision.decision} by ${r.reviewerDecision.actor}: ${r.reviewerDecision.reason}` : ''] as Cell[];
     }),
   };

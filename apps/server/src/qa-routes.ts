@@ -15,7 +15,9 @@ import {
   definitionsToCsv,
   effectiveAutomation,
   isOpaqueId,
+  isCountingUnit,
   isPrimaryUnit,
+  unitNounFor,
   newId,
   buildZip,
   nowIso,
@@ -141,9 +143,11 @@ export function registerQaRoutes(app: FastifyInstance, opts: QaRouteOptions): Qa
     // Only the index screen asks for search text; the live progress panel polls this route and does not need it.
     const search = req.query.search === '1' ? screenSearchIndex(units, interactions, executions, defs, new Set(units.filter((u) => isPrimaryUnit(u, units)).map((u) => u.id))) : undefined;
     const screens = units.map((u) => {
+      // primary: listed for review (lessons, slides and screens); counted: the unit coverage is counted in.
       const primary = isPrimaryUnit(u, units);
+      const counted = isCountingUnit(u, units);
       const result = screenStatus(u, executions, dispositions, interactions);
-      return { unit: u, primary, result: primary || executions.some((e) => e.unitId === u.id) ? result : undefined, interactions: interactions.filter((i) => i.unitId === u.id).length, ...(search && primary ? { search: withStatus(search.get(u.id), result.status) } : {}) };
+      return { unit: u, primary, counted, result: primary || executions.some((e) => e.unitId === u.id) ? result : undefined, interactions: interactions.filter((i) => i.unitId === u.id).length, ...(search && primary ? { search: withStatus(search.get(u.id), result.status) } : {}) };
     });
     return { recorded: true, revision: qa.inventoryRevision(run.id), units: screens, coverage, unitNoun: nounFor(units) };
   });
@@ -513,7 +517,5 @@ ${example.map((c) => `"${c}"`).join(',')}
 
 /** Rise says lesson and block, Storyline says scene and slide. The report must say which unit it counts. */
 function nounFor(units: ReadonlyArray<{ kind: string }>): { singular: string; plural: string } {
-  if (units.some((u) => u.kind === 'slide')) return { singular: 'slide', plural: 'slides' };
-  if (units.some((u) => u.kind === 'lesson')) return { singular: 'lesson', plural: 'lessons' };
-  return { singular: 'screen', plural: 'screens' };
+  return unitNounFor(units as Parameters<typeof unitNounFor>[0]);
 }

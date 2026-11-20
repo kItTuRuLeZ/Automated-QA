@@ -1,3 +1,4 @@
+import { BatchPage } from './pages/BatchPage';
 import { useEffect, useRef, useState } from 'react';
 import { HelpPage } from './pages/AboutPage';
 import { LibraryPage } from './pages/LibraryPage';
@@ -23,6 +24,7 @@ function useHashRoute(): string {
 function Page({ route }: { route: string }) {
   const { parts, query } = splitRoute(route);
   const [section, id, sub] = parts;
+  if (section === 'projects' && id && sub === 'batch') return <BatchPage projectId={id} query={query} />;
   if (section === 'projects' && id && sub === 'new-scan') return <NewScanPage projectId={id} presetUrl={query.get('url') ?? undefined} />;
   if (section === 'projects' && id) return <ProjectPage id={id} tab={sub} />;
   if (section === 'runs' && id) return <RunPage id={id} tab={sub} query={query} />;

@@ -105,12 +105,23 @@ describe('uploading packages', () => {
     expect(existsSync(path.join(packagesDir, pkg.id))).toBe(false);
   });
 
-  it('keeps the package id when a fixed version is uploaded as a replacement', async () => {
-    const first = (await upload(makeZip({ 'index.html': page('v1') }), 'filename=a.zip')).json() as { id: string };
-    const second = await upload(makeZip({ 'index.html': page('v2') }), `filename=a.zip&replace=${first.id}`);
-    expect(second.statusCode).toBe(200);
-    expect((second.json() as { id: string }).id).toBe(first.id);
-    expect((await get(`/p/${first.id}/index.html`)).body).toContain('v2');
+  it('keeps every upload: a fixed version uploaded as a revision is a new version of the same course, and the old one is untouched', async () => {
+    const first = (await upload(makeZip({ 'index.html': page('v1') }), 'filename=a.zip')).json() as { id: string; courseKey: string; version: number };
+    expect(first.version).toBe(1);
+    // The older "replace" parameter now means the same as "revisionOf": it never overwrites.
+    for (const param of ['replace', 'revisionOf']) {
+      const next = await upload(makeZip({ 'index.html': page('v2') }), `filename=a.zip&${param}=${first.id}`);
+      expect(next.statusCode).toBe(201);
+      const v = next.json() as { id: string; courseKey: string; version: number; revisionOf: string };
+      expect(v.id).not.toBe(first.id);
+      expect(v).toMatchObject({ courseKey: first.courseKey, revisionOf: first.id });
+      expect((await get(`/p/${v.id}/index.html`)).body).toContain('v2');
+    }
+    expect(((await upload(makeZip({ 'index.html': page('v4') }), `filename=a.zip&revisionOf=${first.id}`)).json() as { version: number }).version).toBe(4);
+    expect((await get(`/p/${first.id}/index.html`)).body).toContain('v1');
+    // An unrelated upload is its own course, whatever its title.
+    const other = (await upload(makeZip({ 'index.html': page('v1') }), 'filename=a.zip')).json() as { courseKey: string };
+    expect(other.courseKey).not.toBe(first.courseKey);
   });
 });
 
@@ -219,5 +230,65 @@ describe('scanning an uploaded package', () => {
     expect(ok.headers['set-cookie']).toBeUndefined();
     expect(ok.headers['x-content-type-options']).toBe('nosniff');
     expect(ok.headers['cross-origin-resource-policy']).toBe('same-origin');
+  });
+});
+
+describe('the same scan setup for a ZIP as for a web address (brief of 20 Nov, phase 4)', () => {
+  it('runs a ZIP scan with the chosen client profile and screen sizes, and records the settings it used', async () => {
+    const profile = (await app.inject({ method: 'POST', url: '/api/profiles', headers: json, payload: { name: 'Acme', brand: { approvedFonts: ['Arial'], approvedColors: [{ name: 'Blue', value: '#1f4e9c' }], minTextSizePx: 12, source: 'Brand guide v1' }, viewports: ['laptop', 'mobile'] } })).json() as { id: string };
+    const pkg = (await upload(makeZip({ 'index.html': page('One') }))).json() as { id: string };
+    // The profile's own sizes apply when none are picked.
+    const fromProfile = await scan(pkg.id, { ...QUICK, profileId: profile.id });
+    expect(fromProfile.statusCode).toBe(201);
+    const run = (fromProfile.json() as { runs: Array<{ id: string }> }).runs[0]!;
+    const stored = h.store.getRun(run.id)!;
+    expect(stored.config.profile?.name).toBe('Acme');
+    expect(stored.config.viewports.map((v) => v.name)).toEqual(['laptop', 'mobile']);
+    // Sizes picked for the scan win over the profile's.
+    const picked = (await scan(pkg.id, { ...QUICK, profileId: profile.id, viewports: ['tablet'] })).json() as { runs: Array<{ id: string }> };
+    expect(h.store.getRun(picked.runs[0]!.id)!.config.viewports.map((v) => v.name)).toEqual(['tablet']);
+    // An unknown profile is refused, not silently ignored.
+    expect((await scan(pkg.id, { ...QUICK, profileId: '00000000-0000-4000-8000-000000000000' })).statusCode).toBe(404);
+  });
+});
+
+describe('retests and revised ZIPs keep what the earlier scan used (review of 20 Nov)', () => {
+  const three = makeZip({
+    'imsmanifest.xml': manifest12({
+      items: [{ id: 'i1', title: 'One', ref: 'r1' }, { id: 'i2', title: 'Two', ref: 'r2' }, { id: 'i3', title: 'Three', ref: 'r3' }],
+      resources: ['r1', 'r2', 'r3'].map((r) => `<resource identifier="${r}" type="webcontent" adlcp:scormtype="sco" href="${r}.html"/>`).join(''),
+    }),
+    'r1.html': page('One'),
+    'r2.html': page('Two'),
+    'r3.html': page('Three'),
+  });
+
+  it('a retest of one lesson from an "all lessons" scan records the same lesson selection, so nothing looks new', async () => {
+    const pkg = (await upload(three)).json() as { id: string };
+    const runs = (await scan(pkg.id, { ...QUICK, launch: 'all' })).json() as { runs: Array<{ id: string }> };
+    const first = runs.runs[0]!.id;
+    expect(h.store.listCheckResults(first).find((c) => c.ruleId === 'PKG-007')?.outcome).toBe('passed');
+    h.store.finishRun(first, { status: 'completed' });
+    const retest = await app.inject({ method: 'POST', url: `/api/runs/${first}/retest`, headers: json, payload: {} });
+    expect(retest.statusCode).toBe(201);
+    const id = (retest.json() as { id: string }).id;
+    expect(h.store.listCheckResults(id).find((c) => c.ruleId === 'PKG-007')?.outcome).toBe('passed');
+    expect(h.store.listFindings(id).some((f) => f.ruleId === 'PKG-007')).toBe(false);
+  });
+
+  it('a revised ZIP keeps the earlier screen limit and client profile settings, even after the profile was deleted', async () => {
+    const profile = (await app.inject({ method: 'POST', url: '/api/profiles', headers: json, payload: { name: 'Gone later', brand: { approvedFonts: ['Arial'], approvedColors: [{ name: 'Blue', value: '#1f4e9c' }], minTextSizePx: 12, source: 'Guide' }, viewports: ['laptop'] } })).json() as { id: string };
+    const v1 = (await upload(makeZip({ 'index.html': page('One') }))).json() as { id: string };
+    const base = (await scan(v1.id, { ...QUICK, profileId: profile.id, maxStates: 30 })).json() as { runs: Array<{ id: string }> };
+    h.store.finishRun(base.runs[0]!.id, { status: 'completed' });
+    await app.inject({ method: 'DELETE', url: `/api/profiles/${profile.id}`, headers: hdr });
+    const v2 = (await upload(makeZip({ 'index.html': page('Two') }), `filename=course.zip&revisionOf=${v1.id}`)).json() as { id: string };
+    const res = await scan(v2.id, { acknowledgeLocalExecution: true, baselineRunId: base.runs[0]!.id });
+    expect(res.statusCode).toBe(201);
+    const run = h.store.getRun((res.json() as { runs: Array<{ id: string }> }).runs[0]!.id)!;
+    expect(run.retestOfRunId).toBe(base.runs[0]!.id);
+    expect(run.config.budgets.maxStates).toBe(30);
+    expect(run.config.profile?.name).toBe('Gone later');
+    expect(run.config.viewports.map((v) => v.name)).toEqual(['laptop']);
   });
 });

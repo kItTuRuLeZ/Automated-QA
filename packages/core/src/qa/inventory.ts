@@ -15,11 +15,38 @@ export function unitId(kind: UnitKind, key: string): string {
   return `u-${createHash('sha1').update(`${kind}|${key}`).digest('hex').slice(0, 12)}`;
 }
 
-/** Units a visit can be recorded against: lessons, slides and screens, plus package items that contain nothing else. */
+/** Units a visit can be recorded against and tested: lessons, slides and screens, plus package items that contain nothing else. */
 export function isPrimaryUnit(u: Pick<ContentUnit, 'id' | 'kind'>, all: ReadonlyArray<Pick<ContentUnit, 'id' | 'kind' | 'parentId'>>): boolean {
   if (u.kind === 'lesson' || u.kind === 'slide' || u.kind === 'screen') return true;
   if (u.kind === 'sco') return !all.some((x) => x.parentId === u.id);
   return false;
+}
+
+/**
+ * The units a course's coverage is counted in: slides for Storyline (scenes group them), lessons for Rise, otherwise
+ * screens found in the browser and package items that contain nothing else. When a course lists its own slides or
+ * lessons, pages seen only at run time (the SCORM wrapper, the player page) are still tested but not counted as extra
+ * lessons. The Simple view, the coverage panel and the coverage export all count these.
+ */
+export function isCountingUnit(u: Pick<ContentUnit, 'id' | 'kind'>, all: ReadonlyArray<Pick<ContentUnit, 'id' | 'kind' | 'parentId'>>): boolean {
+  const unit = countingUnitKind(all);
+  if (unit !== 'screen') return u.kind === unit;
+  if (u.kind === 'screen') return true;
+  if (u.kind === 'sco') return !all.some((x) => x.parentId === u.id);
+  return false;
+}
+
+/** Which kind of unit the course is counted in. */
+export function countingUnitKind(all: ReadonlyArray<Pick<ContentUnit, 'kind'>>): 'slide' | 'lesson' | 'screen' {
+  if (all.some((x) => x.kind === 'slide')) return 'slide';
+  if (all.some((x) => x.kind === 'lesson')) return 'lesson';
+  return 'screen';
+}
+
+/** The word for the counting unit. */
+export function unitNounFor(all: ReadonlyArray<Pick<ContentUnit, 'kind'>>): { singular: string; plural: string } {
+  const k = countingUnitKind(all);
+  return { singular: k, plural: `${k}s` };
 }
 
 const flattenItems = (items: ManifestItem[], parent?: string): Array<{ item: ManifestItem; parent?: string }> => items.flatMap((i) => [{ item: i, parent }, ...flattenItems(i.children, i.id)]);

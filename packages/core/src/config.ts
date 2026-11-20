@@ -1,3 +1,4 @@
+import { FINGERPRINT_SCHEME } from './fingerprint.js';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,6 +222,7 @@ export function buildScanConfig(input: {
     mediaThresholds: DEFAULT_MEDIA_THRESHOLDS,
     layout: { ...DEFAULT_LAYOUT_SETTINGS, perf: { ...DEFAULT_LAYOUT_SETTINGS.perf, ...input.perf }, testNonResponsive: input.testNonResponsive ?? false },
     configVersion: 1,
+    fingerprintScheme: FINGERPRINT_SCHEME,
     ...(input.qaProfile ? { qaProfile: input.qaProfile } : {}),
     ...(input.autoAnswer ? { autoAnswer: true } : {}),
     ...(input.traces ? { traces: input.traces } : {}),

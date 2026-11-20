@@ -715,3 +715,18 @@ textarea.mono { font-family: Consolas, 'Cascadia Mono', monospace; }
 .details-page > section { margin-top: 1.5rem; scroll-margin-top: 1rem; }
 .details-page > section > h2 { margin-bottom: 0.75rem; }
 .details-jump { font-size: 0.95rem; }
+.run-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.run-actions .revision-panel, .run-actions .alert { flex-basis: 100%; }
+.revision-panel { border: 1px solid var(--border, #e3e6ee); border-radius: 10px; padding: 0.75rem 1rem; background: var(--surface, #fff); }
+.revision-panel p { margin: 0.4rem 0; }
+.top-issue { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 1rem; border-left: 6px solid var(--danger, #c62828); }
+.top-issue h2 { font-size: 1.2rem; }
+.top-issue p { margin: 0.4rem 0; }
+.eyebrow { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #6b7280); margin: 0 0 0.3rem; }
+.evidence-none { align-self: center; }
+.tracking-facts, .simple-facts-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem 1.5rem; margin: 0.5rem 0; }
+.tracking-facts dt, .simple-facts-row dt { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted, #6b7280); }
+.tracking-facts dd, .simple-facts-row dd { margin: 0.2rem 0 0; font-size: 1.05rem; font-weight: 600; }
+.problem-row > summary:focus-visible, .chip:focus-visible, .run-actions .btn:focus-visible { outline: 3px solid var(--primary, #2457d6); outline-offset: 2px; }
+@media (max-width: 720px) { .top-issue { grid-template-columns: 1fr; } }
+.simple-verdict .help { color: #333a45; }

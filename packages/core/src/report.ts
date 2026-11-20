@@ -2,6 +2,7 @@ import type { CourseState, Finding, ReviewerStatus, ScanRun, Severity, Traversal
 import type { Store } from './db/store.js';
 import { SCORM_LMS_CHECKLIST } from './manual-checklist.js';
 import { ACTION_LABEL, type IssueAction, plainFinding } from './plain-language.js';
+import { isCountingUnit, unitNounFor } from './qa/inventory.js';
 
 /**
  * One canonical, plain-language model of a scan. The UI summary and the Excel
@@ -36,6 +37,11 @@ export interface ReportIssue {
   /** Artifact id of the best screenshot: a crop with the element outlined if there is one, else the whole screen. */
   screenshotId?: string;
   screenshotKind?: 'element' | 'screen';
+  /**
+   * The one course file a media or package problem is about, as a package-relative path in lower case, when it is
+   * known exactly. Used to match the browser's and the file check's findings about the same file; absent when unsure.
+   */
+  assetPath?: string;
   /** The lesson the problem was found in, when the course has lessons ("Lesson 4 of 12"). */
   lesson?: { n: number; of: number; title: string };
   status: ReviewerStatus;
@@ -105,14 +111,18 @@ export interface ReportScorm {
 export interface ReportLesson {
   n: number;
   title: string;
+  /** The Storyline scene a slide belongs to. */
+  group?: string;
   visited: boolean;
   /** Why a browser never showed it, when it did not. */
   notReachedReason?: string;
 }
 
 export interface RunReport {
-  /** The course's lessons in order, from its own data, and whether the scan reached each one. Empty when the course has no lessons. */
+  /** The course in its counting unit (lessons, slides or screens), in order, and whether the scan reached each one. Empty when no inventory was recorded. */
   lessons: ReportLesson[];
+  /** The word for that unit; absent for scans that recorded no inventory. */
+  unitNoun?: { singular: string; plural: string };
   run: { id: string; targetUrl: string; queuedAt: string; finishedAt?: string; status: ScanRun['status']; statusPlain: string; statusDetail?: string; browser?: string };
   counts: { fix: number; check: number; notChecked: number; bySeverity: Record<Severity, number> };
   screens: ReportScreen[];
@@ -205,9 +215,17 @@ export function buildRunReport(store: Store, runId: string): RunReport {
     screenshotId: stateShots.get(s.id as string),
   }));
 
-  // Lessons as the course itself lists them (Rise lessons, Storyline scenes), in order. A course has one kind or the other.
-  const lessonRows = store.db.prepare("SELECT source_id, title, visited_at, not_reached_reason FROM inventory_units WHERE run_id = ? AND kind IN ('lesson', 'scene') ORDER BY sort_order, discovered_at, id").all(runId) as Array<{ source_id: string | null; title: string; visited_at: string | null; not_reached_reason: string | null }>;
-  const lessons: ReportLesson[] = lessonRows.map((l, i) => ({ n: i + 1, title: l.title, visited: Boolean(l.visited_at), ...(l.visited_at ? {} : { notReachedReason: l.not_reached_reason ?? undefined }) }));
+  // The course in its counting unit (Rise lessons, Storyline slides grouped by scene, otherwise screens), in order:
+  // the same units the coverage panel and the coverage export count.
+  const unitRows = store.db.prepare('SELECT id, kind, parent_id, source_id, title, visited_at, not_reached_reason FROM inventory_units WHERE run_id = ? ORDER BY sort_order, discovered_at, id').all(runId) as Array<{ id: string; kind: string; parent_id: string | null; source_id: string | null; title: string; visited_at: string | null; not_reached_reason: string | null }>;
+  const asUnits = unitRows.map((u) => ({ id: u.id, kind: u.kind as never, parentId: u.parent_id ?? undefined }));
+  const byId = new Map(unitRows.map((u) => [u.id, u]));
+  const lessonRows = unitRows.filter((u, i) => isCountingUnit(asUnits[i]!, asUnits));
+  const unitNoun = unitRows.length ? unitNounFor(asUnits) : undefined;
+  const lessons: ReportLesson[] = lessonRows.map((l, i) => {
+    const parent = l.parent_id ? byId.get(l.parent_id) : undefined;
+    return { n: i + 1, title: l.title, ...(parent?.kind === 'scene' ? { group: parent.title } : {}), visited: Boolean(l.visited_at), ...(l.visited_at ? {} : { notReachedReason: l.not_reached_reason ?? undefined }) };
+  });
   const lessonOf = new Map(lessonRows.flatMap((l, i) => (l.source_id ? [[l.source_id, { n: i + 1, of: lessonRows.length, title: l.title }] as const] : [])));
   const stateLesson = new Map(states.map((st) => [st.id as string, st.lessonId]));
   const issues: ReportIssue[] = findings.map((f) => {
@@ -300,6 +318,7 @@ export function buildRunReport(store: Store, runId: string): RunReport {
       browser: run.browser ? `${run.browser.engine} ${run.browser.version}` : undefined,
     },
     lessons,
+    unitNoun,
     counts: { fix: core.filter((i) => i.action === 'fix').length, check: core.filter((i) => i.action === 'check').length, notChecked: core.filter((i) => i.action === 'not_checked').length, bySeverity },
     screens,
     issues: core,
@@ -358,6 +377,38 @@ function pickScreenshot(f: Finding, stateIds: string[], store: Store, stateShots
   return {};
 }
 
+/**
+ * The package-relative path of the single file a finding names: a file check names it directly ("scormcontent/a.jpg");
+ * a browser check names its address ("video http://127.0.0.1:4318/p/<package>/scormcontent/a.mp4?[query-removed]").
+ * Several files, or anything that cannot be read as one path, gives nothing, so no two findings are matched by guess.
+ */
+export function assetPathOf(description: string | undefined): string | undefined {
+  if (!description || description.includes(', ')) return undefined;
+  let d = description.trim().replace(/^(?:image|video|audio|img|source|track)\s+/i, '').replace(/\?\[query-removed\]$/, '').split(/[?#]/)[0]!;
+  if (/^https?:\/\//i.test(d)) {
+    let path: string;
+    try {
+      path = new URL(d).pathname;
+    } catch {
+      return undefined;
+    }
+    const pkg = /^\/p\/[^/]+\/(.+)$/.exec(path);
+    d = pkg ? pkg[1]! : path.replace(/^\//, '');
+  }
+  if (!d || /\s{2,}|[<>"]/.test(d)) return undefined;
+  try {
+    d = decodeURIComponent(d);
+  } catch {
+    /* keep as written */
+  }
+  return d.toLowerCase();
+}
+
+function withAsset(description: string | undefined): { assetPath?: string } {
+  const a = assetPathOf(description);
+  return a ? { assetPath: a } : {};
+}
+
 function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: string, store: Store, stateShots: Map<string, string>): ReportIssue {
   const plain = plainFinding(f);
   const stateIds = [f.location.stateId, ...f.occurrences.map((o) => o.location.stateId)].filter((x): x is NonNullable<typeof x> => Boolean(x));
@@ -385,6 +436,7 @@ function toIssue(f: Finding, screenIndex: Map<string, number>, fallbackUrl: stri
     url: f.location.url ?? fallbackUrl,
     screenshotId: shot.id,
     screenshotKind: shot.kind,
+    ...(f.category === 'media' || f.category === 'package' ? withAsset(f.location.elementDescription) : {}),
     status: f.reviewer.status,
     technical: {
       ruleId: f.ruleId,

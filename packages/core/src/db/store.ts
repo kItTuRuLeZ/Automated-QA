@@ -40,6 +40,12 @@ export interface CoursePackage {
   sha256: string;
   inspection: PackageInspection;
   createdAt: string;
+  /** The logical course this upload is a version of. Uploads from before versions existed are their own course. */
+  courseKey: string;
+  /** 1 for the first upload of a course, then 2, 3… for each revised ZIP uploaded as its revision. */
+  version: number;
+  /** The upload this one was explicitly uploaded as a revision of. */
+  revisionOf?: string;
 }
 interface PackageRow {
   id: string;
@@ -50,9 +56,12 @@ interface PackageRow {
   sha256: string;
   inspection_json: string;
   created_at: string;
+  course_key: string | null;
+  version: number | null;
+  revision_of: string | null;
 }
 function toPackage(r: PackageRow): CoursePackage {
-  return { id: r.id, projectId: r.project_id, name: r.name, originalFilename: r.original_filename, sizeBytes: r.size_bytes, sha256: r.sha256, inspection: JSON.parse(r.inspection_json) as PackageInspection, createdAt: r.created_at };
+  return { id: r.id, projectId: r.project_id, name: r.name, originalFilename: r.original_filename, sizeBytes: r.size_bytes, sha256: r.sha256, inspection: JSON.parse(r.inspection_json) as PackageInspection, createdAt: r.created_at, courseKey: r.course_key ?? r.id, version: r.version ?? 1, ...(r.revision_of ? { revisionOf: r.revision_of } : {}) };
 }
 
 export interface WorkflowRow {
@@ -506,8 +515,14 @@ export class Store {
 
   insertPackage(p: CoursePackage): void {
     this.db
-      .prepare('INSERT INTO course_packages (id, project_id, name, original_filename, size_bytes, sha256, kind, inspection_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(p.id, p.projectId, p.name, p.originalFilename, p.sizeBytes, p.sha256, p.inspection.kind, JSON.stringify(p.inspection), p.createdAt);
+      .prepare('INSERT INTO course_packages (id, project_id, name, original_filename, size_bytes, sha256, kind, inspection_json, created_at, course_key, version, revision_of) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(p.id, p.projectId, p.name, p.originalFilename, p.sizeBytes, p.sha256, p.inspection.kind, JSON.stringify(p.inspection), p.createdAt, p.courseKey, p.version, p.revisionOf ?? null);
+  }
+
+  /** The next version number for a logical course (uploads from before versions existed count as version 1). */
+  nextPackageVersion(courseKey: string): number {
+    const r = this.db.prepare('SELECT MAX(COALESCE(version, 1)) AS v FROM course_packages WHERE COALESCE(course_key, id) = ?').get(courseKey) as { v: number | null };
+    return (r.v ?? 0) + 1;
   }
 
   getPackage(id: string): CoursePackage | undefined {

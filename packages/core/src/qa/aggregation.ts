@@ -1,4 +1,4 @@
-import { isPrimaryUnit } from './inventory.js';
+import { isCountingUnit } from './inventory.js';
 import type { ContentUnit, InteractionInstance, ReviewDisposition, ScreenBadge, ScreenStatus, TestDefinition, TestExecution, TestStatus } from '@cqa/shared';
 
 /**
@@ -218,6 +218,7 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     bySource[u.source] = (bySource[u.source] ?? 0) + 1;
   }
   const authoritative = units.some((u) => u.source === 'manifest' || u.source === 'authoring_export' || u.source === 'player_menu');
+  // Anything seen only at run time means the course's own list may be incomplete: it could be a wrapper page or a lesson the list left out.
   const runtimeExtras = units.filter((u) => u.source === 'runtime').length;
   let completeness: DiscoveryCompleteness;
   let reason: string;
@@ -229,14 +230,14 @@ export function summarizeCoverage(input: CoverageInput): CoverageSummary {
     reason = `Only what a browser saw is listed (${units.length} found so far). The scanner has no independent list of what the course contains.`;
   } else if (runtimeExtras > 0 || byConfidence.low > 0) {
     completeness = 'partial';
-    reason = `${runtimeExtras ? `${runtimeExtras} ${noun.plural} appeared only at run time, which the course's own list did not show. ` : ''}${byConfidence.low ? `${byConfidence.low} listed with low confidence.` : ''}`.trim();
+    reason = `${runtimeExtras ? `${runtimeExtras} page${runtimeExtras === 1 ? '' : 's'} appeared only at run time, which the course's own list did not show (a wrapper or player page, or something the list left out). ` : ''}${byConfidence.low ? `${byConfidence.low} listed with low confidence.` : ''}`.trim();
   } else {
     completeness = 'complete';
     reason = 'Every listed item came from the course package or player menu, and nothing extra appeared at run time. This does not prove the list is exhaustive.';
   }
 
   // Visits are counted on lessons, slides and screens. Blocks, layers and scenes are listed, not tracked one by one.
-  const primary = units.filter((u) => isPrimaryUnit(u, units));
+  const primary = units.filter((u) => isCountingUnit(u, units));
   const visited = primary.filter((u) => u.visitedAt).length;
   const visit = ratio(visited, completeness === 'unknown' ? undefined : primary.length, completeness === 'unknown' ? `The total number of ${noun.plural} is not known, so there is no visit percentage. ${visited} found and visited so far.` : 'Nothing discovered.');
 

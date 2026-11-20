@@ -124,6 +124,8 @@ export interface ScanTarget {
   /** For `package` targets (Phase 6): uploaded package reference and chosen launch entry. */
   packageId?: string;
   launchEntry?: string;
+  /** Every lesson chosen together with this one (each scanned separately), so a retest records the same selection. */
+  batchKeys?: string[];
   /** Display name of the uploaded package. */
   packageName?: string;
 }
@@ -222,6 +224,8 @@ export interface ScanConfig {
   profile?: ProfileSnapshot;
   /** Configuration schema version for migrations and baseline compatibility. */
   configVersion: number;
+  /** How this scan's finding fingerprints were made (see FINGERPRINT_SCHEME). Absent on scans made before version 2. */
+  fingerprintScheme?: number;
 }
 
 export interface CoverageSummary {

@@ -3,11 +3,12 @@ import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
-import type { CheckResultId, FindingId, Finding, ProjectId, RuleId, ScanRun } from '@cqa/shared';
+import type { CheckResultId, FindingId, Finding, ProjectId, RuleId, ScanConfig, ScanRun } from '@cqa/shared';
 import {
   ArchiveError,
   DEFAULT_ARCHIVE_LIMITS,
   DEFAULT_BUDGETS,
+  FINGERPRINT_SCHEME,
   type CoursePackage,
   type LaunchChoice,
   type NetworkPolicy,
@@ -22,6 +23,7 @@ import {
   isOpaqueId,
   newId,
   nowIso,
+  profileScanOptions,
   viewportsByName,
 } from '@cqa/core';
 
@@ -71,6 +73,10 @@ const PackageScanInput = z.object({
   viewports: z.array(z.enum(['desktop', 'laptop', 'tablet', 'mobile'])).min(1).max(4).optional(),
   maxStates: z.number().int().min(1).max(200).optional(),
   maxDepth: z.number().int().min(0).max(60).optional(),
+  /** The scan of an earlier version this one retests ("Scan a revised ZIP"). Its settings and lesson are carried forward where the input leaves them out. */
+  baselineRunId: z.string().max(64).optional(),
+  /** A client profile: screen sizes, text rules, performance limits and rule settings, as for a web address scan. */
+  profileId: z.string().max(64).optional(),
 });
 
 export interface PackageRouteDeps {
@@ -85,7 +91,7 @@ const bad = (reply: FastifyReply, error: string, extra: Record<string, unknown> 
 const missing = (reply: FastifyReply, error = 'Not found.') => reply.code(404).send({ error });
 
 function view(p: CoursePackage) {
-  return { id: p.id, projectId: p.projectId, name: p.name, originalFilename: p.originalFilename, sizeBytes: p.sizeBytes, sha256: p.sha256, createdAt: p.createdAt, inspection: p.inspection };
+  return { id: p.id, projectId: p.projectId, name: p.name, originalFilename: p.originalFilename, sizeBytes: p.sizeBytes, sha256: p.sha256, createdAt: p.createdAt, courseKey: p.courseKey, version: p.version, revisionOf: p.revisionOf, inspection: p.inspection };
 }
 
 function launchUrl(deps: PackageRouteDeps, id: string, choice: { path: string; suffix?: string }): string {
@@ -152,7 +158,9 @@ function recordStaticResults(deps: PackageRouteDeps, run: ScanRun, pkg: CoursePa
       remediation: REMEDIATION[i.ruleId] ?? 'Fix the package and upload it again.',
       standards: [],
       reviewer: { status: 'open', updatedAt: nowIso() },
-      fingerprint: fingerprint({ ruleId: i.ruleId, targetKey: `${pkg.name}|${title}|${(i.paths ?? []).join(',')}` }),
+      // The logical course and the files involved, so the same problem matches in the course's next version even if its
+      // title or the measured size changes; the lesson-selection note is one item whatever the counts.
+      fingerprint: fingerprint({ ruleId: i.ruleId, targetKey: `${pkg.courseKey}|${i.paths?.length ? i.paths.join(',') : i.ruleId === 'PKG-007' ? 'selection' : title}` }),
       createdAt: nowIso(),
     };
     store.upsertFinding(f);
@@ -175,6 +183,65 @@ const REMEDIATION: Record<string, string> = {
   'PKG-013': 'Make the wording consistent in the authoring tool, then re-publish.',
 };
 
+/** Settings from the baseline scan, used where the request leaves them out, so a revised ZIP is scanned the same way. */
+function carryForward(input: z.infer<typeof PackageScanInput>, baseline: ScanRun, basePkg?: CoursePackage): z.infer<typeof PackageScanInput> {
+  const c = baseline.config;
+  // A journey that was the old package's automatic one is not carried: the new version's own adapter journey applies.
+  const auto = basePkg?.inspection.authoringTool?.defaultJourney?.name;
+  const written = (c.scorm?.journeys ?? []).filter((j) => j.name !== auto);
+  const names = c.viewports.map((v) => v.name).filter((n): n is 'desktop' | 'laptop' | 'tablet' | 'mobile' => ['desktop', 'laptop', 'tablet', 'mobile'].includes(n));
+  return {
+    ...input,
+    acknowledgeLocalExecution: input.acknowledgeLocalExecution,
+    qaProfile: input.qaProfile ?? c.qaProfile,
+    explore: input.explore ?? c.engines.traversal,
+    accessibility: input.accessibility ?? c.engines.accessibility,
+    layout: input.layout ?? c.engines.layout,
+    functional: input.functional ?? Boolean(c.engines.functional),
+    autoAnswer: input.autoAnswer ?? Boolean(c.autoAnswer),
+    traces: input.traces ?? c.traces,
+    viewports: input.viewports ?? (names.length === c.viewports.length && names.length ? names : undefined),
+    allowedExternalOrigins: input.allowedExternalOrigins ?? c.scope.allowedOrigins.filter((o) => !/^http:\/\/127\.0\.0\.1:/.test(o)),
+    scorm: input.scorm ?? (c.scorm ? { enabled: true, ...(written.length ? { journeys: written } : {}), checkResume: c.scorm.checkResume, observeSeconds: c.scorm.observeSeconds } : undefined),
+    maxStates: input.maxStates ?? c.budgets.maxStates,
+    maxDepth: input.maxDepth ?? c.budgets.maxDepth,
+    navigationTimeoutMs: input.navigationTimeoutMs ?? c.budgets.navigationTimeoutMs,
+  };
+}
+
+/** The launch point in a new version that opens the same file the baseline scan opened. The same key on another file is a changed launch point. */
+function sameLaunch(baseline: ScanRun, choices: LaunchChoice[]): LaunchChoice | undefined {
+  const t = baseline.config.target;
+  const path = (t.url ?? '').replace(/^https?:\/\/[^/]+\/p\/[^/]+\//, '').split(/[?#]/)[0];
+  return choices.find((c) => c.key === t.launchEntry && c.path.split('/').map(encodeURIComponent).join('/') === path) ?? choices.find((c) => c.path.split('/').map(encodeURIComponent).join('/') === path);
+}
+
+/**
+ * Retests an uploaded-package scan: the same upload, lesson and settings, linked to the earlier scan, with the package
+ * file checks recorded again like any package scan. Undefined when the scan is not of an upload.
+ */
+export async function retestPackageRun(deps: PackageRouteDeps, prior: ScanRun): Promise<{ run: ScanRun } | { error: string; code: number } | undefined> {
+  const t = prior.config.target;
+  if (t.kind !== 'package' || !t.packageId) return undefined;
+  const pkg = deps.store.getPackage(t.packageId);
+  if (!pkg) return { code: 409, error: 'The uploaded course this scan used has been deleted, so it cannot be scanned again. Upload it again to scan it.' };
+  const choices = pkg.inspection.launchChoices;
+  const choice = choices.find((c) => c.key === t.launchEntry) ?? (choices.length === 1 ? choices[0] : undefined);
+  if (!choice) return { code: 409, error: 'The lesson this scan opened is no longer listed in the package.' };
+  const url = launchUrl(deps, pkg.id, choice);
+  // Same settings; the fingerprint scheme is the current one, because that is how the new scan's findings are made.
+  const config: ScanConfig = { ...prior.config, target: { ...t, url }, fingerprintScheme: FINGERPRINT_SCHEME };
+  const decision = await deps.policy.validateTarget(url, config.scope);
+  if (!decision.ok) return { code: 422, error: decision.detail };
+  const run = deps.store.db.transaction(() => {
+    const r = deps.store.createRun(config, url, prior.id);
+    const selected = choices.filter((c) => t.batchKeys?.includes(c.key));
+    recordStaticResults(deps, r, pkg, choice.title, selected.length ? selected : [choice], choices);
+    return r;
+  })();
+  return { run };
+}
+
 export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDeps): void {
   const { store, policy, packagesDir } = deps;
   const pkgDir = (id: string) => path.join(packagesDir, id);
@@ -185,18 +252,20 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
   // Raw ZIP bytes. The global body limit stays small for every other route.
   app.addContentTypeParser('application/zip', { parseAs: 'buffer', bodyLimit: MAX_UPLOAD_BYTES }, (_req, body, done) => done(null, body));
 
-  app.post<{ Params: { id: string }; Querystring: { filename?: string; replace?: string } }>('/api/projects/:id/packages', { bodyLimit: MAX_UPLOAD_BYTES }, async (req, reply) => {
+  app.post<{ Params: { id: string }; Querystring: { filename?: string; replace?: string; revisionOf?: string } }>('/api/projects/:id/packages', { bodyLimit: MAX_UPLOAD_BYTES }, async (req, reply) => {
     const project = isOpaqueId(req.params.id) ? store.getProject(req.params.id) : undefined;
     if (!project) return missing(reply, 'Project not found.');
     const bytes = req.body as Buffer;
     if (!Buffer.isBuffer(bytes) || bytes.length === 0) return bad(reply, 'Send the ZIP file as the request body.', { ruleId: 'PKG-001' });
     const filename = (req.query.filename ?? 'package.zip').replace(/[^\w. -]/g, '_').slice(0, 120) || 'package.zip';
-    let id = newId<string>();
-    let replaced: CoursePackage | undefined;
-    if (req.query.replace) {
-      replaced = isOpaqueId(req.query.replace) ? store.getPackage(req.query.replace) : undefined;
-      if (!replaced || replaced.projectId !== project.id) return missing(reply, 'The package to replace was not found in this project.');
-      id = replaced.id;
+    // Every upload is a new, immutable version: earlier uploads, their reports and evidence are never overwritten.
+    // "revisionOf" (or the older "replace") makes it the next version of that upload's course.
+    const id = newId<string>();
+    const revisionId = req.query.revisionOf ?? req.query.replace;
+    let base: CoursePackage | undefined;
+    if (revisionId) {
+      base = isOpaqueId(revisionId) ? store.getPackage(revisionId) : undefined;
+      if (!base || base.projectId !== project.id) return missing(reply, 'The upload this is a revision of was not found in this project.');
     }
     // Extract into a new folder first; the live one is swapped only after everything passed.
     const staging = path.join(packagesDir, `.staging-${newId<string>()}`);
@@ -218,10 +287,12 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         sha256: createHash('sha256').update(bytes).digest('hex'),
         inspection,
         createdAt: nowIso(),
+        courseKey: base?.courseKey ?? id,
+        version: base ? store.nextPackageVersion(base.courseKey) : 1,
+        ...(base ? { revisionOf: base.id } : {}),
       };
-      if (replaced) store.deletePackage(id);
       store.insertPackage(pkg);
-      return reply.code(replaced ? 200 : 201).send(view(pkg));
+      return reply.code(201).send(view(pkg));
     } catch (err) {
       rmSync(staging, { recursive: true, force: true });
       if (err instanceof ArchiveError) return bad(reply, err.message, { code: err.code, ruleId: 'PKG-001' });
@@ -252,13 +323,26 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
     if (!pkg) return missing(reply, 'Package not found.');
     const parsed = PackageScanInput.safeParse(req.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'Invalid scan configuration.', issues: parsed.error.issues });
-    const input = parsed.data;
+    const baseline = parsed.data.baselineRunId ? (isOpaqueId(parsed.data.baselineRunId) ? store.getRun(parsed.data.baselineRunId) : undefined) : undefined;
+    if (parsed.data.baselineRunId) {
+      if (!baseline) return missing(reply, 'The earlier scan was not found.');
+      const basePkg = baseline.config.target.kind === 'package' && baseline.config.target.packageId ? store.getPackage(baseline.config.target.packageId) : undefined;
+      if (!basePkg || basePkg.courseKey !== pkg.courseKey) return bad(reply, 'The earlier scan is not of a version of this course. Upload this ZIP as a revision of the earlier one first.');
+    }
+    const input = baseline ? carryForward(parsed.data, baseline, baseline.config.target.packageId ? store.getPackage(baseline.config.target.packageId) : undefined) : parsed.data;
     const choices = pkg.inspection.launchChoices;
     if (choices.length === 0) return bad(reply, 'This package has no launch file to scan. See the inspection results.', { ruleId: 'PKG-004' });
     if (!input.acknowledgeLocalExecution) {
       return bad(reply, 'Scanning runs this package\'s own JavaScript in a browser on this computer, behind the network limits, but without a container. Confirm that you trust the package or accept that risk.', { needsAcknowledgement: true });
     }
     let chosen: LaunchChoice[];
+    // A revised ZIP rescans the lesson the earlier scan opened. If that lesson is not in this version, say so and ask.
+    if (baseline && !parsed.data.launch) {
+      const same = sameLaunch(baseline, choices);
+      if (!same) return reply.code(409).send({ error: `The lesson the earlier scan opened (${baseline.config.target.launchEntry ?? 'unknown'}) is not in this version. Choose which lesson to scan; a different lesson will not be compared as the same.`, ruleId: 'PKG-007', choices, launchChanged: true });
+      input.launch = [same.key];
+    }
+    const baselineSelection = baseline ? choices.filter((c) => baseline.config.target.batchKeys?.includes(c.key)) : [];
     if (input.launch === 'all') chosen = choices;
     else if (input.launch) {
       chosen = input.launch.map((k) => choices.find((c) => c.key === k)).filter((c): c is LaunchChoice => Boolean(c));
@@ -267,6 +351,9 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
     else return bad(reply, `This package has ${choices.length} launch points. Choose which to scan, or choose all. Lessons you do not choose are reported as not scanned.`, { ruleId: 'PKG-007', choices });
     if (chosen.length > MAX_LAUNCHES) return bad(reply, `At most ${MAX_LAUNCHES} lessons can be scanned at once.`, { ruleId: 'PKG-007' });
 
+    const profile = input.profileId ? (isOpaqueId(input.profileId) ? store.getProfile(input.profileId) : undefined) : undefined;
+    if (input.profileId && !profile) return missing(reply, 'Client profile not found.');
+    const fromProfile = profile ? profileScanOptions(profile) : undefined;
     const kind = pkg.inspection.kind;
     const wantsScorm = input.scorm?.enabled ?? (kind === 'scorm12' || kind === 'scorm2004');
     if (wantsScorm && kind !== 'scorm12' && kind !== 'scorm2004') {
@@ -274,7 +361,8 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
     }
     const scormVersion: '1.2' | '2004' | undefined = wantsScorm ? (kind === 'scorm12' ? '1.2' : '2004') : undefined;
     const origin = `http://127.0.0.1:${deps.packagePort}`;
-    const runs: ScanRun[] = [];
+    // Build and check every scan first, then create them together, so a refusal leaves nothing half made.
+    const planned: Array<{ config: ScanConfig; url: string; choice: LaunchChoice }> = [];
     for (const c of chosen) {
       const url = launchUrl(deps, pkg.id, c);
       const scope = {
@@ -302,11 +390,15 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
         qaProfile: input.qaProfile,
         autoAnswer: input.autoAnswer,
         traces: input.traces,
-        viewports: input.viewports ? viewportsByName(input.viewports) : undefined,
+        viewports: input.viewports ? viewportsByName(input.viewports) : fromProfile?.viewportNames.length ? viewportsByName(fromProfile.viewportNames) : undefined,
+        perf: fromProfile && Object.keys(fromProfile.perf).length ? fromProfile.perf : undefined,
+        profile: fromProfile?.snapshot ?? (baseline && !input.profileId ? baseline.config.profile : undefined),
+        terminology: fromProfile?.terminology ?? (baseline && !input.profileId ? baseline.config.textRules.terminology : undefined),
+        textExclusions: fromProfile?.textExclusions ?? (baseline && !input.profileId ? baseline.config.textRules.exclusions : undefined),
         maxStates: input.maxStates ?? recommendedMaxStates,
         maxDepth: input.maxDepth ?? recommendedMaxDepth,
       });
-      config.target = { kind: 'package', url, packageId: pkg.id, launchEntry: c.key, packageName: pkg.name };
+      config.target = { kind: 'package', url, packageId: pkg.id, launchEntry: c.key, packageName: pkg.name, batchKeys: chosen.map((x) => x.key) };
       // A course that lists many screens needs more than the default five minutes to open and test them. The limit grows with the list (about 45 s a screen, at most 45 minutes) so it is a safety net, not a cut-off.
       if (primaryUnitsCount > 0) config.budgets.maxRuntimeMs = Math.min(45 * 60_000, Math.max(DEFAULT_BUDGETS.maxRuntimeMs, 5 * 60_000 + primaryUnitsCount * 45_000));
       if (scormVersion) {
@@ -325,9 +417,15 @@ export function registerPackageRoutes(app: FastifyInstance, deps: PackageRouteDe
       config.skipExternalLinks = true;
       const decision = await policy.validateTarget(url, config.scope);
       if (!decision.ok) return reply.code(422).send({ error: decision.detail, reason: decision.reason, ruleId: 'NET-001' });
-      runs.push(store.createRun(config, url));
+      planned.push({ config, url, choice: c });
     }
-    runs.forEach((run, i) => recordStaticResults(deps, run, pkg, chosen[i]!.title, chosen, choices));
+    const runs: ScanRun[] = store.db.transaction(() =>
+      planned.map(({ config, url, choice }) => {
+        const run = store.createRun(config, url, baseline?.id);
+        recordStaticResults(deps, run, pkg, choice.title, baselineSelection.length > chosen.length && baselineSelection.some((b) => b.key === choice.key) ? baselineSelection : chosen, choices);
+        return run;
+      }),
+    )();
     return reply.code(201).send({ runs, scanned: chosen.map((c) => c.title), notScanned: choices.filter((c) => !chosen.includes(c)).map((c) => c.title) });
   });
 }

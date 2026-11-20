@@ -37,9 +37,10 @@ describe('simple verdict', () => {
 
   it('never says "Looks good" when the course was not gone through, lessons were missed or checks could not run', () => {
     expect(verdictOf('completed', 0, 0, 0, { explored: false }).detail).toMatch(/Only the opening page/);
-    expect(verdictOf('completed', 0, 0, 0, { lessonsMissed: 2 }).detail).toMatch(/did not reach 2 lessons/);
+    const cov = { recorded: true, noun: { singular: 'lesson', plural: 'lessons' }, reached: 10, total: 12, notReached: [{ title: 'Wrap-up', reason: 'r' }, { title: 'Quiz', reason: 'r' }], interactionsUntested: 0, manualOutstanding: 0 };
+    expect(verdictOf('completed', 0, 0, 0, { coverage: cov }).detail).toMatch(/2 lessons not reached/);
     expect(verdictOf('completed', 0, 0, 0, { checksNotRun: 5 }).text).toBe('Needs your review');
-    expect(verdictOf('completed', 0, 0, 0, { explored: true, lessonsMissed: 0, checksNotRun: 0 }).text).toBe('Looks good');
+    expect(verdictOf('completed', 0, 0, 0, { explored: true, coverage: { ...cov, reached: 12, notReached: [] }, checksNotRun: 0 }).text).toBe('Looks good');
   });
 });
 
@@ -58,10 +59,10 @@ describe('plain stop reasons and one entry per large file', () => {
     expect(plainReason('Exploration stopped at a scan budget (budget_states).')).toMatch(/stopped at one of its limits/);
   });
 
-  it('lists a large image found by both the browser and the file check once, from the file check', async () => {
+  it('lists a large image found by both the browser and the file check once, matched by its exact path', async () => {
     const { actionable } = await import('../apps/web/src/components/run/SimpleSummary');
     const issue = (id: string, source: 'static' | 'runtime', text: string) => ({ id, findingId: id, url: '', source, action: 'check' as const, priority: 'low' as const, issue: text, change: '', screens: [], viewports: [], elements: [], moreElements: 0, steps: [], status: 'open', technical: { ruleId: source === 'static' ? 'PKG-008' : 'MED-005', observed: '' } });
-    const report = { issues: [issue('a', 'runtime', 'Large image: Hero.jpeg (3.9 MB)'), issue('b', 'static', 'Large image: Hero.jpeg (3.8 MB, above the 1.0 MB limit)'), issue('c', 'runtime', 'Large image: Other.png (2.0 MB)')] } as never;
+    const report = { issues: [{ ...issue('a', 'runtime', 'Large image: Hero.jpeg (3.9 MB)'), assetPath: 'x/hero.jpeg' }, { ...issue('b', 'static', 'Large image: Hero.jpeg (3.8 MB, above the 1.0 MB limit)'), assetPath: 'x/hero.jpeg' }, { ...issue('c', 'runtime', 'Large image: Other.png (2.0 MB)'), assetPath: 'x/other.png' }] } as never;
     expect(actionable(report).map((i) => i.id).sort()).toEqual(['b', 'c']);
   });
 });

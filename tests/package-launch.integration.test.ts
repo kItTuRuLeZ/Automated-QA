@@ -221,6 +221,12 @@ describe('launching packages', () => {
     // The answering is disclosed with the run (and so in the report), and a question type it cannot answer is reported.
     // The report lists the course's lessons in order, with whether each was reached.
     expect(buildRunReport(h.store, run.id).lessons).toEqual([{ n: 1, title: 'Knowledge check', visited: true }]);
+    // The Simple view, the Technical coverage panel and the coverage export count the same units.
+    const inv = (await app.inject({ method: 'GET', url: `/api/runs/${run.id}/inventory`, headers: hdr })).json() as { coverage: { visit: { numerator: number; denominator: number } }; unitNoun: { plural: string } };
+    expect(inv.unitNoun.plural).toBe('lessons');
+    expect([inv.coverage.visit.numerator, inv.coverage.visit.denominator]).toEqual([1, 1]);
+    const csv = (await app.inject({ method: 'GET', url: `/api/runs/${run.id}/qa-export.csv?table=Course%20Coverage`, headers: hdr })).body;
+    expect(csv).toMatch(/Knowledge check/);
     expect(run.coverage?.walkAids).toEqual([expect.stringMatching(/^Answered 2 Rise knowledge check\(s\) with the answers stored in the course.*not judged/)]);
     const notes = JSON.stringify([h.store.listCheckResults(run.id), h.store.listFindings(run.id)]);
     expect(notes).toMatch(/A matching knowledge check on .* was not answered automatically/);
@@ -260,5 +266,84 @@ describe('launching packages', () => {
       'index.html': '<!doctype html><html lang="en"><head><title>Canvas course</title></head><body><canvas id="c" width="320" height="200"></canvas><script>document.getElementById("c").getContext("2d").fillRect(10,10,100,100)</script></body></html>',
     });
     expect(outcome(run, 'RUN-001')?.outcome).toBe('passed');
+  });
+});
+
+describe('course versions: a revised ZIP and retests (brief of 20 Nov, phase 2)', () => {
+  const noTitle = '<!doctype html><html lang="en"><head><meta charset="utf-8"></head><body><main><h1>Course</h1></main></body></html>';
+  const upload = async (files: Record<string, string>, query = '') => {
+    const up = await app.inject({ method: 'POST', url: `/api/projects/${projectId}/packages?filename=course.zip${query}`, headers: { ...hdr, 'content-type': 'application/zip' }, payload: makeZip(files) });
+    expect(up.statusCode).toBe(201);
+    return up.json() as { id: string; courseKey: string; version: number; name: string };
+  };
+  const start = (pkgId: string, payload: object) => app.inject({ method: 'POST', url: `/api/packages/${pkgId}/scans`, headers: { ...hdr, 'content-type': 'application/json' }, payload: { acknowledgeLocalExecution: true, explore: false, accessibility: false, layout: false, ...payload } });
+  const finish = async (res: Awaited<ReturnType<typeof start>>) => {
+    expect(res.statusCode).toBe(201);
+    return h.waitForTerminal((res.json() as { runs: ScanRun[] }).runs[0]!.id, 120_000);
+  };
+  const compare = async (before: ScanRun, after: ScanRun) => (await app.inject({ method: 'GET', url: `/api/runs/${after.id}/compare?with=${before.id}`, headers: hdr })).json() as { comparable: { sameCourse: boolean; differences: string[] }; findings: Array<{ status: string; ruleId: string; reason: string }> };
+  const of = (c: Awaited<ReturnType<typeof compare>>, ruleId: string) => c.findings.find((f) => f.ruleId === ruleId);
+
+  it('compares a broken v1 and its explicitly uploaded v2 as one course, and verifies only what v2 checked', async () => {
+    const files = (index: string) => ({ 'imsmanifest.xml': manifest12({ launch: 'index.html' }), 'index.html': index });
+    const v1 = await upload(files(noTitle));
+    const run1 = await finish(await start(v1.id, {}));
+    expect(h.store.listFindings(run1.id).some((f) => f.ruleId === 'RUN-005')).toBe(true);
+
+    const v2 = await upload(files(page('Course')), `&revisionOf=${v1.id}`);
+    expect(v2).toMatchObject({ courseKey: v1.courseKey, version: 2 });
+    // Scanned as a revision: the lesson and settings are carried forward, and the scan is linked to the baseline.
+    const run2 = await finish(await start(v2.id, { baselineRunId: run1.id, acknowledgeLocalExecution: true }));
+    expect(run2.retestOfRunId).toBe(run1.id);
+    expect(run2.config.engines.traversal).toBe(run1.config.engines.traversal);
+    const c = await compare(run1, run2);
+    expect(c.comparable.sameCourse).toBe(true);
+    expect(of(c, 'RUN-005')?.status).toBe('resolved');
+
+    // The earlier report keeps its own title, version, findings and evidence.
+    const old = buildRunReport(h.store, run1.id);
+    expect(old.package?.name).toBe(v1.name);
+    expect(old.issues.some((i) => i.technical.ruleId === 'RUN-005')).toBe(true);
+    expect(h.store.getPackage(v1.id)?.version).toBe(1);
+
+    // An unrelated upload with the same title is never the same course, so nothing is verified against it.
+    const other = await upload(files(page('Course')));
+    const run3 = await finish(await start(other.id, {}));
+    const unrelated = await compare(run1, run3);
+    expect(unrelated.comparable.sameCourse).toBe(false);
+    expect(of(unrelated, 'RUN-005')?.status).toBe('incomparable');
+    // A baseline from another course is refused.
+    expect((await start(other.id, { baselineRunId: run1.id })).statusCode).toBe(422);
+  });
+
+  it('records the package file checks again on a retest, links it to the earlier scan, and keeps the earlier scan unchanged', async () => {
+    const pkg = await upload({ 'imsmanifest.xml': manifest12({ launch: 'index.html' }), 'index.html': page('Course'), 'Bad Name.png': 'x' });
+    const first = await finish(await start(pkg.id, {}));
+    const before = h.store.listCheckResults(first.id).length;
+    const res = await app.inject({ method: 'POST', url: `/api/runs/${first.id}/retest`, headers: { ...hdr, 'content-type': 'application/json' }, payload: {} });
+    expect(res.statusCode).toBe(201);
+    const retest = await h.waitForTerminal((res.json() as ScanRun).id, 120_000);
+    expect(retest.retestOfRunId).toBe(first.id);
+    const statics = h.store.listCheckResults(retest.id).filter((r) => r.ruleId.startsWith('PKG-'));
+    expect(statics.map((r) => r.ruleId)).toEqual(expect.arrayContaining(['PKG-001', 'PKG-011']));
+    expect(h.store.listFindings(retest.id).some((f) => f.ruleId === 'PKG-011')).toBe(true);
+    expect(h.store.listCheckResults(first.id)).toHaveLength(before);
+  });
+
+  it('never verifies a fix when the revised ZIP opens a different launch point', async () => {
+    const v1 = await upload({ 'imsmanifest.xml': manifest12({ launch: 'index.html' }), 'index.html': noTitle });
+    const run1 = await finish(await start(v1.id, {}));
+    const v2 = await upload({ 'imsmanifest.xml': manifest12({ launch: 'start.html' }), 'start.html': page('Course') }, `&revisionOf=${v1.id}`);
+    // The lesson scanned before is not in v2: the scan is not started silently on another one.
+    const asked = await start(v2.id, { baselineRunId: run1.id });
+    expect(asked.statusCode).toBe(409);
+    expect(asked.json()).toMatchObject({ launchChanged: true });
+    // Chosen explicitly, it runs, but the change of launch point keeps anything from being verified.
+    const choice = (asked.json() as { choices: Array<{ key: string }> }).choices[0]!.key;
+    const run2 = await finish(await start(v2.id, { baselineRunId: run1.id, launch: [choice] }));
+    const c = await compare(run1, run2);
+    expect(c.comparable.sameCourse).toBe(false);
+    expect(c.comparable.differences.join(' ')).toMatch(/launch point/);
+    expect(of(c, 'RUN-005')?.status).toBe('incomparable');
   });
 });

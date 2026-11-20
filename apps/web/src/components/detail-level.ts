@@ -93,7 +93,7 @@ export function plainReason(text: string): string {
 export const SIMPLE_STATUS: Record<string, string> = {
   needs_manual_review: 'Please check',
   manual_review_required: 'Please check',
-  passed_automated: 'Passed',
+  passed_automated: 'Automated checks passed',
   issues_found: 'Problem found',
   not_tested: 'Not checked',
   blocked: 'Not checked',

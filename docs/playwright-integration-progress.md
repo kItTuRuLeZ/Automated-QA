@@ -21,7 +21,8 @@ Tracks the phases in `supporting-files/prompts/Automated_QA_Playwright_Integrati
 | 14. Comparing course versions | Done (13 Nov 2026), not committed | See "Phase 14" below |
 | 15. Compatibility and pilot readiness | Done 17 Nov 2026 (fixture evidence, plus one real Rise course; no real seeded-fault course yet), committed and merged | See "Phase 15" below |
 | Follow-up: gaps found by comparing with FULLPASS | Done 18 Nov 2026, committed and merged | See "Follow-up: comparison with FULLPASS" below |
-| Follow-up: simpler scan page | Done 18 Nov 2026, not committed | See "Follow-up: simpler scan page" below |
+| Follow-up: simpler scan page | Done 18–20 Nov 2026, committed and merged | See "Follow-up: simpler scan page" below |
+| Implementation brief of 20 Nov (4 phases) | Done 20 Nov 2026, not committed; real-export pilot pending | See "Implementation brief of 20 Nov" below |
 
 ## Phase 1 test run
 
@@ -672,6 +673,53 @@ Karthik asked for it simpler still, closer to FULLPASS's layout. The simple view
 
 - The HTML, PDF and Excel reports are unchanged; a short shareable report is the next step.
 - Screen names in a Rise course are often all the course title, so "Where" can repeat it.
+
+## Implementation brief of 20 Nov
+
+An outside review (based on `main` at `2dd4aed`) set four phases. Its three reproduced problems were confirmed in the code before any change: a retest of an uploaded course recorded no package file checks; two unrelated uploads with the same title were compared as one course; and in the Simple view a dismissed file finding hid an open browser finding about a file with the same name. Rise courses were also counted as 14 units (12 lessons plus 2 wrapper pages).
+
+### Phase 1: coverage and findings that can be relied on
+
+- **One counting unit everywhere** (`isCountingUnit`, `unitNounFor` in `packages/core/src/qa/inventory.ts`): slides for Storyline (scenes are groups), lessons for Rise, otherwise screens. The Simple view, the coverage panel, the coverage export and the report's lesson list use it. Pages seen only at run time are still tested and listed for review (`isPrimaryUnit` is unchanged for that) and still make discovery "partial".
+- **The Simple verdict comes from the coverage record**: units not reached, an unknown course total ("12 screens reached · course total unknown"), untried interactions, outstanding manual checks and checks that could not run all rule out "Looks good". A scan with no coverage record says so; while the record loads, no verdict is shown.
+- **The playthrough line is grounded**: every unit reached, or the first unit not reached with its recorded reason, or unknown for older scans. The screen badge reads "Automated checks passed".
+- **Media findings are merged only when sure**: by the exact package path (`assetPathOf` in `report.ts`), only for the same problem (size with size, captions with captions), keeping open work, the higher priority and the browser's screenshot. Two files with the same name stay apart; a dismissed one never hides an open one.
+
+### Phase 2: ZIP versions and retests
+
+- **Each upload is an immutable version of a logical course** (migration 10: `course_key`, `version`, `revision_of`). "Scan a revised ZIP" uploads with `revisionOf` and scans with `baselineRunId`, carrying forward the baseline's settings, screen limit, lesson selection and client profile settings (from its snapshot, so a later edit or deletion of the profile changes nothing). If the baseline's lesson file is not in the new version, the scan is refused with the choices, and a lesson chosen then is never compared as the same. The older `replace` upload parameter now means the same and no longer overwrites.
+- **Retests of uploaded courses** go through the package (`retestPackageRun`): same upload, lesson and settings, package file checks recorded again with the original lesson selection. Scans are checked first and created together, so a refusal leaves nothing half made.
+- **Comparison** (`compareRuns`) treats two package scans as the same course only when their uploads share a logical course and opened the same launch file. Package findings now name the logical course instead of the uploaded copy (fingerprint scheme 2), so the same problem matches across versions but never across unrelated courses, whose reviewer decisions stay apart. Package scans made before scheme 2 are reported as not comparable.
+
+### Phase 3: the Simple review
+
+- The verdict leads with the actionable detail ("Needs fixes · 2 learner blockers", "Needs your review · 2 slides not reached"); remaining gaps are named under it.
+- Review actions under it: Compare with an earlier scan, Retest this version, Scan a revised ZIP (with the trust acknowledgement and the lesson choice when needed). The report download stays in the page header.
+- The most important open problem is shown first with its location, what to do, its evidence (labelled by what was actually kept) and a link to the full finding.
+- "LMS tracking observed" keeps the declared SCORM version apart from what the built-in test saw (completion recorded, score and status values, resume), or says "Tracking not tested".
+- "Since the previous version" (for linked scans) shows verified fixed, still open, new, not retested and not comparable, with the reason when conditions differ.
+- Learner blockers (open fixes at critical or high priority) come before the type groups; rows show the priority.
+- Checked at 1366 px, 390 px and 200% zoom: no sideways scrolling; the page's accessibility test (axe, reflow at 320 px, focus, no keyboard trap) passes.
+
+### Phase 4: ZIP and web address scans set up alike
+
+- The package page offers the same presets (Full, Functional, Quick), client profiles and screen sizes as a web address scan, and shows the settings the scan will use before it starts. The package scan route accepts and records the profile.
+- A scan of several lessons opens one overview listing each lesson's scan, its status, what it has recorded so far, a link to its result, and the lessons not chosen.
+
+### Tests
+
+- New: `tests/phase1-coverage-findings.test.ts`; version, retest and launch-point scans in `tests/package-launch.integration.test.ts`; profile, selection and carried-forward settings in `tests/packages.integration.test.ts`; Storyline slide consistency in `tests/qa-routes.test.ts`; the Simple view and the multi-lesson overview in `tests/ui-flows.e2e.test.ts`.
+- A separate review found 10 problems (among them: the retest changed the recorded lesson selection; the new fingerprints could share reviewer decisions between unrelated courses; the counting change would have stopped testing run-time pages; settings and profiles not carried correctly; a verdict shown before coverage loaded), all fixed.
+- Fault removal: 14 of 14 behaviours removed in turn were caught by a test.
+- 20 Nov, whole suite: 541 passed, 1 skipped, 48 files passed and 2 skipped (57 min). Tool UI tests (`npm run test:ui`): 3 passed. Type checks and the production web build pass.
+
+### Reviewer walkthrough
+
+Open a scan. The banner says whether it is ready and why. Under it: Compare, Retest this version and Scan a revised ZIP. The most important problem comes next with its screenshot. The course at a glance shows units reached and checks passed; "LMS tracking observed" shows what the SCORM test saw. "Played like a learner" says how far the scan got and where it stopped. Problems follow, learner blockers first, each opening to show what to do and its evidence. "Not checked" lists what the scan could not look at. Download report is at the top right. "Show technical details" opens Summary, Screens, Issues and Details (coverage, manual review, technical details).
+
+### Pilot (pending)
+
+No approved real Rise or Storyline ZIP with planted faults was available, so the pilot ran on the test fixtures: upload, scan, review, revised upload linked to its baseline, retest, comparison, a lesson that cannot be reached, and a knowledge check that gates Continue. The real-export pilot, and checking completion and resume in Moodle itself, are still to do.
 
 ## Architecture decisions
 

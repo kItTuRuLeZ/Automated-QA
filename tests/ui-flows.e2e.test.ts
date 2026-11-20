@@ -238,9 +238,15 @@ describe('results', () => {
     await page.goto(`${origin}/#/runs/${seeded.runId}`);
     const verdict = page.locator('.simple-verdict h2');
     await visible(verdict);
-    expect(await verdict.innerText()).toMatch(/^(Needs fixes|Needs your review|Looks good)$/);
-    for (const fact of ['Made with', 'Tracking', 'Screens checked', 'Not checked']) await visible(page.locator('.simple-facts dt', { hasText: fact }));
+    expect(await verdict.innerText()).toMatch(/^(Needs fixes|Needs your review|Looks good)( · .+)?$/);
+    for (const fact of ['Made with', 'Tracking', 'reached', 'Not checked']) await visible(page.locator('.simple-facts dt', { hasText: fact }));
     await visible(page.getByRole('heading', { name: 'Played like a learner' }));
+    // From the simple view a reviewer reaches tracking, the actions and the report download.
+    await visible(page.getByRole('heading', { name: 'LMS tracking observed' }));
+    await visible(page.getByRole('link', { name: 'Compare with an earlier scan' }));
+    await visible(page.getByRole('button', { name: /^Download report/ }));
+    const top = page.locator('.top-issue');
+    if (await top.count()) await visible(top.getByRole('link', { name: 'See the full finding and its evidence' }));
     const open = (i: { status: string }) => !['verified', 'accepted_risk', 'false_positive'].includes(i.status);
     const note = (i: { category?: string; technical: { ruleId: string } }) => i.category === 'coverage' || /^COV-|^NET-00[23]$/.test(i.technical.ruleId);
     const fix = report.issues.filter((i) => i.action === 'fix' && open(i) && !note(i)).length;
@@ -266,6 +272,32 @@ describe('results', () => {
     await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Details' }));
     await page.reload();
     await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Details' }));
+    await page.context().close();
+  });
+
+  it('shows every lesson a ZIP scan queued in one overview, with its status and result link, and the lessons not chosen', async () => {
+    const mk = (lesson: string, status?: 'completed') => {
+      const cfg = buildScanConfig({ projectId: seeded.projectId, url: new URL('http://127.0.0.1:4318/p/x/index.html') });
+      cfg.target = { kind: 'package', url: 'http://127.0.0.1:4318/p/x/index.html', launchEntry: lesson, packageName: 'Course' };
+      const r = h.store.createRun(cfg, cfg.target.url!);
+      if (status) h.store.finishRun(r.id, { status });
+      return r.id;
+    };
+    const done = mk('Lesson one', 'completed');
+    const waiting = mk('Lesson two');
+    const page = await newPage(390, 844, 'simple');
+    await page.goto(`${origin}/#/projects/${seeded.projectId}/batch?runs=${done},${waiting}&skipped=${encodeURIComponent(JSON.stringify(['Lesson three']))}`);
+    await visible(page.getByRole('heading', { name: 'Lessons scanned' }));
+    const rows = page.locator('main table tbody tr');
+    // Row headers are shown in capitals by the table style, so text is compared without case.
+    await until(async () => /lesson two/i.test((await rows.allInnerTexts()).join(' ')));
+    const text = (await rows.allInnerTexts()).join(' | ');
+    expect(text).toMatch(/Lesson one.*Finished.*Open the result/i);
+    expect(text).toMatch(/Lesson two.*Waiting to start.*Follow progress/i);
+    await visible(page.getByRole('heading', { name: 'Not scanned (1)' }));
+    await visible(page.getByText('Lesson three'));
+    await page.getByRole('link', { name: 'Open the result' }).click();
+    await until(async () => page.url().includes(`/runs/${done}`));
     await page.context().close();
   });
 

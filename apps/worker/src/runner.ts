@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { type Browser, type LaunchOptions, chromium } from 'playwright';
 import type { BrowserInfo, CheckResult, CheckResultId, CourseState, CoverageSummary, EngineResult, Evidence, EvidenceId, EvidenceSink, Finding, FindingId, ProviderContext, ReasonCode, RuleId, RunStatus, ScanRun } from '@cqa/shared';
-import { DEFAULT_LAYOUT_SETTINGS, MAPPINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, deriveMappedExecutions, newId, nowIso, rulesForEngines, seedStarterLibrary, unitsFromPackage } from '@cqa/core';
+import { DEFAULT_LAYOUT_SETTINGS, MAPPINGS, applyRetestOutcome, type ArtifactStore, type Logger, type NetworkPolicy, QaStore, TRAVERSAL_RULES, type Store, deriveMappedExecutions, newId, nowIso, rulesForEngines, seedStarterLibrary, setUploadCourses, unitsFromPackage } from '@cqa/core';
 import { createHash } from 'node:crypto';
 import { ENGINE_VERSION, recordRunLevelCases, runFunctionalTests } from './engines/functional.js';
 import { RunRecorder } from './recorder.js';
@@ -170,8 +170,11 @@ async function runScanInner(deps: WorkerDeps, run: ScanRun, rec: RunRecorder): P
     if (controller.signal.aborted) throw new Error('aborted');
     rec.stage('discovering', 'Opening the course and listing what it contains');
     // A package already tells us a lot about what it contains. List that before any browser visit.
+    setUploadCourses(new Map());
     if (run.config.target.kind === 'package' && run.config.target.packageId) {
       const pkg = store.getPackage(run.config.target.packageId);
+      // Findings name the logical course, not this uploaded copy, so they match across the course's versions (and only those).
+      setUploadCourses(new Map(pkg ? [[pkg.id, pkg.courseKey]] : []));
       if (pkg) {
         const inv = unitsFromPackage(pkg.inspection, pkg.inspection.launchChoices.find((c) => c.key === run.config.target.launchEntry)?.key);
         rec.seedUnits(inv.units, inv.launchUnitId);

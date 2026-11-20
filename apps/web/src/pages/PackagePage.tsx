@@ -5,6 +5,21 @@ import { Alert, Breadcrumb, ErrorBox, Loading, PageHeader, TableScroll, useLoade
 
 const KIND = { scorm12: 'SCORM 1.2', scorm2004: 'SCORM 2004', scorm_unknown: 'SCORM (version unclear)', html5: 'Plain HTML5' } as const;
 const OUTCOME = { passed: 'Passed', failed: 'Problem', needs_review: 'Check by hand', not_applicable: 'Not applicable', not_tested: 'Not checked' } as const;
+/** The same presets and screen sizes as a web address scan. */
+const PRESETS = [
+  { id: 'full', label: 'Full available check', help: 'Goes through the course, tries interactions, and checks accessibility and layout.' },
+  { id: 'functional', label: 'Functional check', help: 'Goes through the course and tries interactions; no accessibility or layout checks.' },
+  { id: 'quick', label: 'Quick check', help: 'The first page only, plus the package file checks.' },
+] as const;
+type Preset = (typeof PRESETS)[number]['id'];
+const SIZES = [
+  { name: 'desktop', label: 'Desktop (1440 × 900)' },
+  { name: 'laptop', label: 'Laptop (1366 × 768)' },
+  { name: 'tablet', label: 'Tablet (768 × 1024)' },
+  { name: 'mobile', label: 'Mobile (390 × 844)' },
+] as const;
+type SizeName = (typeof SIZES)[number]['name'];
+
 const mb = (n: number) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 /** Plain-language summary of what the package says it contains, and how sure that is, before anything is run. */
@@ -50,7 +65,12 @@ export function PackagePage({ id }: { id: string }) {
   const [problem, setProblem] = useState<string>();
   const [harness, setHarness] = useState(true);
   const [journeys, setJourneys] = useState<JourneyDraft[]>(presetJourneys('2004'));
-  const [interactions, setInteractions] = useState(true);
+  const [preset, setPreset] = useState<Preset>('full');
+  const interactions = preset !== 'quick';
+  const [profileId, setProfileId] = useState('');
+  const [sizes, setSizes] = useState<SizeName[]>(['desktop']);
+  const [sizesTouched, setSizesTouched] = useState(false);
+  const profiles = useLoader(() => api.listProfiles(), []);
   const [autoAnswer, setAutoAnswer] = useState(true);
   const [traces, setTraces] = useState(true);
   const [maxScreens, setMaxScreens] = useState(100);
@@ -79,10 +99,22 @@ export function PackagePage({ id }: { id: string }) {
         launch: effective.length === choices.length && choices.length > 1 ? 'all' : effective,
         acknowledgeLocalExecution: ack,
         allowedExternalOrigins: allowed.split('\n').map((x) => x.trim()).filter(Boolean),
-        ...(interactions ? { qaProfile: 'full' as const, functional: true, autoAnswer, traces: traces ? ('first_failure' as const) : ('off' as const) } : {}),
+        qaProfile: preset,
+        explore: preset !== 'quick',
+        accessibility: preset === 'full',
+        layout: preset === 'full',
+        functional: interactions,
+        ...(interactions ? { autoAnswer, traces: traces ? ('first_failure' as const) : ('off' as const) } : {}),
+        profileId: profileId || undefined,
+        // A profile's own screen sizes apply unless sizes were picked here.
+        viewports: profileId && !sizesTouched ? undefined : sizes,
         maxStates: Math.min(200, Math.max(1, Math.round(maxScreens) || 100)),
       });
-      window.location.hash = `/runs/${res.runs[0]!.id}`;
+      // Several lessons: one overview with every scan, its status and its result, and the lessons not chosen.
+      window.location.hash =
+        res.runs.length > 1
+          ? `/projects/${p.projectId}/batch?runs=${res.runs.map((r) => r.id).join(',')}${res.notScanned.length ? `&skipped=${encodeURIComponent(JSON.stringify(res.notScanned))}` : ''}`
+          : `/runs/${res.runs[0]!.id}`;
     } catch (e) {
       setProblem(e instanceof ApiError ? e.message : String(e));
     } finally {
@@ -146,13 +178,42 @@ export function PackagePage({ id }: { id: string }) {
             <fieldset className="fieldset" style={{ marginBottom: '1rem' }}>
               <legend>What to check</legend>
               <p className="help">Content, accessibility, layout and broken files are always checked.</p>
-              <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
-                <input type="checkbox" checked={interactions} onChange={(e) => setInteractions(e.target.checked)} style={{ marginTop: '0.2rem' }} />
-                <span>
-                  <strong>Test interactions</strong>
-                  <span className="help" style={{ display: 'block' }}>Clicks tabs, accordions, pop-ups, menus and Next/Back buttons and checks that each one works. Takes longer.</span>
-                </span>
-              </label>
+              <div role="radiogroup" aria-label="Kind of check">
+                {PRESETS.map((x) => (
+                  <label key={x.id} className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
+                    <input type="radio" name="pkg-preset" checked={preset === x.id} onChange={() => setPreset(x.id)} style={{ marginTop: '0.2rem' }} />
+                    <span>
+                      <strong>{x.label}</strong>
+                      <span className="help" style={{ display: 'block' }}>{x.help}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="field" style={{ marginTop: '0.75rem', maxWidth: '22rem' }}>
+                <label htmlFor="pkg-profile">Client profile (optional)</label>
+                <select id="pkg-profile" value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+                  <option value="">None</option>
+                  {(profiles.data ?? []).map((x) => (
+                    <option key={x.id} value={x.id}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="help">Screen sizes, wording rules and limits saved for a client, the same as for a web address scan.</p>
+              </div>
+              <fieldset className="fieldset" style={{ marginTop: '0.5rem' }}>
+                <legend>Screen sizes{profileId && !sizesTouched ? ' (from the client profile unless you pick here)' : ''}</legend>
+                {SIZES.map((v) => (
+                  <label key={v.name} className="checkbox" style={{ marginRight: '1rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={sizes.includes(v.name)}
+                      onChange={(e) => (setSizesTouched(true), setSizes((cur) => (e.target.checked ? [...cur, v.name] : cur.filter((n) => n !== v.name).length ? cur.filter((n) => n !== v.name) : cur)))}
+                    />{' '}
+                    {v.label}
+                  </label>
+                ))}
+              </fieldset>
               <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', marginTop: '0.5rem' }}>
                 <input type="checkbox" checked={interactions && traces} disabled={!interactions} onChange={(e) => setTraces(e.target.checked)} style={{ marginTop: '0.2rem' }} />
                 <span>
@@ -206,6 +267,19 @@ export function PackagePage({ id }: { id: string }) {
                 <p className="help">Anything else outside the package is blocked and listed in the results.</p>
               </div>
             </details>
+
+            <section className="card effective-settings" aria-labelledby="pkg-effective-h">
+              <h3 id="pkg-effective-h">This scan will use</h3>
+              <ul>
+                <li>{PRESETS.find((x) => x.id === preset)!.label}</li>
+                <li>{effective.length === 0 ? 'No lesson chosen yet' : `${effective.length} of ${choices.length} lesson${choices.length === 1 ? '' : 's'}${effective.length > 1 ? ', each in its own scan' : ''}`}</li>
+                <li>Screen sizes: {profileId && !sizesTouched ? 'from the client profile' : sizes.map((n) => SIZES.find((v) => v.name === n)!.label).join(', ')}</li>
+                <li>Client profile: {profiles.data?.find((x) => x.id === profileId)?.name ?? 'none'}</li>
+                {interactions && <li>Quiz questions {autoAnswer ? 'answered automatically to get past them' : 'not answered'}; browser traces {traces ? 'kept for failed checks' : 'off'}</li>}
+                {(ins.kind === 'scorm12' || ins.kind === 'scorm2004') && <li>SCORM test: {harness ? 'on' : 'off'}</li>}
+                <li>At most {Math.min(200, Math.max(1, Math.round(maxScreens) || 100))} screens</li>
+              </ul>
+            </section>
 
             <div style={{ background: '#f8fafc', padding: '0.75rem', borderRadius: '6px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
               <label className="checkbox" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start', cursor: 'pointer' }}>

@@ -185,7 +185,9 @@ function TabBody({ tab, run, report, query, isActive, onChanged, live, simple, r
   if (tab === 'screens') return <ScreensTab runId={run.id} runStatus={run.status} />;
   if (tab === 'compare') return <CompareTab key={run.id} runId={run.id} projectId={run.projectId} />;
   if (tab === 'details' || DETAIL_SECTIONS.includes(tab)) return <DetailsTab run={run} report={report} isActive={isActive} live={live} focus={tab} />;
-  if (simple) return <SimpleSummary runId={run.id} status={run.status} statusDetail={run.statusDetail} explored={run.config.engines.traversal} recorded={recorded} report={report} onShowTechnical={onShowTechnical} />;
+  // The verdict depends on the coverage record: wait for it, so a new scan is never shown as an older one without a record.
+  if (simple && !live.connectionLost && (live.recorded === undefined || (live.recorded && !live.inventory))) return <Loading />;
+  if (simple) return <SimpleSummary coverageUnavailable={live.connectionLost && !live.inventory && live.recorded !== false} runId={run.id} projectId={run.projectId} packageId={run.config.target.kind === 'package' ? run.config.target.packageId : undefined} baselineRunId={run.retestOfRunId} status={run.status} statusDetail={run.statusDetail} explored={run.config.engines.traversal} recorded={recorded} coverage={live.inventory?.coverage} unitNoun={live.inventory?.unitNoun} report={report} onShowTechnical={onShowTechnical} />;
   return <SummaryTab runId={run.id} report={report} isRetest={Boolean(run.retestOfRunId)} />;
 }
 

@@ -1,5 +1,6 @@
 import type { CheckResult, Finding, ScanRun } from '@cqa/shared';
 import type { Store } from './db/store.js';
+import { FINGERPRINT_SCHEME } from './fingerprint.js';
 import { ONE_RULE_MANY_TARGETS } from './workflow.js';
 
 export type ComparisonStatus = 'new' | 'persistent' | 'resolved' | 'not_retested' | 'incomparable';
@@ -22,10 +23,17 @@ export interface RunComparison {
   counts: Record<ComparisonStatus, number>;
 }
 
-/** The course a run looked at: the package's name, or the address without its query, which can change between versions. */
-function courseOf(run: ScanRun): string {
+/**
+ * The course a run looked at. For an uploaded package, its logical course: an upload and the revised ZIPs explicitly
+ * uploaded as its revisions share one; unrelated uploads never do, even with the same title. An upload whose record is
+ * gone counts as its own course. For a web address, the address without its query, which can change between versions.
+ */
+export function courseOf(store: Store, run: ScanRun): string {
   const t = run.config.target;
-  if (t.kind === 'package') return `package:${t.packageName ?? t.packageId ?? ''}`;
+  if (t.kind === 'package') {
+    const pkg = t.packageId ? store.getPackage(t.packageId) : undefined;
+    return pkg ? `course:${pkg.courseKey}` : `package:${t.packageId ?? t.packageName ?? ''}`;
+  }
   try {
     const u = new URL(t.url ?? '');
     return `${u.origin}${u.pathname}`;
@@ -64,15 +72,28 @@ export function compareRuns(store: Store, beforeId: string, afterId: string): Ru
   if (!before || !after) return undefined;
   // Always earlier to later, whichever order they were asked for in.
   if (before.queuedAt > after.queuedAt) [before, after] = [after, before];
-  const sameCourse = courseOf(before) === courseOf(after);
+  const beforeCourse = courseOf(store, before);
+  const afterCourse = courseOf(store, after);
+  const coursesMatch = beforeCourse === afterCourse;
+  const isPackage = before.config.target.kind === 'package' && after.config.target.kind === 'package';
+  // Which lesson of the package was opened: a different launch point is a different starting screen.
+  const launchOf = (r: ScanRun) => (r.config.target.url ?? '').replace(/^https?:\/\/[^/]+\/p\/[^/]+\//, '');
+  const launchDiffers = isPackage && coursesMatch && launchOf(before) !== launchOf(after);
+  // Package findings made before fingerprints left out the upload's own address cannot be matched with later ones.
+  const schemeDiffers = isPackage && (before.config.fingerprintScheme ?? 1) !== (after.config.fingerprintScheme ?? 1);
+  const sameCourse = coursesMatch && !launchDiffers && !schemeDiffers;
   const browserDiffers = before.browser?.engine !== after.browser?.engine || major(before.browser?.version) !== major(after.browser?.version);
   const sizes = (r: ScanRun) => r.config.viewports.map((v) => `${v.name} ${v.width}x${v.height}`).sort().join(', ');
   const sizesDiffer = sizes(before) !== sizes(after);
   const differences = [
-    ...(sameCourse ? [] : [`a different course (${courseOf(before)} vs ${courseOf(after)})`]),
+    ...(coursesMatch ? [] : [isPackage ? 'a different course: the later upload was not uploaded as a revision of the earlier one' : `a different course (${beforeCourse} vs ${afterCourse})`]),
+    ...(launchDiffers ? [`a different launch point (${launchOf(before) || '?'} vs ${launchOf(after) || '?'})`] : []),
+    ...(schemeDiffers ? [`the earlier scan was made by an older version of this tool, whose findings cannot be matched with this one's (scheme ${before.config.fingerprintScheme ?? 1} vs ${after.config.fingerprintScheme ?? FINGERPRINT_SCHEME})`] : []),
     ...(browserDiffers ? [`browser ${before.browser?.engine ?? '?'} ${major(before.browser?.version) ?? '?'} vs ${after.browser?.engine ?? '?'} ${major(after.browser?.version) ?? '?'}`] : []),
     ...(sizesDiffer ? [`screen sizes ${sizes(before)} vs ${sizes(after)}`] : []),
   ];
+
+  const notComparable = (which: 'earlier' | 'later') => (launchDiffers ? 'The two scans opened the course at different launch points.' : schemeDiffers ? 'The earlier scan was made by an older version of this tool, so its findings cannot be matched.' : `The ${which} scan is of a different course.`);
 
   const priorFindings = store.listFindings(before.id).filter((f) => f.type !== 'ai_recommendation');
   const nowFindings = store.listFindings(after.id).filter((f) => f.type !== 'ai_recommendation');
@@ -88,7 +109,7 @@ export function compareRuns(store: Store, beforeId: string, afterId: string): Ru
   const nowTitles = new Set(now.title.values());
 
   const judgeGone = (f: Finding): Pick<ComparedFinding, 'status' | 'reason'> => {
-    if (!sameCourse) return { status: 'incomparable', reason: 'The later scan is of a different course.' };
+    if (!sameCourse) return { status: 'incomparable', reason: notComparable('later') };
     if (!isFinished(after)) return { status: 'not_retested', reason: `The later scan did not finish (${after.status}), so nothing it did not reach is confirmed.` };
     // Screen sizes change what layout and visibility checks see; the browser changes how interactions behave.
     if (sizesDiffer || (f.checkKey && browserDiffers)) return { status: 'incomparable', reason: `Not found later, but the conditions differ (${differences.join('; ')}).` };
@@ -111,7 +132,7 @@ export function compareRuns(store: Store, beforeId: string, afterId: string): Ru
   };
 
   const judgeNew = (f: Finding): Pick<ComparedFinding, 'status' | 'reason'> => {
-    if (!sameCourse) return { status: 'incomparable', reason: 'The earlier scan is of a different course.' };
+    if (!sameCourse) return { status: 'incomparable', reason: notComparable('earlier') };
     if (!isFinished(before)) return { status: 'not_retested', reason: `Found later; the earlier scan did not finish (${before.status}), so it may simply not have looked.` };
     const ids = screensOf(f);
     if (ids.length && !ids.some((id) => priorKeySet.has(now.key.get(id) ?? ''))) return { status: 'not_retested', reason: 'Found later, on a screen the earlier scan did not reach.' };
@@ -121,7 +142,7 @@ export function compareRuns(store: Store, beforeId: string, afterId: string): Ru
   const findings: ComparedFinding[] = [];
   for (const f of priorFindings) {
     const base = { fingerprint: f.fingerprint, ruleId: f.ruleId, title: f.title };
-    if (nowPrints.has(f.fingerprint)) findings.push({ ...base, status: sameCourse ? 'persistent' : 'incomparable', reason: sameCourse ? 'Found in both scans.' : 'The later scan is of a different course.' });
+    if (nowPrints.has(f.fingerprint)) findings.push({ ...base, status: sameCourse ? 'persistent' : 'incomparable', reason: sameCourse ? 'Found in both scans.' : notComparable('later') });
     else findings.push({ ...base, ...judgeGone(f) });
   }
   for (const f of nowFindings) if (!priorPrints.has(f.fingerprint)) findings.push({ fingerprint: f.fingerprint, ruleId: f.ruleId, title: f.title, ...judgeNew(f) });

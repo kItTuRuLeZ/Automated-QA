@@ -15,7 +15,7 @@ import type {
 } from '@cqa/shared';
 import { EMPTY_COUNTERS } from '@cqa/shared';
 import { newId, nowIso } from '../fingerprint.js';
-import { isPrimaryUnit } from '../qa/inventory.js';
+import { isCountingUnit } from '../qa/inventory.js';
 import type { Db } from './store.js';
 
 /**
@@ -87,7 +87,7 @@ export class QaStore {
   recount(runId: string): ProgressCounters {
     this.ensureProgress(runId);
     const allUnits = this.listUnits(runId);
-    const primary = allUnits.filter((u) => isPrimaryUnit(u, allUnits));
+    const primary = allUnits.filter((u) => isCountingUnit(u, allUnits));
     const units = { n: primary.length, v: primary.filter((u) => u.visitedAt).length };
     const inter = (this.db.prepare('SELECT COUNT(*) AS n FROM interaction_instances WHERE run_id = ?').get(runId) as { n: number }).n;
     const counters: ProgressCounters = { ...EMPTY_COUNTERS, unitsDiscovered: units.n, unitsVisited: units.v, interactionsDiscovered: inter };

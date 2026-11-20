@@ -366,4 +366,14 @@ CREATE INDEX idx_checks_run ON check_results(run_id);
     name: 'interaction_state',
     sql: `ALTER TABLE interaction_instances ADD COLUMN state_id TEXT;`,
   },
+  {
+    // Additive. Each upload is an immutable version of a logical course. Rows from before this have no value and are
+    // treated as their own course at version 1, so they are never matched with another upload by title.
+    version: 10,
+    name: 'package_versions',
+    sql: `ALTER TABLE course_packages ADD COLUMN course_key TEXT;
+ALTER TABLE course_packages ADD COLUMN version INTEGER;
+ALTER TABLE course_packages ADD COLUMN revision_of TEXT;
+CREATE INDEX idx_course_packages_course ON course_packages(course_key);`,
+  },
 ];

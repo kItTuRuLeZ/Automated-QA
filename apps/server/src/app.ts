@@ -6,7 +6,7 @@ import { buildProjectReport, buildRunReport, compareRuns, recordBaselineFromRun,
 import { readFileSync } from 'node:fs';
 import { buildWorkbook } from './export/xlsx.js';
 import { type CapabilityOptions, buildCapabilities, probeBrowserStart } from './capabilities.js';
-import { registerPackageRoutes } from './packages.js';
+import { registerPackageRoutes, retestPackageRun } from './packages.js';
 import { registerQaRoutes } from './qa-routes.js';
 import { buildHtmlReport } from './export/html.js';
 import { buildQaTables } from './export/qa-tables.js';
@@ -384,6 +384,13 @@ export function buildApp(opts: AppOptions): FastifyInstance {
     const prior = isOpaqueId(req.params.id) ? store.getRun(req.params.id) : undefined;
     if (!prior) return notFound(reply, 'Scan not found.');
     if (prior.status !== 'completed' && prior.status !== 'partial') return reply.code(409).send({ error: 'Only a finished scan can be retested.' });
+    // An uploaded course is retested from its upload, with its package file checks recorded again.
+    if (prior.config.target.kind === 'package') {
+      if (!opts.packages) return reply.code(409).send({ error: 'Uploaded courses cannot be scanned in this setup.' });
+      const out = await retestPackageRun({ store, policy, packagesDir: opts.packages.dir, packagePort: opts.packages.port }, prior);
+      if (out && 'error' in out) return reply.code(out.code).send({ error: out.error });
+      if (out) return reply.code(201).send(out.run);
+    }
     const url = store.getRunTargetUrl(prior.id)!;
     const decision = await policy.validateTarget(url, prior.config.scope);
     if (!decision.ok) return reply.code(422).send({ error: decision.detail, reason: decision.reason, ruleId: 'NET-001' });
