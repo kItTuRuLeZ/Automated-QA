@@ -217,11 +217,16 @@ describe('results', () => {
     await page.goto(`${origin}/#/runs/${seeded.runId}`);
     await visible(page.getByText('Scan finished — review the results'));
     expect(await page.getByText(/QA passed/i).count()).toBe(0);
-    await hasText(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link'), ['Summary', 'Issues 3', 'Coverage', 'Manual review', 'Compare', 'Technical details']);
-    for (const tab of ['issues', 'coverage', 'manual', 'compare', 'technical']) {
+    await hasText(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link'), ['Summary', 'Issues 3', 'Details']);
+    // Coverage, manual review and technical details are sections of Details; their old addresses still open it.
+    for (const tab of ['issues', 'details', 'coverage', 'manual', 'technical']) {
       await page.goto(`${origin}/#/runs/${seeded.runId}/${tab}`);
       await count(page.getByRole('navigation', { name: 'Result sections' }).locator('[aria-current="page"]'), 1);
     }
+    for (const heading of [/^Coverage:/, /^Manual review:/, /^Technical details:/]) await visible(page.getByRole('heading', { name: heading }));
+    // Compare opens from a button at the top, with a way back.
+    await page.getByRole('link', { name: 'Compare with an earlier scan' }).click();
+    await visible(page.getByRole('link', { name: '← Back to the results' }));
     await page.goto(`${origin}/#/findings/${seeded.findingId}`);
     await visible(page.getByRole('heading', { name: 'Page has no title' }));
     await page.context().close();
@@ -258,9 +263,9 @@ describe('results', () => {
     await visible(page.getByRole('link', { name: '← Back to the results' }));
     // The switch shows everything, and is remembered.
     await page.getByLabel('Show technical details').check();
-    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Technical details' }));
+    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Details' }));
     await page.reload();
-    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Technical details' }));
+    await visible(page.getByRole('navigation', { name: 'Result sections' }).getByRole('link', { name: 'Details' }));
     await page.context().close();
   });
 

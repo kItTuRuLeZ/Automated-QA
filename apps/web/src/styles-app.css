@@ -712,3 +712,6 @@ textarea.mono { font-family: Consolas, 'Cascadia Mono', monospace; }
 .badge-check { background: var(--warn-bg); color: #5c3b00; border-color: var(--warn-border); }
 .simple-more, .back-link { margin: 0.25rem 0 0; }
 @media (max-width: 720px) { .problem-body { grid-template-columns: 1fr; } .simple-verdict { flex-direction: column; align-items: flex-start; } }
+.details-page > section { margin-top: 1.5rem; scroll-margin-top: 1rem; }
+.details-page > section > h2 { margin-bottom: 0.75rem; }
+.details-jump { font-size: 0.95rem; }

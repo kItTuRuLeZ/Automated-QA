@@ -18,8 +18,10 @@ import { ScreensTab } from '../components/qa/ScreensTab';
 import { WorkflowSteps } from '../components/qa/WorkflowSteps';
 
 const active = (s: RunStatus) => s === 'queued' || s === 'running';
-const TABS = ['summary', 'screens', 'issues', 'coverage', 'manual', 'compare', 'technical'] as const;
+const TABS = ['summary', 'screens', 'issues', 'details', 'coverage', 'manual', 'compare', 'technical'] as const;
 type Tab = (typeof TABS)[number];
+/** Coverage, manual review and technical details are sections of one Details tab; their old addresses open that section. */
+const DETAIL_SECTIONS: readonly string[] = ['coverage', 'manual', 'technical'];
 
 function Elapsed({ since }: { since?: string }) {
   const [now, setNow] = useState(Date.now());
@@ -121,6 +123,11 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
             <label className="checkbox detail-switch">
               <input type="checkbox" checked={!simple} onChange={(e) => setLevel(e.target.checked ? 'technical' : 'simple')} /> Show technical details
             </label>
+            {!simple && finished && r.status !== 'cancelled' && (
+              <a className="btn" href={`#${base}/compare`}>
+                Compare with an earlier scan
+              </a>
+            )}
             {finished && r.status !== 'cancelled' && <ExportMenu items={exports} technical={technical} />}
           </>
         }
@@ -141,8 +148,8 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
 
       {finished && (r.status === 'completed' || r.status === 'partial' || r.summary.findingCount > 0 || r.states.length > 0) ? (
         <>
-          {simple ? (
-            // One page in the simple view; the screen-by-screen and filtered lists open from links on it.
+          {simple || current === 'compare' ? (
+            // One page in the simple view; the screen-by-screen and filtered lists open from links on it. Compare opens from a button.
             current !== 'summary' && (
               <p className="back-link">
                 <a href={`#${base}/summary`}>← Back to the results</a>
@@ -155,10 +162,7 @@ export function RunPage({ id, tab, query }: { id: string; tab?: string; query: U
               { to: `${base}/summary`, label: 'Summary', current: current === 'summary' },
               ...(recorded ? [{ to: `${base}/screens`, label: 'Screens', current: current === 'screens' }] : []),
               { to: `${base}/issues`, label: 'Issues', current: current === 'issues', count: openCount },
-              { to: `${base}/coverage`, label: 'Coverage', current: current === 'coverage' },
-              { to: `${base}/manual`, label: 'Manual review', current: current === 'manual' },
-              { to: `${base}/compare`, label: 'Compare', current: current === 'compare' },
-              { to: `${base}/technical`, label: 'Technical details', current: current === 'technical' },
+              { to: `${base}/details`, label: 'Details', current: current === 'details' || DETAIL_SECTIONS.includes(current) },
             ]}
           />
           )}
@@ -179,18 +183,37 @@ function TabBody({ tab, run, report, query, isActive, onChanged, live, simple, r
   const canRetest = run.status === 'completed' || run.status === 'partial';
   if (tab === 'issues') return <IssuesTab key={query.toString()} runId={run.id} report={report} query={query} canRetest={canRetest} isRetest={Boolean(run.retestOfRunId)} onChanged={onChanged} />;
   if (tab === 'screens') return <ScreensTab runId={run.id} runStatus={run.status} />;
-  if (tab === 'coverage')
-    return (
-      <>
-        {live.inventory && <CoveragePanel c={live.inventory.coverage} noun={live.inventory.unitNoun} />}
-        <CoverageTab run={run} report={report} isActive={isActive} />
-      </>
-    );
-  if (tab === 'manual') return <ManualReview run={run} />;
   if (tab === 'compare') return <CompareTab key={run.id} runId={run.id} projectId={run.projectId} />;
-  if (tab === 'technical') return <TechnicalTab run={run} />;
+  if (tab === 'details' || DETAIL_SECTIONS.includes(tab)) return <DetailsTab run={run} report={report} isActive={isActive} live={live} focus={tab} />;
   if (simple) return <SimpleSummary runId={run.id} status={run.status} statusDetail={run.statusDetail} explored={run.config.engines.traversal} recorded={recorded} report={report} onShowTechnical={onShowTechnical} />;
   return <SummaryTab runId={run.id} report={report} isRetest={Boolean(run.retestOfRunId)} />;
+}
+
+/** What was and was not checked, what only a person can check, and how the scan ran: one page, three sections. */
+function DetailsTab({ run, report, isActive, live, focus }: { run: RunDetail; report: RunReport; isActive: boolean; live: ReturnType<typeof useLiveRun>; focus: Tab }) {
+  useEffect(() => {
+    if (DETAIL_SECTIONS.includes(focus)) document.getElementById(`details-${focus}`)?.scrollIntoView({ block: 'start' });
+  }, [focus]);
+  return (
+    <div className="details-page">
+      <nav className="details-jump" aria-label="Sections on this page">
+        <a href={`#/runs/${run.id}/coverage`}>Coverage</a> · <a href={`#/runs/${run.id}/manual`}>Manual review</a> · <a href={`#/runs/${run.id}/technical`}>Technical details</a>
+      </nav>
+      <section id="details-coverage" aria-labelledby="details-coverage-h">
+        <h2 id="details-coverage-h">Coverage: what was and was not checked</h2>
+        {live.inventory && <CoveragePanel c={live.inventory.coverage} noun={live.inventory.unitNoun} />}
+        <CoverageTab run={run} report={report} isActive={isActive} />
+      </section>
+      <section id="details-manual" aria-labelledby="details-manual-h">
+        <h2 id="details-manual-h">Manual review: what only a person can check</h2>
+        <ManualReview run={run} />
+      </section>
+      <section id="details-technical" aria-labelledby="details-technical-h">
+        <h2 id="details-technical-h">Technical details: how the scan ran</h2>
+        <TechnicalTab run={run} />
+      </section>
+    </div>
+  );
 }
 
 function ManualReview({ run }: { run: RunDetail }) {

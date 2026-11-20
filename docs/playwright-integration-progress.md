@@ -666,6 +666,7 @@ Karthik asked for it simpler still, closer to FULLPASS's layout. The simple view
 - A second separate review found 10 problems (among them: "Looks good" possible with exploration off or lessons missed, the not-checked number counting dismissed items, Storyline scenes missing, a screen-by-screen link on scans without records, dead code), all fixed.
 - 18 Nov, whole suite: 516 passed, 1 skipped (55 min).
 - 20 Nov, finishing touches: the reason a scan stopped is written in plain words (new scans at source, older scans when shown), and a large file found by both the browser and the file check is listed once, from the file check. The affected tests pass (36); the whole suite was not rerun for these two small changes.
+- 20 Nov, technical view: seven tabs became four (Summary, Screens, Issues, Details). Details holds Coverage, Manual review and Technical details as sections; their old addresses open the matching section. Compare opens from a "Compare with an earlier scan" button. UI tests updated and passing (22).
 
 ### Limitations
 
